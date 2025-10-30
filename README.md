@@ -6,10 +6,10 @@ A tiny CLI that routes shared JS package-manager commands to the right tool.
 
 ## Supported managers
 
-- bun (bun.lockb / bun.lock)
-- npm (package-lock.json)
-- pnpm (pnpm-lock.yaml)
-- yarn (yarn.lock)
+- bun
+- npm
+- pnpm
+- yarn
 
 ## Supported commands
 
@@ -27,5 +27,3 @@ A tiny CLI that routes shared JS package-manager commands to the right tool.
 ## Contributions Welcome!
 
 I would love to see what others could/might add! I'm sure there are tons of bugs, I'm brand new to this, so don't hesitate to leave issues or reach out!
-
-
