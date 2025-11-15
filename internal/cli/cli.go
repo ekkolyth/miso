@@ -2,6 +2,8 @@ package cli
 
 import (
 	"errors"
+
+	"github.com/ekkolyth/miso/internal/config"
 )
 
 type Action int
@@ -12,6 +14,7 @@ const (
 	ActionRemove
 	ActionRun
 	ActionDev
+	ActionScriptOverride
 )
 
 type ParsedCLI struct {
@@ -21,10 +24,19 @@ type ParsedCLI struct {
 	ScriptArgs   []string
 }
 
-func ParseCLI(args []string) (ParsedCLI, error) {
+func ParseCLI(args []string, cfg config.Config) (ParsedCLI, error) {
 	if len(args) == 0 {
 		return ParsedCLI{}, errors.New("missing command")
 	}
+
+	if cmd := args[0]; hasScript(cfg, cmd) {
+		return ParsedCLI{
+			Action:     ActionScriptOverride,
+			ScriptName: cmd,
+			ScriptArgs: parseInlineArgs(args[1:]),
+		}, nil
+	}
+
 	switch args[0] {
 	case "install":
 		return ParsedCLI{Action: ActionInstall}, nil
@@ -46,10 +58,16 @@ func ParseCLI(args []string) (ParsedCLI, error) {
 		if script == "" {
 			return ParsedCLI{}, errors.New("usage: miso run <script> [-- <args...>]")
 		}
+		if hasScript(cfg, script) {
+			return ParsedCLI{Action: ActionScriptOverride, ScriptName: script, ScriptArgs: scriptArgs}, nil
+		}
 		return ParsedCLI{Action: ActionRun, ScriptName: script, ScriptArgs: scriptArgs}, nil
 	case "dev":
-		_, scriptArgs := splitScriptArgs(args[1:])
-		return ParsedCLI{Action: ActionDev, ScriptArgs: scriptArgs}, nil
+		inlineArgs := parseInlineArgs(args[1:])
+		if hasScript(cfg, "dev") {
+			return ParsedCLI{Action: ActionScriptOverride, ScriptName: "dev", ScriptArgs: inlineArgs}, nil
+		}
+		return ParsedCLI{Action: ActionDev, ScriptArgs: inlineArgs}, nil
 	default:
 		return ParsedCLI{}, errors.New("unknown command: " + args[0])
 	}
@@ -68,4 +86,19 @@ func splitScriptArgs(rest []string) (string, []string) {
 	return script, nil
 }
 
+func parseInlineArgs(rest []string) []string {
+	for i, a := range rest {
+		if a == "--" {
+			return rest[i+1:]
+		}
+	}
+	return rest
+}
 
+func hasScript(cfg config.Config, name string) bool {
+	if len(cfg.Scripts) == 0 {
+		return false
+	}
+	_, ok := cfg.Scripts[name]
+	return ok
+}
