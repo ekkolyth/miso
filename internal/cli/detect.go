@@ -9,11 +9,13 @@ import (
 
 var lockfileMap = map[string]string{
 	"bun.lockb":         "bun",
-	"bun.lock":          "bun", 
+	"bun.lock":          "bun",
 	"package-lock.json": "npm",
 	"pnpm-lock.yaml":    "pnpm",
 	"yarn.lock":         "yarn",
 }
+
+var ErrNoLockfile = errors.New("no lockfile detected")
 
 func DetectManager(directoryPath string) (string, error) {
 	found := map[string][]string{}
@@ -27,7 +29,7 @@ func DetectManager(directoryPath string) (string, error) {
 
 	switch len(found) {
 	case 0:
-		return "", errors.New("no lockfile found (checked bun.lockb, package-lock.json, pnpm-lock.yaml, yarn.lock)")
+		return "", ErrNoLockfile
 	case 1:
 		for k := range found {
 			return k, nil
@@ -41,6 +43,3 @@ func DetectManager(directoryPath string) (string, error) {
 	}
 	return "", errors.New("unreachable")
 }
-
-
-
