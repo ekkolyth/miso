@@ -1,4 +1,4 @@
-.PHONY: build install uninstall run test tidy fmt clean build-all publish publish.patch publish.minor publish.major npm.pack npm.test
+.PHONY: build install uninstall run test tidy fmt clean build-all publish publish.patch publish.minor publish.major publish.current npm.pack npm.test
 
 DRY_RUN ?= 0
 
@@ -60,23 +60,50 @@ publish.minor:
 publish.major:
 	$(MAKE) _publish LEVEL=major
 
-_publish:
+# Publish the current version from release.json without bumping it.
+# For non-dry runs, creates a git tag and pushes to origin.
+publish.current:
 	@if [ "$$(git status --porcelain)" != "" ]; then \
 		echo "Working tree is not clean. Commit or stash changes before publishing."; \
 		exit 1; \
 	fi
 	@if [ "$(DRY_RUN)" = "1" ]; then \
-		NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL) -dry-run); \
-		echo "DRY RUN: next version would be $$NEXT_VERSION"; \
-		echo "DRY RUN: would create tag v$$NEXT_VERSION and push to origin"; \
+		CURRENT_VERSION=$$(go run ./.github/release/version); \
+		echo "DRY RUN: current version is $$CURRENT_VERSION"; \
+		echo "DRY RUN: would create tag v$$CURRENT_VERSION and push to origin"; \
 	else \
-		NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL)); \
-		echo "Bumped version to $$NEXT_VERSION"; \
-		git add .github/release/release.json; \
-		git commit -m "chore: release v$$NEXT_VERSION"; \
-		git tag -a "v$$NEXT_VERSION" -m "Release v$$NEXT_VERSION"; \
+		CURRENT_VERSION=$$(go run ./.github/release/version); \
+		echo "Publishing current version $$CURRENT_VERSION"; \
+		if git rev-parse "v$$CURRENT_VERSION" >/dev/null 2>&1; then \
+			echo "Tag v$$CURRENT_VERSION already exists locally, deleting it"; \
+			git tag -d "v$$CURRENT_VERSION"; \
+		fi; \
+		git tag -a "v$$CURRENT_VERSION" -m "Release v$$CURRENT_VERSION"; \
 		git push origin HEAD; \
-		git push origin "v$$NEXT_VERSION"; \
+		git push origin "v$$CURRENT_VERSION"; \
+	fi
+
+_publish:
+	@if [ "$$(git status --porcelain)" != "" ]; then \
+		echo "Working tree is not clean. Commit or stash changes before publishing."; \
+		exit 1; \
+	fi
+	@if [ "$(LEVEL)" = "current" ]; then \
+		$(MAKE) publish.current; \
+	else \
+		if [ "$(DRY_RUN)" = "1" ]; then \
+			NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL) -dry-run); \
+			echo "DRY RUN: next version would be $$NEXT_VERSION"; \
+			echo "DRY RUN: would create tag v$$NEXT_VERSION and push to origin"; \
+		else \
+			NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL)); \
+			echo "Bumped version to $$NEXT_VERSION"; \
+			git add .github/release/release.json; \
+			git commit -m "chore: release v$$NEXT_VERSION"; \
+			git tag -a "v$$NEXT_VERSION" -m "Release v$$NEXT_VERSION"; \
+			git push origin HEAD; \
+			git push origin "v$$NEXT_VERSION"; \
+		fi \
 	fi
 
 # Generate package.json and create a tarball to inspect what would be published
