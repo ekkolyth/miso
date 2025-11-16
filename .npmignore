@@ -1,0 +1,22 @@
+# Go source files
+*.go
+go.mod
+go.sum
+cmd/
+internal/
+
+# Build files
+Makefile
+bin/
+
+# Development files
+.git/
+.github/
+
+# Documentation
+README.md
+docs/
+
+# Assets (not needed in npm package)
+internal/assets/
+

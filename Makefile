@@ -1,4 +1,6 @@
-.PHONY: build install uninstall run test tidy fmt clean
+.PHONY: build install uninstall run test tidy fmt clean build-all publish publish.patch publish.minor publish.major npm.pack npm.test
+
+DRY_RUN ?= 0
 
 BINARY ?= miso
 PKG    := ./cmd
@@ -11,6 +13,14 @@ endif
 build:
 	@mkdir -p bin
 	go build -o bin/$(BINARY) $(PKG)
+
+build-all:
+	@mkdir -p bin
+	GOOS=darwin GOARCH=amd64 go build -o bin/$(BINARY)-darwin-amd64 $(PKG)
+	GOOS=darwin GOARCH=arm64 go build -o bin/$(BINARY)-darwin-arm64 $(PKG)
+	GOOS=linux GOARCH=amd64 go build -o bin/$(BINARY)-linux-amd64 $(PKG)
+	GOOS=linux GOARCH=arm64 go build -o bin/$(BINARY)-linux-arm64 $(PKG)
+	GOOS=windows GOARCH=amd64 go build -o bin/$(BINARY)-windows-amd64.exe $(PKG)
 
 install: build
 	@echo "Installing $(BINARY) to $(GOBIN)"
@@ -34,3 +44,53 @@ fmt:
 
 clean:
 	rm -rf bin
+	rm -f package.json
+	rm -f miso-*.tgz
+
+# Bump the version in release.json and, for non-dry runs, commit the change,
+# create a git tag, and push. Default bump level is "patch".
+publish: publish.patch
+
+publish.patch:
+	$(MAKE) _publish LEVEL=patch
+
+publish.minor:
+	$(MAKE) _publish LEVEL=minor
+
+publish.major:
+	$(MAKE) _publish LEVEL=major
+
+_publish:
+	@if [ "$$(git status --porcelain)" != "" ]; then \
+		echo "Working tree is not clean. Commit or stash changes before publishing."; \
+		exit 1; \
+	fi
+	@if [ "$(DRY_RUN)" = "1" ]; then \
+		NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL) -dry-run); \
+		echo "DRY RUN: next version would be $$NEXT_VERSION"; \
+		echo "DRY RUN: would create tag v$$NEXT_VERSION and push to origin"; \
+	else \
+		NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL)); \
+		echo "Bumped version to $$NEXT_VERSION"; \
+		git add .github/release/release.json; \
+		git commit -m "chore: release v$$NEXT_VERSION"; \
+		git tag -a "v$$NEXT_VERSION" -m "Release v$$NEXT_VERSION"; \
+		git push origin HEAD; \
+		git push origin "v$$NEXT_VERSION"; \
+	fi
+
+# Generate package.json and create a tarball to inspect what would be published
+npm.pack:
+	@echo "Generating package.json from release.json..."
+	@node -e "const fs=require('fs'); const rel=JSON.parse(fs.readFileSync('.github/release/release.json','utf8')); const pkg=JSON.parse(fs.readFileSync('.github/release/package.json','utf8')); pkg.version=rel.version; fs.writeFileSync('package.json', JSON.stringify(pkg,null,2));"
+	@echo "Creating npm pack tarball..."
+	@npm pack --dry-run
+	@echo "✓ Package tarball created. Inspect the output above."
+	@echo "To see the actual tarball contents, run: npm pack && tar -tzf miso-*.tgz"
+
+# Test npm publish with --dry-run flag (shows what would be published without actually publishing)
+npm.test:
+	@echo "Testing npm publish with --dry-run..."
+	@node -e "const fs=require('fs'); const rel=JSON.parse(fs.readFileSync('.github/release/release.json','utf8')); const pkg=JSON.parse(fs.readFileSync('.github/release/package.json','utf8')); pkg.version=rel.version; fs.writeFileSync('package.json', JSON.stringify(pkg,null,2));"
+	@npm publish --dry-run
+	@echo "✓ Dry run complete. No actual publish was performed."
