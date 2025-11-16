@@ -53,6 +53,33 @@ func Run(root string, managerNames []string, styles theme.Styles, logger *log.Lo
 	return cfg, nil
 }
 
+// Init executes the init wizard (assumes new project) and returns a populated config.
+func Init(root string, managerNames []string, styles theme.Styles, logger *log.Logger) (config.Config, error) {
+	if len(managerNames) == 0 {
+		return config.Config{}, errors.New("no package managers are registered")
+	}
+
+	// Assume new project, ask for project name
+	projectName, err := askProjectName(filepath.Base(root), styles)
+	if err != nil {
+		return config.Config{}, err
+	}
+
+	managerChoice, err := selectManager(managerNames, styles)
+	if err != nil {
+		return config.Config{}, err
+	}
+
+	logger.Info("initialized project", "project", projectName, "manager", managerChoice)
+
+	cfg := config.Config{
+		PackageManager: managerChoice,
+		ProjectName:    projectName,
+		Scripts:        map[string]string{},
+	}
+	return cfg, nil
+}
+
 func askIsNew(styles theme.Styles) (bool, error) {
 	choice := "yes"
 	form := huh.NewForm(
