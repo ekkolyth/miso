@@ -41,6 +41,50 @@ func main() {
 		fail(logger, fmt.Errorf("determine working directory: %w", err), false)
 	}
 
+	// Handle "init" command early, before loading config or ensuring manager
+	if len(args) > 0 && args[0] == "init" {
+		// Check if miso.json already exists - if so, exit early
+		_, err := config.Load(root)
+		if err == nil {
+			fail(logger, fmt.Errorf("miso.json already exists"), false)
+		}
+		if !errors.Is(err, config.ErrNotFound) {
+			fail(logger, err, false)
+		}
+
+		managerList := registeredManagerNames()
+		newCfg, err := onboarding.Init(root, managerList, styles, logger)
+		if err != nil {
+			fail(logger, err, false)
+		}
+		if err := config.Save(root, newCfg); err != nil {
+			fail(logger, err, false)
+		}
+
+		// Check if package.json already exists - if so, skip running init
+		packageJsonPath := filepath.Join(root, "package.json")
+		if _, err := os.Stat(packageJsonPath); err == nil {
+			logger.Info("package.json already exists, skipping manager init")
+			return
+		}
+
+		// Run the package manager's init command
+		if _, ok := driverRegistry[newCfg.PackageManager]; !ok {
+			fail(logger, fmt.Errorf("unsupported manager: %s", newCfg.PackageManager), false)
+		}
+		spec := cli.ExecSpec{
+			Command: newCfg.PackageManager,
+			Args:    []string{"init"},
+		}
+		logger.Info(styles.Heading.Render("running manager command"),
+			"manager", newCfg.PackageManager,
+			"command", commandWithArgs(spec.Command, spec.Args))
+		if err := cli.Exec(spec, newCfg.PackageManager); err != nil {
+			fail(logger, err, false)
+		}
+		return
+	}
+
 	cfg, err := loadConfig(root)
 	if err != nil {
 		fail(logger, err, false)
@@ -58,6 +102,41 @@ func main() {
 
 	if os.Getenv("MISO_DEBUG") == "1" {
 		logger.Debug("resolved manager", "manager", managerName)
+	}
+
+	switch parsed.Action {
+	case cli.ActionScripts:
+		if len(cfg.Scripts) == 0 {
+			logger.Info("no scripts defined in miso.json")
+			return
+		}
+		scriptNames := make([]string, 0, len(cfg.Scripts))
+		for name := range cfg.Scripts {
+			scriptNames = append(scriptNames, name)
+		}
+		sort.Strings(scriptNames)
+		logger.Info(styles.Heading.Render("available scripts"))
+		for _, name := range scriptNames {
+			fmt.Fprintf(os.Stdout, "  %s: %s\n", name, cfg.Scripts[name])
+		}
+		return
+	case cli.ActionRunMultiple:
+		// For now, just run them sequentially
+		// TODO: Add concurrent execution support
+		driver, ok := driverRegistry[managerName]
+		if !ok {
+			fail(logger, fmt.Errorf("unsupported manager: %s", managerName), false)
+		}
+		for _, scriptName := range parsed.ScriptNames {
+			spec := driver.BuildRun(scriptName, parsed.ScriptArgs)
+			logger.Info(styles.Heading.Render("running script"),
+				"script", scriptName,
+				"command", commandWithArgs(spec.Command, spec.Args))
+			if err := cli.Exec(spec, managerName); err != nil {
+				fail(logger, err, false)
+			}
+		}
+		return
 	}
 
 	if parsed.Action == cli.ActionScriptOverride {
@@ -188,6 +267,7 @@ func usageText() string {
 Miso – the agnostic package manager
 
 Usage:
+  miso init
   miso install
   miso add <pkg> 
   miso remove <pkg> 
