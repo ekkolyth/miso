@@ -92,6 +92,11 @@ func main() {
 		spec = driver.BuildRun(parsed.ScriptName, parsed.ScriptArgs)
 	case cli.ActionDev:
 		spec = driver.BuildRun("dev", parsed.ScriptArgs)
+	case cli.ActionPassthrough:
+		spec = cli.ExecSpec{
+			Command: managerName,
+			Args:    append([]string{parsed.Command}, parsed.Args...),
+		}
 	default:
 		fail(logger, fmt.Errorf("unknown action"), true)
 	}
@@ -188,8 +193,10 @@ Usage:
   miso remove <pkg> 
   miso run <script> <args>
   miso dev <args>
+  miso <command> [args...]
 
   - Automatically detects bun, npm, pnpm, or yarn.
   - Generates a miso.json so you can override the manager or define scripts.
+  - Unknown commands pass through to the detected package manager.
 `)
 }

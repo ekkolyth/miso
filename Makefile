@@ -12,13 +12,15 @@ build:
 	@mkdir -p bin
 	go build -o bin/$(BINARY) $(PKG)
 
-install:
-	go install $(PKG)
+install: build
+	@echo "Installing $(BINARY) to $(GOBIN)"
+	@cp bin/$(BINARY) $(GOBIN)/$(BINARY)
+	@echo "✓ Installed $(BINARY) to $(GOBIN)"
 
 uninstall:
 	rm -f $(GOBIN)/$(BINARY)
 
-go:
+go: build
 	go run $(PKG) $(ARGS)
 
 test:
