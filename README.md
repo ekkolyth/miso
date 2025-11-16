@@ -11,8 +11,24 @@ Miso doesn't care where you work or what tools you use. It sits as a light wrapp
 
 ## Get Started
 
-1) install miso 
-2) run "miso init" to add miso to your project. 
+### Installation
+
+Install miso globally (recommended):
+```bash
+npm install -g miso
+```
+
+Or install locally in your project:
+```bash
+npm install miso
+```
+
+Then run `miso init` to add miso to your project:
+```bash
+miso init
+```
+
+**Note:** If you installed locally, use `npx miso init` or `./node_modules/.bin/miso init`. 
 
 ## Supported commands
 
