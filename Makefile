@@ -18,7 +18,7 @@ install:
 uninstall:
 	rm -f $(GOBIN)/$(BINARY)
 
-run:
+go:
 	go run $(PKG) $(ARGS)
 
 test:
