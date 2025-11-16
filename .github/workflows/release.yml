@@ -59,6 +59,10 @@ jobs:
   publish-npm:
     needs: build-and-release
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write # needed for OIDC / trusted publishing
+      contents: read
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -69,10 +73,20 @@ jobs:
           go-version-file: go.mod
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
-          registry-url: 'https://registry.npmjs.org/'
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      # Ensure npm 11.5.1 or later for trusted publishing
+      # See: https://docs.npmjs.com/trusted-publishers
+      - name: Update npm to latest
+        run: npm install -g npm@latest
+
+      - name: Show Node & npm versions
+        run: |
+          node -v
+          npm -v
 
       - name: Read version from release.json
         id: version
@@ -90,15 +104,28 @@ jobs:
         run: |
           node -e "const fs=require('fs'); const rel=JSON.parse(fs.readFileSync('.github/release/release.json','utf8')); const pkg=JSON.parse(fs.readFileSync('.github/release/package.json','utf8')); pkg.version=rel.version; fs.writeFileSync('package.json', JSON.stringify(pkg,null,2));"
 
-      - name: Check package info
+      - name: Check package info and authentication
         run: |
-          echo "Package name: $(node -p "require('./package.json').name")"
-          echo "Package version: $(node -p "require('./package.json').version")"
-          echo "Checking if version exists on npm..."
-          npm view $(node -p "require('./package.json').name")@$(node -p "require('./package.json').version") version || echo "No existing version match - Publishing"
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "Package name: $PACKAGE_NAME"
+          echo "Package version: $PACKAGE_VERSION"
+          echo "Checking npm registry..."
+          npm config get registry
+          echo "Checking if package exists on npm..."
+          if npm view "$PACKAGE_NAME" version 2>/dev/null; then
+            echo "Package exists on npm"
+            echo "Checking if version $PACKAGE_VERSION already exists..."
+            npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null && echo "Version $PACKAGE_VERSION already published" || echo "Version $PACKAGE_VERSION not found - will publish"
+          else
+            echo "Package does not exist on npm - first time publish"
+          fi
 
-      - name: Publish to npm
-        run: npm publish --verbose
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Trusted publishing via OIDC
+      # Provenance is automatically generated when using trusted publishing
+      # Make sure you've configured the trusted publisher on npmjs.com first:
+      # https://www.npmjs.com/settings/[your-username]/packages -> [package-name] -> Settings -> Trusted Publishers
+      # Workflow filename must match exactly: release.yml (case-sensitive)
+      - name: Publish to npm (trusted publishing via OIDC)
+        run: npm publish --access public --verbose
 
