@@ -16,8 +16,8 @@ const FileName = "miso.json"
 
 // Config captures persisted metadata about the current project.
 type Config struct {
-	PackageManager string            `json:"packageManager"`
-	ProjectName    string            `json:"projectName"`
+	PackageManager string            `json:"package-manager"`
+	ProjectName    string            `json:"project-name"`
 	Scripts        map[string]string `json:"scripts"`
 }
 
