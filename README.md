@@ -15,12 +15,12 @@ Miso doesn't care where you work or what tools you use. It sits as a light wrapp
 
 Install miso globally (recommended):
 ```bash
-npm install -g miso
+npm install -g miso-js
 ```
 
 Or install locally in your project:
 ```bash
-npm install miso
+npm install miso-js
 ```
 
 Then run `miso init` to add miso to your project:
