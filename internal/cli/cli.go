@@ -15,6 +15,7 @@ const (
 	ActionRun
 	ActionDev
 	ActionScriptOverride
+	ActionPassthrough
 )
 
 type ParsedCLI struct {
@@ -22,6 +23,8 @@ type ParsedCLI struct {
 	PackageNames []string
 	ScriptName   string
 	ScriptArgs   []string
+	Command      string
+	Args         []string
 }
 
 func ParseCLI(args []string, cfg config.Config) (ParsedCLI, error) {
@@ -69,7 +72,11 @@ func ParseCLI(args []string, cfg config.Config) (ParsedCLI, error) {
 		}
 		return ParsedCLI{Action: ActionDev, ScriptArgs: inlineArgs}, nil
 	default:
-		return ParsedCLI{}, errors.New("unknown command: " + args[0])
+		return ParsedCLI{
+			Action:  ActionPassthrough,
+			Command: args[0],
+			Args:    args[1:],
+		}, nil
 	}
 }
 
