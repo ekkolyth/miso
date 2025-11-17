@@ -93,6 +93,9 @@ jobs:
       - name: Copy cli.mjs to dist
         run: cp cli.mjs dist/cli.mjs
 
+      - name: Copy README.md to dist
+        run: cp README.md dist/README.md
+
       - name: Check package info and authentication
         working-directory: dist
         env:
