@@ -97,12 +97,22 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
-      - name: Ensure bin directory exists (empty) for go-npm
+      - name: Build Go binaries
         run: |
-          mkdir -p bin
-          # Ensure bin/ exists but is empty - go-npm will download the binary during install
+          mkdir -p dist
+          GOOS=darwin GOARCH=amd64 go build -o dist/miso-darwin-amd64 ./cmd
+          GOOS=darwin GOARCH=arm64 go build -o dist/miso-darwin-arm64 ./cmd
+          GOOS=linux GOARCH=amd64 go build -o dist/miso-linux-amd64 ./cmd
+          GOOS=linux GOARCH=arm64 go build -o dist/miso-linux-arm64 ./cmd
+
+      - name: Copy package.json to dist
+        run: cp .github/package.json dist/package.json
+
+      - name: Copy cli.mjs to dist
+        run: cp cli.mjs dist/cli.mjs
 
       - name: Check package info and authentication
+        working-directory: dist
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
@@ -125,5 +135,6 @@ jobs:
       # https://www.npmjs.com/settings/[your-username]/packages -> [package-name] -> Settings -> Trusted Publishers
       # Workflow filename must match exactly: release.yml (case-sensitive)
       - name: Publish to npm (trusted publishing via OIDC)
+        working-directory: dist
         run: npm publish --access public --verbose
 
