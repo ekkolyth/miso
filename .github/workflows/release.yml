@@ -102,7 +102,7 @@ jobs:
 
       - name: Copy package.json
         run: |
-          cp .github/release/package.json package.json
+          cp .github/package.json package.json
 
       - name: Check package info and authentication
         run: |
