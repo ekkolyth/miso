@@ -16,8 +16,8 @@
     "type": "git",
     "url": "git+https://github.com/ekkolyth/miso.git"
   },
-  "version": "0.1.14",
   "scripts": {
-    "prepublishOnly": "make build-all && cp bin/miso-darwin-amd64 . && cp bin/miso-darwin-arm64 . && cp bin/miso-linux-amd64 . && cp bin/miso-linux-arm64 ."
-  }
+    "prepublishOnly": "make build-all \u0026\u0026 cp bin/miso-darwin-amd64 . \u0026\u0026 cp bin/miso-darwin-arm64 . \u0026\u0026 cp bin/miso-linux-amd64 . \u0026\u0026 cp bin/miso-linux-arm64 ."
+  },
+  "version": "0.1.15"
 }
