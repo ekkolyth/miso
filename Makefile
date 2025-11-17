@@ -98,7 +98,7 @@ _publish:
 		else \
 			NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL)); \
 			echo "Bumped version to $$NEXT_VERSION"; \
-			git add .github/release/package.json; \
+			git add .github/package.json; \
 			git commit -m "chore: release v$$NEXT_VERSION"; \
 			git tag -a "v$$NEXT_VERSION" -m "Release v$$NEXT_VERSION"; \
 			git push origin HEAD; \
@@ -109,7 +109,7 @@ _publish:
 # Copy package.json and create a tarball to inspect what would be published
 npm.pack:
 	@echo "Copying package.json..."
-	@cp .github/release/package.json package.json
+	@cp .github/package.json package.json
 	@echo "Creating npm pack tarball..."
 	@npm pack --dry-run
 	@echo "✓ Package tarball created. Inspect the output above."
@@ -118,6 +118,6 @@ npm.pack:
 # Test npm publish with --dry-run flag (shows what would be published without actually publishing)
 npm.test:
 	@echo "Testing npm publish with --dry-run..."
-	@cp .github/release/package.json package.json
+	@cp .github/package.json package.json
 	@npm publish --dry-run
 	@echo "✓ Dry run complete. No actual publish was performed."
