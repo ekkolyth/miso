@@ -3,11 +3,21 @@
     "miso": "./cli.mjs"
   },
   "description": "the agnostic package manager",
+  "files": [
+    "cli.mjs",
+    "miso-darwin-amd64",
+    "miso-darwin-arm64",
+    "miso-linux-amd64",
+    "miso-linux-arm64"
+  ],
   "license": "MIT",
   "name": "@ekkolyth/miso",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ekkolyth/miso.git"
   },
-  "version": "0.1.14"
+  "version": "0.1.14",
+  "scripts": {
+    "prepublishOnly": "make build-all && cp bin/miso-darwin-amd64 . && cp bin/miso-darwin-arm64 . && cp bin/miso-linux-amd64 . && cp bin/miso-linux-arm64 ."
+  }
 }
