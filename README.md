@@ -20,18 +20,24 @@ Miso doesn't care where you work or what tools you use. It sits as a light wrapp
 go install github.com/ekkolyth/miso@dev
 ```
 
-**Alternative: Install via npm** (requires proper npm configuration):
+**Alternative: Install via npm**:
+
+From npm registry (if published):
 
 ```bash
 npm install -g @ekkolyth/miso
+```
+
+From git (for dev branch or latest):
+
+```bash
+npm install -g git+https://github.com/ekkolyth/miso.git#dev
 ```
 
 If you get permission errors with npm, you can either:
 
 - Use `sudo npm install -g @ekkolyth/miso` (not recommended)
 - Configure npm to use a different directory: `npm config set prefix ~/.npm-global` and add `~/.npm-global/bin` to your PATH
-
-**Note:** The npm package requires the `package.json` to be in the repository root. For the `dev` branch, you may need to use `go install` instead.
 
 Then run `miso init` to add miso to your project:
 

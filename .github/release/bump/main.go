@@ -52,7 +52,7 @@ func main() {
 }
 
 func readPackage() (*packageInfo, error) {
-	data, err := os.ReadFile(".github/package.json")
+	data, err := os.ReadFile("package.json")
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func readPackage() (*packageInfo, error) {
 
 func writePackage(info *packageInfo) error {
 	// Read the full package.json to preserve other fields
-	fullData, err := os.ReadFile(".github/package.json")
+	fullData, err := os.ReadFile("package.json")
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func writePackage(info *packageInfo) error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(".github/package.json", data, 0o644)
+	return os.WriteFile("package.json", data, 0o644)
 }
 
 func bumpVersion(current, level string) (string, error) {
