@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -25,6 +27,17 @@ jobs:
           VERSION=$(go run ./.github/release/version)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
+
+      - name: Sync package.json to root
+        run: |
+          cp .github/package.json package.json
+          if [ -n "$(git status --porcelain package.json)" ]; then
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add package.json
+            git commit -m "chore: sync package.json to root" || exit 0
+            git push
+          fi
 
       - name: Build binaries for all platforms
         run: |

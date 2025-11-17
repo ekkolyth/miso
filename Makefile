@@ -1,4 +1,4 @@
-.PHONY: build install uninstall run test tidy fmt clean build-all publish publish.patch publish.minor publish.major publish.current npm.pack npm.test
+.PHONY: build install uninstall run test tidy fmt clean build-all publish publish.patch publish.minor publish.major publish.current npm.pack npm.test sync-package.json
 
 DRY_RUN ?= 0
 
@@ -74,6 +74,11 @@ publish.current:
 	else \
 		CURRENT_VERSION=$$(go run ./.github/release/version); \
 		echo "Publishing current version $$CURRENT_VERSION"; \
+		cp .github/package.json package.json; \
+		if [ -n "$$(git status --porcelain package.json)" ]; then \
+			git add package.json; \
+			git commit -m "chore: sync package.json to root"; \
+		fi; \
 		if git rev-parse "v$$CURRENT_VERSION" >/dev/null 2>&1; then \
 			echo "Tag v$$CURRENT_VERSION already exists locally, deleting it"; \
 			git tag -d "v$$CURRENT_VERSION"; \
@@ -98,7 +103,8 @@ _publish:
 		else \
 			NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL)); \
 			echo "Bumped version to $$NEXT_VERSION"; \
-			git add .github/package.json; \
+			cp .github/package.json package.json; \
+			git add .github/package.json package.json; \
 			git commit -m "chore: release v$$NEXT_VERSION"; \
 			git tag -a "v$$NEXT_VERSION" -m "Release v$$NEXT_VERSION"; \
 			git push origin HEAD; \
@@ -121,3 +127,9 @@ npm.test:
 	@cp .github/package.json package.json
 	@npm publish --dry-run
 	@echo "✓ Dry run complete. No actual publish was performed."
+
+# Sync package.json from .github/package.json to root
+sync-package.json:
+	@echo "Syncing package.json from .github/package.json..."
+	@cp .github/package.json package.json
+	@echo "✓ package.json synced to root"
