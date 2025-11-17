@@ -18,6 +18,9 @@ func (Pnpm) BuildRemove(pkgs []string) cli.ExecSpec {
 func (Pnpm) BuildRun(script string, scriptArgs []string) cli.ExecSpec {
 	return cli.ExecSpec{Command: "pnpm", Args: append([]string{"run", script}, scriptArgs...)}
 }
+func (Pnpm) BuildVersion() cli.ExecSpec {
+	return cli.ExecSpec{Command: "pnpm", Args: []string{"--version"}}
+}
 
 
 
