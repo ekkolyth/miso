@@ -16,52 +16,20 @@ Miso doesn't care where you work or what tools you use. It sits as a light wrapp
 
 #### Install via Go
 
-If you have Go installed:
-
 ```bash
 go install github.com/ekkolyth/miso@latest
 ```
 
-For a specific branch (e.g., `dev`):
-
-```bash
-go install github.com/ekkolyth/miso@dev
-```
-
-This installs to `$GOPATH/bin` or `$GOBIN` (usually `~/go/bin`). Make sure this directory is in your PATH.
-
 #### Install via npm
-
-From npm registry:
-
+Global Install (recommended)
 ```bash
 npm install -g @ekkolyth/miso
 ```
 
-From git (for latest or specific branch):
-
+Local Install
 ```bash
-npm install -g git+https://github.com/ekkolyth/miso.git#main
-# or for dev branch:
-npm install -g git+https://github.com/ekkolyth/miso.git#dev
+npm install @ekkolyth/miso@latest
 ```
-
-**Troubleshooting npm permission errors:**
-
-If you get `EACCES` permission errors, you have a few options:
-
-1. **Configure npm to use a user directory** (recommended):
-
-   ```bash
-   npm config set prefix ~/.npm-global
-   echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.zshrc  # or ~/.bashrc
-   source ~/.zshrc  # or source ~/.bashrc
-   ```
-
-2. Use `sudo` (not recommended):
-   ```bash
-   sudo npm install -g @ekkolyth/miso
-   ```
 
 Then run `miso init` to add miso to your project:
 
@@ -69,15 +37,17 @@ Then run `miso init` to add miso to your project:
 miso init
 ```
 
-**Note:** If you installed locally, use `npx miso init` or `./node_modules/.bin/miso init`.
+**Note:** If you installed locally, use `npx miso init`.
 
 ## Supported commands
 
+- `miso init`
+- `miso version`
 - `miso install`
 - `miso add <pkg>`
 - `miso remove <pkg>`
-- `miso dev [-- <args>]`
-- `miso run <script> [-- <args>]`
+- `miso dev <args>`
+- `miso <script> [-- <args>]`
 
 ## `miso.json`
 
@@ -93,9 +63,5 @@ miso init
 ```
 
 You can edit this file at any time to switch managers or add more scripts. If a lockfile _is_ present, Miso will still generate the config automatically so you have something to customize later.
-
-## Notes
-
-- Use `MISO_DEBUG=1` for additional logging (resolved manager, etc.)
 
 ## Contributions welcome!
