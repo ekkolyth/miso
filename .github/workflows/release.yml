@@ -19,7 +19,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Read version from release.json
+      - name: Read version from package.json
         id: version
         run: |
           VERSION=$(go run ./.github/release/version)
@@ -88,7 +88,7 @@ jobs:
           node -v
           npm -v
 
-      - name: Read version from release.json
+      - name: Read version from package.json
         id: version
         run: |
           VERSION=$(go run ./.github/release/version)
@@ -100,9 +100,9 @@ jobs:
           mkdir -p bin
           # Ensure bin/ exists but is empty - go-npm will download the binary during install
 
-      - name: Generate package.json from release.json
+      - name: Copy package.json
         run: |
-          node -e "const fs=require('fs'); const rel=JSON.parse(fs.readFileSync('.github/release/release.json','utf8')); const pkg=JSON.parse(fs.readFileSync('.github/release/package.json','utf8')); pkg.version=rel.version; fs.writeFileSync('package.json', JSON.stringify(pkg,null,2));"
+          cp .github/release/package.json package.json
 
       - name: Check package info and authentication
         run: |

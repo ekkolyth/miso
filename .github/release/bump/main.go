@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-type releaseInfo struct {
+type packageInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
@@ -19,15 +19,15 @@ func main() {
 	dryRun := flag.Bool("dry-run", false, "print the new version without writing changes")
 	flag.Parse()
 
-	info, err := readRelease()
+	info, err := readPackage()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "read release.json:", err)
+		fmt.Fprintln(os.Stderr, "read package.json:", err)
 		os.Exit(1)
 	}
 
 	current := strings.TrimSpace(info.Version)
 	if current == "" {
-		fmt.Fprintln(os.Stderr, "release.json: version is empty")
+		fmt.Fprintln(os.Stderr, "package.json: version is empty")
 		os.Exit(1)
 	}
 
@@ -43,33 +43,47 @@ func main() {
 	}
 
 	info.Version = next
-	if err := writeRelease(info); err != nil {
-		fmt.Fprintln(os.Stderr, "write release.json:", err)
+	if err := writePackage(info); err != nil {
+		fmt.Fprintln(os.Stderr, "write package.json:", err)
 		os.Exit(1)
 	}
 
 	fmt.Println(next)
 }
 
-func readRelease() (*releaseInfo, error) {
-	data, err := os.ReadFile(".github/release/release.json")
+func readPackage() (*packageInfo, error) {
+	data, err := os.ReadFile(".github/release/package.json")
 	if err != nil {
 		return nil, err
 	}
-	var info releaseInfo
+	var info packageInfo
 	if err := json.Unmarshal(data, &info); err != nil {
 		return nil, err
 	}
 	return &info, nil
 }
 
-func writeRelease(info *releaseInfo) error {
-	data, err := json.MarshalIndent(info, "", "  ")
+func writePackage(info *packageInfo) error {
+	// Read the full package.json to preserve other fields
+	fullData, err := os.ReadFile(".github/release/package.json")
+	if err != nil {
+		return err
+	}
+	
+	var fullPkg map[string]interface{}
+	if err := json.Unmarshal(fullData, &fullPkg); err != nil {
+		return err
+	}
+	
+	// Update only the version field
+	fullPkg["version"] = info.Version
+	
+	data, err := json.MarshalIndent(fullPkg, "", "  ")
 	if err != nil {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(".github/release/release.json", data, 0o644)
+	return os.WriteFile(".github/release/package.json", data, 0o644)
 }
 
 func bumpVersion(current, level string) (string, error) {

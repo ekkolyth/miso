@@ -47,7 +47,7 @@ clean:
 	rm -f package.json
 	rm -f miso-*.tgz
 
-# Bump the version in release.json and, for non-dry runs, commit the change,
+# Bump the version in package.json and, for non-dry runs, commit the change,
 # create a git tag, and push. Default bump level is "patch".
 publish: publish.patch
 
@@ -60,7 +60,7 @@ publish.minor:
 publish.major:
 	$(MAKE) _publish LEVEL=major
 
-# Publish the current version from release.json without bumping it.
+# Publish the current version from package.json without bumping it.
 # For non-dry runs, creates a git tag and pushes to origin.
 publish.current:
 	@if [ "$$(git status --porcelain)" != "" ]; then \
@@ -98,7 +98,7 @@ _publish:
 		else \
 			NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL)); \
 			echo "Bumped version to $$NEXT_VERSION"; \
-			git add .github/release/release.json; \
+			git add .github/release/package.json; \
 			git commit -m "chore: release v$$NEXT_VERSION"; \
 			git tag -a "v$$NEXT_VERSION" -m "Release v$$NEXT_VERSION"; \
 			git push origin HEAD; \
@@ -106,10 +106,10 @@ _publish:
 		fi \
 	fi
 
-# Generate package.json and create a tarball to inspect what would be published
+# Copy package.json and create a tarball to inspect what would be published
 npm.pack:
-	@echo "Generating package.json from release.json..."
-	@node -e "const fs=require('fs'); const rel=JSON.parse(fs.readFileSync('.github/release/release.json','utf8')); const pkg=JSON.parse(fs.readFileSync('.github/release/package.json','utf8')); pkg.version=rel.version; fs.writeFileSync('package.json', JSON.stringify(pkg,null,2));"
+	@echo "Copying package.json..."
+	@cp .github/release/package.json package.json
 	@echo "Creating npm pack tarball..."
 	@npm pack --dry-run
 	@echo "✓ Package tarball created. Inspect the output above."
@@ -118,6 +118,6 @@ npm.pack:
 # Test npm publish with --dry-run flag (shows what would be published without actually publishing)
 npm.test:
 	@echo "Testing npm publish with --dry-run..."
-	@node -e "const fs=require('fs'); const rel=JSON.parse(fs.readFileSync('.github/release/release.json','utf8')); const pkg=JSON.parse(fs.readFileSync('.github/release/package.json','utf8')); pkg.version=rel.version; fs.writeFileSync('package.json', JSON.stringify(pkg,null,2));"
+	@cp .github/release/package.json package.json
 	@npm publish --dry-run
 	@echo "✓ Dry run complete. No actual publish was performed."
