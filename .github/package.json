@@ -1,25 +1,25 @@
 {
-  "name": "@ekkolyth/miso",
-  "version": "0.1.2",
-  "description": "the agnostic package manager",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ekkolyth/miso.git"
-  },
   "bin": {
     "miso": "./bin/miso"
   },
-  "scripts": {
-    "postinstall": "go-npm install",
-    "preuninstall": "go-npm uninstall"
+  "dependencies": {
+    "go-npm": "^0.1.9"
   },
+  "description": "the agnostic package manager",
   "goBinary": {
     "name": "miso",
     "path": "./bin",
     "url": "https://github.com/ekkolyth/miso/releases/download/v{{version}}/miso_{{version}}_{{platform}}_{{arch}}.tar.gz"
   },
-  "dependencies": {
-    "go-npm": "^0.1.9"
-  }
+  "license": "MIT",
+  "name": "@ekkolyth/miso",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ekkolyth/miso.git"
+  },
+  "scripts": {
+    "postinstall": "go-npm install",
+    "preuninstall": "go-npm uninstall"
+  },
+  "version": "0.1.3"
 }
