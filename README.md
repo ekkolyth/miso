@@ -14,30 +14,54 @@ Miso doesn't care where you work or what tools you use. It sits as a light wrapp
 
 ### Installation
 
-**Recommended: Install via Go** (no permission issues):
+#### Install via Go
+
+If you have Go installed:
+
+```bash
+go install github.com/ekkolyth/miso@latest
+```
+
+For a specific branch (e.g., `dev`):
 
 ```bash
 go install github.com/ekkolyth/miso@dev
 ```
 
-**Alternative: Install via npm**:
+This installs to `$GOPATH/bin` or `$GOBIN` (usually `~/go/bin`). Make sure this directory is in your PATH.
 
-From npm registry (if published):
+#### Install via npm
+
+From npm registry:
 
 ```bash
 npm install -g @ekkolyth/miso
 ```
 
-From git (for dev branch or latest):
+From git (for latest or specific branch):
 
 ```bash
+npm install -g git+https://github.com/ekkolyth/miso.git#main
+# or for dev branch:
 npm install -g git+https://github.com/ekkolyth/miso.git#dev
 ```
 
-If you get permission errors with npm, you can either:
+**Troubleshooting npm permission errors:**
 
-- Use `sudo npm install -g @ekkolyth/miso` (not recommended)
-- Configure npm to use a different directory: `npm config set prefix ~/.npm-global` and add `~/.npm-global/bin` to your PATH
+If you get `EACCES` permission errors, you have a few options:
+
+1. **Configure npm to use a user directory** (recommended):
+
+   ```bash
+   npm config set prefix ~/.npm-global
+   echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.zshrc  # or ~/.bashrc
+   source ~/.zshrc  # or source ~/.bashrc
+   ```
+
+2. Use `sudo` (not recommended):
+   ```bash
+   sudo npm install -g @ekkolyth/miso
+   ```
 
 Then run `miso init` to add miso to your project:
 

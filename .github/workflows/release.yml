@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,12 +32,9 @@ jobs:
 
       - name: Build binaries for all platforms
         run: |
+          make build-all
           mkdir -p dist
-          GOOS=darwin GOARCH=amd64 go build -o dist/miso-darwin-amd64 ./cmd
-          GOOS=darwin GOARCH=arm64 go build -o dist/miso-darwin-arm64 ./cmd
-          GOOS=linux GOARCH=amd64 go build -o dist/miso-linux-amd64 ./cmd
-          GOOS=linux GOARCH=arm64 go build -o dist/miso-linux-arm64 ./cmd
-          GOOS=windows GOARCH=amd64 go build -o dist/miso-windows-amd64.exe ./cmd
+          cp bin/miso-* dist/
 
       - name: Create release archives
         run: |
@@ -69,11 +68,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
@@ -90,21 +84,6 @@ jobs:
           node -v
           npm -v
 
-      - name: Read version from package.json
-        id: version
-        run: |
-          VERSION=$(go run ./.github/release/version)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
-
-      - name: Build Go binaries
-        run: |
-          mkdir -p dist
-          GOOS=darwin GOARCH=amd64 go build -o dist/miso-darwin-amd64 ./cmd
-          GOOS=darwin GOARCH=arm64 go build -o dist/miso-darwin-arm64 ./cmd
-          GOOS=linux GOARCH=amd64 go build -o dist/miso-linux-amd64 ./cmd
-          GOOS=linux GOARCH=arm64 go build -o dist/miso-linux-arm64 ./cmd
-
       - name: Copy package.json to dist
         run: cp package.json dist/package.json
 
@@ -113,9 +92,11 @@ jobs:
 
       - name: Check package info and authentication
         working-directory: dist
+        env:
+          VERSION: ${{ needs.build-and-release.outputs.version }}
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_VERSION=$VERSION
           echo "Package name: $PACKAGE_NAME"
           echo "Package version: $PACKAGE_VERSION"
           echo "Checking npm registry..."
@@ -137,4 +118,3 @@ jobs:
       - name: Publish to npm (trusted publishing via OIDC)
         working-directory: dist
         run: npm publish --access public --verbose
-
