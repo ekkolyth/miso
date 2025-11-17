@@ -17,14 +17,16 @@ Miso doesn't care where you work or what tools you use. It sits as a light wrapp
 Install miso globally (recommended):
 
 ```bash
-npm install -g ekkolyth/miso
+npm install -g git+https://github.com/ekkolyth/miso.git#dev
 ```
 
 Or install locally in your project:
 
 ```bash
-npm install ekkolyth/miso
+npm install git+https://github.com/ekkolyth/miso.git#dev
 ```
+
+**Note:** The `#dev` specifies the branch to install from. Once the `package.json` is merged to the default branch, you can omit the branch specification.
 
 Then run `miso init` to add miso to your project:
 
