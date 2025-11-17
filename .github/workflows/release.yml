@@ -28,17 +28,6 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
-      - name: Sync package.json to root
-        run: |
-          cp .github/package.json package.json
-          if [ -n "$(git status --porcelain package.json)" ]; then
-            git config --local user.email "action@github.com"
-            git config --local user.name "GitHub Action"
-            git add package.json
-            git commit -m "chore: sync package.json to root" || exit 0
-            git push
-          fi
-
       - name: Build binaries for all platforms
         run: |
           mkdir -p dist
@@ -112,10 +101,6 @@ jobs:
         run: |
           mkdir -p bin
           # Ensure bin/ exists but is empty - go-npm will download the binary during install
-
-      - name: Copy package.json
-        run: |
-          cp .github/package.json package.json
 
       - name: Check package info and authentication
         run: |

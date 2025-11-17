@@ -18,7 +18,7 @@ func main() {
 	dir := filepath.Dir(filename)
 	// version/ -> release/ -> .github/ -> project root
 	projectRoot := filepath.Join(dir, "..", "..", "..")
-	packageJSONPath := filepath.Join(projectRoot, ".github", "package.json")
+	packageJSONPath := filepath.Join(projectRoot, "package.json")
 	
 	data, err := os.ReadFile(packageJSONPath)
 	if err != nil {
