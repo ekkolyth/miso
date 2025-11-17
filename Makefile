@@ -86,6 +86,7 @@ publish.current:
 		git tag -a "v$$CURRENT_VERSION" -m "Release v$$CURRENT_VERSION"; \
 		git push origin HEAD; \
 		git push origin "v$$CURRENT_VERSION"; \
+		rm -f package.json; \
 	fi
 
 _publish:
@@ -109,6 +110,7 @@ _publish:
 			git tag -a "v$$NEXT_VERSION" -m "Release v$$NEXT_VERSION"; \
 			git push origin HEAD; \
 			git push origin "v$$NEXT_VERSION"; \
+			rm -f package.json; \
 		fi \
 	fi
 
