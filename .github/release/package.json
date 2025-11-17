@@ -1,6 +1,6 @@
 {
-  "name": "@ekkolyth/miso",
-  "version": "0.1.2",
+  "name": "ekkolyth/miso",
+  "version": "0.1.0",
   "description": "the agnostic package manager",
   "license": "MIT",
   "repository": {

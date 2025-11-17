@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 )
 
 type packageInfo struct {
@@ -11,7 +13,14 @@ type packageInfo struct {
 }
 
 func main() {
-	data, err := os.ReadFile(".github/release/package.json")
+	// Find package.json relative to this source file's location
+	_, filename, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(filename)
+	// version/ -> release/ -> .github/ -> project root
+	projectRoot := filepath.Join(dir, "..", "..", "..")
+	packageJSONPath := filepath.Join(projectRoot, ".github", "release", "package.json")
+	
+	data, err := os.ReadFile(packageJSONPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "read package.json:", err)
 		os.Exit(1)
