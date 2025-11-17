@@ -1,10 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -90,14 +93,54 @@ func main() {
 		fail(logger, err, false)
 	}
 
-	managerName, cfg, err := ensureManager(root, cfg, styles, logger)
-	if err != nil {
-		fail(logger, err, false)
-	}
-
 	parsed, err := cli.ParseCLI(args, cfg)
 	if err != nil {
 		fail(logger, err, true)
+	}
+
+	// Handle "version" command - can work without a manager
+	if parsed.Action == cli.ActionVersion {
+		misoVersion, err := getMisoVersion()
+		if err != nil {
+			// If we can't get version, show unknown but don't fail
+			misoVersion = "unknown"
+		}
+		fmt.Fprintf(os.Stdout, "miso %s\n", misoVersion)
+
+		// Check if miso.json or lockfile exists
+		hasConfig := false
+		_, err = config.Load(root)
+		if err == nil {
+			hasConfig = true
+		}
+
+		hasLockfile := false
+		_, err = cli.DetectManager(root)
+		if err == nil {
+			hasLockfile = true
+		}
+
+		// If either exists, try to get manager and run its version command
+		if hasConfig || hasLockfile {
+			managerName, _, err := ensureManager(root, cfg, styles, logger)
+			if err == nil {
+				driver, ok := driverRegistry[managerName]
+				if ok {
+					spec := driver.BuildVersion()
+					// Run version command silently (no logging)
+					cmd := exec.Command(spec.Command, spec.Args...)
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+					_ = cmd.Run() // Silently ignore errors
+				}
+			}
+		}
+		return
+	}
+
+	managerName, cfg, err := ensureManager(root, cfg, styles, logger)
+	if err != nil {
+		fail(logger, err, false)
 	}
 
 	if os.Getenv("MISO_DEBUG") == "1" {
@@ -262,12 +305,74 @@ func fail(logger *log.Logger, err error, showUsage bool) {
 	os.Exit(1)
 }
 
+func getMisoVersion() (string, error) {
+	type packageInfo struct {
+		Version string `json:"version"`
+	}
+
+	// Try multiple locations for package.json
+	var packageJSONPaths []string
+
+	// 1. Current directory (for npm installs)
+	cwd, _ := os.Getwd()
+	packageJSONPaths = append(packageJSONPaths, filepath.Join(cwd, "package.json"))
+
+	// 2. node_modules/@ekkolyth/miso/package.json (for local npm installs)
+	packageJSONPaths = append(packageJSONPaths, filepath.Join(cwd, "node_modules", "@ekkolyth", "miso", "package.json"))
+
+	// 3. Relative to binary location (for Go installs)
+	// Try to find the project root by looking for package.json
+	// Start from the binary location and walk up
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		// Walk up to find package.json (max 10 levels)
+		for i := 0; i < 10; i++ {
+			pkgPath := filepath.Join(exeDir, "package.json")
+			packageJSONPaths = append(packageJSONPaths, pkgPath)
+			parent := filepath.Dir(exeDir)
+			if parent == exeDir {
+				break
+			}
+			exeDir = parent
+		}
+	}
+
+	// 4. Try relative to source file location (for development)
+	_, filename, _, ok := runtime.Caller(0)
+	if ok {
+		dir := filepath.Dir(filename)
+		// cmd/ -> project root
+		projectRoot := filepath.Join(dir, "..")
+		packageJSONPaths = append(packageJSONPaths, filepath.Join(projectRoot, "package.json"))
+	}
+
+	// Try each path
+	for _, path := range packageJSONPaths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		var info packageInfo
+		if err := json.Unmarshal(data, &info); err != nil {
+			continue
+		}
+
+		if info.Version != "" {
+			return info.Version, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not find package.json with version")
+}
+
 func usageText() string {
 	return strings.TrimSpace(`
 Miso – the agnostic package manager
 
 Usage:
   miso init
+  miso version
   miso install
   miso add <pkg> 
   miso remove <pkg> 

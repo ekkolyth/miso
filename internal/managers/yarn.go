@@ -18,6 +18,9 @@ func (Yarn) BuildRemove(pkgs []string) cli.ExecSpec {
 func (Yarn) BuildRun(script string, scriptArgs []string) cli.ExecSpec {
 	return cli.ExecSpec{Command: "yarn", Args: append([]string{"run", script}, scriptArgs...)}
 }
+func (Yarn) BuildVersion() cli.ExecSpec {
+	return cli.ExecSpec{Command: "yarn", Args: []string{"--version"}}
+}
 
 
 

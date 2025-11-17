@@ -11,6 +11,7 @@ type Manager interface {
 	BuildAdd(packageNames []string) ExecSpec
 	BuildRemove(packageNames []string) ExecSpec
 	BuildRun(scriptName string, scriptArgs []string) ExecSpec
+	BuildVersion() ExecSpec
 }
 
 

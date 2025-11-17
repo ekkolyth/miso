@@ -19,6 +19,7 @@ const (
 	ActionRunMultiple
 	ActionPassthrough
 	ActionInit
+	ActionVersion
 )
 
 type ParsedCLI struct {
@@ -121,6 +122,16 @@ func ParseCLI(args []string, cfg config.Config) (ParsedCLI, error) {
 			}, nil
 		}
 		return ParsedCLI{Action: ActionInit}, nil
+	case "version", "v":
+		// Check if custom script overrides this
+		if hasScript(cfg, "version") {
+			return ParsedCLI{
+				Action:     ActionScriptOverride,
+				ScriptName: "version",
+				ScriptArgs: parseInlineArgs(args[1:]),
+			}, nil
+		}
+		return ParsedCLI{Action: ActionVersion}, nil
 	}
 
 	// Not a built-in command - check if it's a custom script
