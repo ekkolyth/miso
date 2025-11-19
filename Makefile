@@ -55,16 +55,28 @@ clean:
 
 # Bump the version in package.json and, for non-dry runs, commit the change,
 # create a git tag, and push. Default bump level is "patch".
+# Usage: make publish.patch MESSAGE="release message" or make publish.patch fixed bug
+# Example: make publish.patch MESSAGE="fixed bug"
+# Example: make publish.patch fixed bug
 publish: publish.patch
 
+# Helper to capture trailing arguments as MESSAGE
+# This allows: make publish.patch fixed bug
+# Also supports: make publish.patch MESSAGE="fixed bug"
 publish.patch:
-	$(MAKE) _publish LEVEL=patch
+	@$(eval ARGS := $(filter-out $@ publish.patch publish.minor publish.major publish.current build install uninstall run test tidy fmt clean build-all npm.pack npm.test go,$(MAKECMDGOALS)))
+	@$(if $(MESSAGE),,$(eval MESSAGE := $(ARGS)))
+	@$(MAKE) _publish LEVEL=patch MESSAGE="$(MESSAGE)"
 
 publish.minor:
-	$(MAKE) _publish LEVEL=minor
+	@$(eval ARGS := $(filter-out $@ publish.patch publish.minor publish.major publish.current build install uninstall run test tidy fmt clean build-all npm.pack npm.test go,$(MAKECMDGOALS)))
+	@$(if $(MESSAGE),,$(eval MESSAGE := $(ARGS)))
+	@$(MAKE) _publish LEVEL=minor MESSAGE="$(MESSAGE)"
 
 publish.major:
-	$(MAKE) _publish LEVEL=major
+	@$(eval ARGS := $(filter-out $@ publish.patch publish.minor publish.major publish.current build install uninstall run test tidy fmt clean build-all npm.pack npm.test go,$(MAKECMDGOALS)))
+	@$(if $(MESSAGE),,$(eval MESSAGE := $(ARGS)))
+	@$(MAKE) _publish LEVEL=major MESSAGE="$(MESSAGE)"
 
 # Publish the current version from package.json without bumping it.
 # For non-dry runs, creates a git tag and pushes to origin.
@@ -99,14 +111,23 @@ _publish:
 	else \
 		if [ "$(DRY_RUN)" = "1" ]; then \
 			NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL) -dry-run); \
-			echo "DRY RUN: next version would be $$NEXT_VERSION"; \
-			echo "DRY RUN: would create tag v$$NEXT_VERSION and push to origin"; \
+			if [ -n "$(MESSAGE)" ]; then \
+				echo "DRY RUN: next version would be $$NEXT_VERSION"; \
+				echo "DRY RUN: would create tag v$$NEXT_VERSION with message: release v$$NEXT_VERSION: $(MESSAGE)"; \
+			else \
+				echo "DRY RUN: next version would be $$NEXT_VERSION"; \
+				echo "DRY RUN: would create tag v$$NEXT_VERSION and push to origin"; \
+			fi; \
 		else \
 			NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL)); \
 			echo "Bumped version to $$NEXT_VERSION"; \
 			git add package.json; \
 			git commit -m "chore: release v$$NEXT_VERSION"; \
-			git tag -a "v$$NEXT_VERSION" -m "Release v$$NEXT_VERSION"; \
+			if [ -n "$(MESSAGE)" ]; then \
+				git tag -a "v$$NEXT_VERSION" -m "release v$$NEXT_VERSION: $(MESSAGE)"; \
+			else \
+				git tag -a "v$$NEXT_VERSION" -m "Release v$$NEXT_VERSION"; \
+			fi; \
 			git push origin HEAD; \
 			git push origin "v$$NEXT_VERSION"; \
 		fi \
@@ -124,3 +145,8 @@ npm.test:
 	@echo "Testing npm publish with --dry-run..."
 	@npm publish --dry-run
 	@echo "✓ Dry run complete. No actual publish was performed."
+
+# Catch-all to prevent make from complaining about unknown targets
+# This allows trailing arguments to be passed through (e.g., make publish.patch fixed bug)
+%:
+	@:
