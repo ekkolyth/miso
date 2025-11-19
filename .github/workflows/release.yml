@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 jobs:
   build-and-release:
@@ -42,6 +42,8 @@ jobs:
           make build-all
           mkdir -p dist
           cp bin/miso-* dist/
+          cp bin/misox-* dist/
+          cp miso.mjs misox.mjs dist/
 
       - name: Create release archives
         run: |
@@ -51,6 +53,11 @@ jobs:
           tar -czf miso_${{ steps.version.outputs.version }}_linux_amd64.tar.gz miso-linux-amd64
           tar -czf miso_${{ steps.version.outputs.version }}_linux_arm64.tar.gz miso-linux-arm64
           zip miso_${{ steps.version.outputs.version }}_windows_amd64.zip miso-windows-amd64.exe
+          tar -czf misox_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz misox-darwin-amd64
+          tar -czf misox_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz misox-darwin-arm64
+          tar -czf misox_${{ steps.version.outputs.version }}_linux_amd64.tar.gz misox-linux-amd64
+          tar -czf misox_${{ steps.version.outputs.version }}_linux_arm64.tar.gz misox-linux-arm64
+          zip misox_${{ steps.version.outputs.version }}_windows_amd64.zip misox-windows-amd64.exe
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -63,6 +70,11 @@ jobs:
             dist/miso_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
             dist/miso_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
             dist/miso_${{ steps.version.outputs.version }}_windows_amd64.zip
+            dist/misox_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
+            dist/misox_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
+            dist/misox_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
+            dist/misox_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
+            dist/misox_${{ steps.version.outputs.version }}_windows_amd64.zip
 
   publish-npm:
     needs: build-and-release
@@ -84,7 +96,7 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
-          registry-url: "https://registry.npmjs.org"
+          registry-url: 'https://registry.npmjs.org'
 
       # Ensure npm 11.5.1 or later for trusted publishing
       # See: https://docs.npmjs.com/trusted-publishers
@@ -98,20 +110,18 @@ jobs:
 
       - name: Build Go binaries
         run: |
-          mkdir -p dist
-          GOOS=darwin GOARCH=amd64 go build -o dist/miso-darwin-amd64 ./cmd
-          GOOS=darwin GOARCH=arm64 go build -o dist/miso-darwin-arm64 ./cmd
-          GOOS=linux GOARCH=amd64 go build -o dist/miso-linux-amd64 ./cmd
-          GOOS=linux GOARCH=arm64 go build -o dist/miso-linux-arm64 ./cmd
-
-      - name: Copy package.json to dist
-        run: cp package.json dist/package.json
-
-      - name: Copy cli.mjs to dist
-        run: cp cli.mjs dist/cli.mjs
-
-      - name: Copy README.md to dist
-        run: cp README.md dist/README.md
+          mkdir -p dist/bin
+          GOOS=darwin GOARCH=amd64 go build -o dist/bin/miso-darwin-amd64 ./cmd
+          GOOS=darwin GOARCH=arm64 go build -o dist/bin/miso-darwin-arm64 ./cmd
+          GOOS=linux GOARCH=amd64 go build -o dist/bin/miso-linux-amd64 ./cmd
+          GOOS=linux GOARCH=arm64 go build -o dist/bin/miso-linux-arm64 ./cmd
+          GOOS=windows GOARCH=amd64 go build -o dist/bin/miso-windows-amd64.exe ./cmd
+          GOOS=darwin GOARCH=amd64 go build -o dist/bin/misox-darwin-amd64 ./cmd
+          GOOS=darwin GOARCH=arm64 go build -o dist/bin/misox-darwin-arm64 ./cmd
+          GOOS=linux GOARCH=amd64 go build -o dist/bin/misox-linux-amd64 ./cmd
+          GOOS=linux GOARCH=arm64 go build -o dist/bin/misox-linux-arm64 ./cmd
+          GOOS=windows GOARCH=amd64 go build -o dist/bin/misox-windows-amd64.exe ./cmd
+          cp miso.mjs misox.mjs package.json dist/
 
       - name: Check package info and authentication
         working-directory: dist
