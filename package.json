@@ -1,11 +1,11 @@
 {
   "bin": {
-    "miso": "./cli.mjs",
+    "miso": "./miso.mjs",
     "misox": "./misox.mjs"
   },
   "description": "the agnostic package manager",
   "files": [
-    "cli.mjs",
+    "miso.mjs",
     "misox.mjs",
     "bin/miso-darwin-amd64",
     "bin/miso-darwin-arm64",
@@ -27,5 +27,5 @@
   "scripts": {
     "prepublishOnly": "make build-all"
   },
-  "version": "0.2.2"
+  "version": "0.2.1"
 }
