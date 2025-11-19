@@ -31,7 +31,7 @@ func main() {
 	args := os.Args[1:]
 
 	// if misox prepend "misox"
-	if baseName := filepath.Base(os.Args[0]); baseName == "misox" {
+	if baseName := filepath.Base(os.Args[0]); baseName == "misox" || strings.HasPrefix(baseName, "misox-") {
 		args = append([]string{"misox"}, args...)
 	}
 
