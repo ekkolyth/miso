@@ -34,8 +34,12 @@ jobs:
       - name: Get tag message for release name
         id: tag_message
         run: |
-          git fetch --tags
-          TAG_MESSAGE=$(git tag -l --format='%(contents:subject)' v${{ steps.version.outputs.version }})
+          # Fetch tags from origin to ensure we have the latest tag
+          git fetch origin --tags
+          # Get the tag message from the annotated tag
+          TAG_NAME="v${{ steps.version.outputs.version }}"
+          # Extract the message line from the tag object (after the blank line)
+          TAG_MESSAGE=$(git cat-file tag "$TAG_NAME" 2>/dev/null | sed -n '/^$/,$p' | sed '1d' | head -n 1 | xargs)
           # Fallback to default if tag message is empty
           if [ -z "$TAG_MESSAGE" ]; then
             TAG_MESSAGE="Release v${{ steps.version.outputs.version }}"
