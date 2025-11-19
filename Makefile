@@ -17,18 +17,25 @@ build:
 build-all:
 	@mkdir -p bin
 	GOOS=darwin GOARCH=amd64 go build -o bin/$(BINARY)-darwin-amd64 $(PKG)
+	GOOS=darwin GOARCH=amd64 go build -o bin/misox-darwin-amd64 $(PKG)
 	GOOS=darwin GOARCH=arm64 go build -o bin/$(BINARY)-darwin-arm64 $(PKG)
+	GOOS=darwin GOARCH=arm64 go build -o bin/misox-darwin-arm64 $(PKG)
 	GOOS=linux GOARCH=amd64 go build -o bin/$(BINARY)-linux-amd64 $(PKG)
+	GOOS=linux GOARCH=amd64 go build -o bin/misox-linux-amd64 $(PKG)
 	GOOS=linux GOARCH=arm64 go build -o bin/$(BINARY)-linux-arm64 $(PKG)
+	GOOS=linux GOARCH=arm64 go build -o bin/misox-linux-arm64 $(PKG)
 	GOOS=windows GOARCH=amd64 go build -o bin/$(BINARY)-windows-amd64.exe $(PKG)
+	GOOS=windows GOARCH=amd64 go build -o bin/misox-windows-amd64.exe $(PKG)
 
 install: build
 	@echo "Installing $(BINARY) to $(GOBIN)"
 	@cp bin/$(BINARY) $(GOBIN)/$(BINARY)
-	@echo "✓ Installed $(BINARY) to $(GOBIN)"
+	@cp bin/$(BINARY) $(GOBIN)/misox
+	@echo "✓ Installed $(BINARY) and misox to $(GOBIN)"
 
 uninstall:
 	rm -f $(GOBIN)/$(BINARY)
+	rm -f $(GOBIN)/misox
 
 go: build
 	go run $(PKG) $(ARGS)

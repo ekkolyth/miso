@@ -30,6 +30,11 @@ var driverRegistry = map[string]cli.Manager{
 func main() {
 	args := os.Args[1:]
 
+	// if misox prepend "misox"
+	if baseName := filepath.Base(os.Args[0]); baseName == "misox" {
+		args = append([]string{"misox"}, args...)
+	}
+
 	styles := theme.Default()
 	logger := log.NewWithOptions(os.Stderr, log.Options{
 		Prefix:          "miso",
@@ -79,9 +84,6 @@ func main() {
 			Command: newCfg.PackageManager,
 			Args:    []string{"init"},
 		}
-		logger.Info(styles.Heading.Render("running manager command"),
-			"manager", newCfg.PackageManager,
-			"command", commandWithArgs(spec.Command, spec.Args))
 		if err := cli.Exec(spec, newCfg.PackageManager); err != nil {
 			fail(logger, err, false)
 		}
@@ -168,9 +170,6 @@ func main() {
 		}
 		for _, scriptName := range parsed.ScriptNames {
 			spec := driver.BuildRun(scriptName, parsed.ScriptArgs)
-			logger.Info(styles.Heading.Render("running script"),
-				"script", scriptName,
-				"command", commandWithArgs(spec.Command, spec.Args))
 			if err := cli.Exec(spec, managerName); err != nil {
 				fail(logger, err, false)
 			}
@@ -183,10 +182,6 @@ func main() {
 		if command == "" {
 			fail(logger, fmt.Errorf("script %q not defined in config", parsed.ScriptName), false)
 		}
-		scriptCmd := commandWithArgs(command, parsed.ScriptArgs)
-		logger.Info(styles.Heading.Render("running script"),
-			"script", parsed.ScriptName,
-			"command", scriptCmd)
 		if err := cli.ExecScript(command, parsed.ScriptArgs); err != nil {
 			fail(logger, err, false)
 		}
@@ -220,10 +215,6 @@ func main() {
 	default:
 		fail(logger, fmt.Errorf("unknown action"), true)
 	}
-
-	logger.Info(styles.Heading.Render("running manager command"),
-		"manager", managerName,
-		"command", commandWithArgs(spec.Command, spec.Args))
 
 	if err := cli.Exec(spec, managerName); err != nil {
 		fail(logger, err, false)
@@ -295,7 +286,7 @@ func commandWithArgs(command string, args []string) string {
 }
 
 func fail(logger *log.Logger, err error, showUsage bool) {
-	logger.Error(err.Error())
+	fmt.Fprintf(os.Stderr, "ERROR miso: %s\n", err.Error())
 	if showUsage {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, usageText())
@@ -372,8 +363,8 @@ Usage:
   miso init
   miso version
   miso install
-  miso add <pkg> 
-  miso remove <pkg> 
+  miso add <pkg>
+  miso remove <pkg>
   miso run <script> <args>
   miso dev <args>
   miso misox <package> [args...]
