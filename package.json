@@ -10,13 +10,20 @@
     "miso-darwin-amd64",
     "miso-darwin-arm64",
     "miso-linux-amd64",
-    "miso-linux-arm64"
+    "miso-linux-arm64",
+    "misox-darwin-amd64",
+    "misox-darwin-arm64",
+    "misox-linux-amd64",
+    "misox-linux-arm64"
   ],
   "license": "MIT",
   "name": "@ekkolyth/miso",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ekkolyth/miso.git"
+  },
+  "scripts": {
+    "prepublishOnly": "make build-all"
   },
   "version": "0.2.1"
 }
