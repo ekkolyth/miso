@@ -107,32 +107,28 @@ func main() {
 		}
 		fmt.Fprintf(os.Stdout, "miso %s\n", misoVersion)
 
-		// Check if miso.json or lockfile exists
-		hasConfig := false
-		_, err = config.Load(root)
-		if err == nil {
-			hasConfig = true
-		}
-
-		hasLockfile := false
-		_, err = cli.DetectManager(root)
-		if err == nil {
-			hasLockfile = true
-		}
-
-		// If either exists, try to get manager and run its version command
-		if hasConfig || hasLockfile {
-			managerName, _, err := ensureManager(root, cfg, styles, logger)
+		// Try to get manager version if available, but don't trigger onboarding
+		var managerName string
+		if cfg.PackageManager != "" {
+			managerName = cfg.PackageManager
+		} else {
+			// Try to detect manager from lockfile, but don't trigger onboarding
+			detected, err := cli.DetectManager(root)
 			if err == nil {
-				driver, ok := driverRegistry[managerName]
-				if ok {
-					spec := driver.BuildVersion()
-					// Run version command silently (no logging)
-					cmd := exec.Command(spec.Command, spec.Args...)
-					cmd.Stdout = os.Stdout
-					cmd.Stderr = os.Stderr
-					_ = cmd.Run() // Silently ignore errors
-				}
+				managerName = detected
+			}
+		}
+
+		// If we have a manager, try to run its version command
+		if managerName != "" {
+			driver, ok := driverRegistry[managerName]
+			if ok {
+				spec := driver.BuildVersion()
+				// Run version command silently (no logging)
+				cmd := exec.Command(spec.Command, spec.Args...)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				_ = cmd.Run() // Silently ignore errors
 			}
 		}
 		return
@@ -214,6 +210,8 @@ func main() {
 		spec = driver.BuildRun(parsed.ScriptName, parsed.ScriptArgs)
 	case cli.ActionDev:
 		spec = driver.BuildRun("dev", parsed.ScriptArgs)
+	case cli.ActionMisox:
+		spec = driver.BuildMisox(parsed.PackageName, parsed.Args)
 	case cli.ActionPassthrough:
 		spec = cli.ExecSpec{
 			Command: managerName,
@@ -378,6 +376,7 @@ Usage:
   miso remove <pkg> 
   miso run <script> <args>
   miso dev <args>
+  miso misox <package> [args...]
   miso <command> [args...]
 
   - Automatically detects bun, npm, pnpm, or yarn.

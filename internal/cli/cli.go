@@ -20,11 +20,13 @@ const (
 	ActionPassthrough
 	ActionInit
 	ActionVersion
+	ActionMisox
 )
 
 type ParsedCLI struct {
 	Action       Action
 	PackageNames []string
+	PackageName  string // For misox command
 	ScriptName   string
 	ScriptNames  []string // For multiple scripts
 	ScriptArgs   []string
@@ -132,6 +134,25 @@ func ParseCLI(args []string, cfg config.Config) (ParsedCLI, error) {
 			}, nil
 		}
 		return ParsedCLI{Action: ActionVersion}, nil
+	case "misox":
+		// Check if custom script overrides this
+		if hasScript(cfg, "misox") {
+			return ParsedCLI{
+				Action:     ActionScriptOverride,
+				ScriptName: "misox",
+				ScriptArgs: parseInlineArgs(args[1:]),
+			}, nil
+		}
+		if len(args) < 2 {
+			return ParsedCLI{}, errors.New("usage: miso misox <package> [args...]")
+		}
+		packageName := args[1]
+		remainingArgs := args[2:]
+		return ParsedCLI{
+			Action:      ActionMisox,
+			PackageName: packageName,
+			Args:        remainingArgs,
+		}, nil
 	}
 
 	// Not a built-in command - check if it's a custom script
