@@ -25,12 +25,12 @@ function resolveBinary() {
   if (!binaryName) {
     console.error(
       `Unsupported platform/arch: ${platform}/${arch}. ` +
-        'Prebuilt binaries are only provided for darwin-x64, darwin-arm64, linux-x64, and linux-arm64.',
+        'Prebuilt binaries are only provided for darwin-x64, darwin-arm64, linux-x64, and linux-arm64.'
     );
     process.exit(1);
   }
 
-  return join(__dirname, binaryName);
+  return join(__dirname, 'bin', binaryName);
 }
 
 const binPath = resolveBinary();
@@ -45,5 +45,3 @@ if (result.error) {
 }
 
 process.exit(result.status ?? 0);
-
-

@@ -7,14 +7,16 @@
   "files": [
     "cli.mjs",
     "misox.mjs",
-    "miso-darwin-amd64",
-    "miso-darwin-arm64",
-    "miso-linux-amd64",
-    "miso-linux-arm64",
-    "misox-darwin-amd64",
-    "misox-darwin-arm64",
-    "misox-linux-amd64",
-    "misox-linux-arm64"
+    "bin/miso-darwin-amd64",
+    "bin/miso-darwin-arm64",
+    "bin/miso-linux-amd64",
+    "bin/miso-linux-arm64",
+    "bin/miso-windows-amd64.exe",
+    "bin/misox-darwin-amd64",
+    "bin/misox-darwin-arm64",
+    "bin/misox-linux-amd64",
+    "bin/misox-linux-arm64",
+    "bin/misox-windows-amd64.exe"
   ],
   "license": "MIT",
   "name": "@ekkolyth/miso",
@@ -25,5 +27,5 @@
   "scripts": {
     "prepublishOnly": "make build-all"
   },
-  "version": "0.2.2"
+  "version": "0.2.1"
 }
