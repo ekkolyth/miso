@@ -136,6 +136,29 @@ func main() {
 		return
 	}
 
+	// Handle "update" command - can work without a manager
+	if parsed.Action == cli.ActionUpdate {
+		var npmArgs []string
+		if parsed.Local {
+			// Local install: npm install @ekkolyth/miso
+			npmArgs = []string{"install", "@ekkolyth/miso"}
+		} else {
+			// Global install: npm install -g @ekkolyth/miso
+			npmArgs = []string{"install", "-g", "@ekkolyth/miso"}
+		}
+		// Append any additional args passed to update command
+		npmArgs = append(npmArgs, parsed.Args...)
+		
+		spec := cli.ExecSpec{
+			Command: "npm",
+			Args:    npmArgs,
+		}
+		if err := cli.Exec(spec, "npm"); err != nil {
+			fail(logger, err, false)
+		}
+		return
+	}
+
 	managerName, cfg, err := ensureManager(root, cfg, styles, logger)
 	if err != nil {
 		fail(logger, err, false)
@@ -362,6 +385,7 @@ Miso – the agnostic package manager
 Usage:
   miso init
   miso version
+  miso update [--local]
   miso install
   miso add <pkg>
   miso remove <pkg>

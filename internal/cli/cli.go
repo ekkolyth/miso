@@ -21,6 +21,7 @@ const (
 	ActionInit
 	ActionVersion
 	ActionMisox
+	ActionUpdate
 )
 
 type ParsedCLI struct {
@@ -32,6 +33,7 @@ type ParsedCLI struct {
 	ScriptArgs   []string
 	Command      string
 	Args         []string
+	Local        bool // For update command --local flag
 }
 
 func ParseCLI(args []string, cfg config.Config) (ParsedCLI, error) {
@@ -152,6 +154,30 @@ func ParseCLI(args []string, cfg config.Config) (ParsedCLI, error) {
 			Action:      ActionMisox,
 			PackageName: packageName,
 			Args:        remainingArgs,
+		}, nil
+	case "update":
+		// Check if custom script overrides this
+		if hasScript(cfg, "update") {
+			return ParsedCLI{
+				Action:     ActionScriptOverride,
+				ScriptName: "update",
+				ScriptArgs: parseInlineArgs(args[1:]),
+			}, nil
+		}
+		// Check for --local flag
+		local := false
+		remainingArgs := args[1:]
+		for i, arg := range remainingArgs {
+			if arg == "--local" {
+				local = true
+				remainingArgs = append(remainingArgs[:i], remainingArgs[i+1:]...)
+				break
+			}
+		}
+		return ParsedCLI{
+			Action: ActionUpdate,
+			Local:  local,
+			Args:   remainingArgs,
 		}, nil
 	}
 
