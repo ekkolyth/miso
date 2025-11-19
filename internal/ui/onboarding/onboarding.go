@@ -25,17 +25,10 @@ func Run(root string, managerNames []string, styles theme.Styles, logger *log.Lo
 		return config.Config{}, errors.New("no package managers are registered")
 	}
 
-	isNew, err := askIsNew(styles)
+	// Ask for project name
+	projectName, err := askProjectName(filepath.Base(root), styles)
 	if err != nil {
 		return config.Config{}, err
-	}
-
-	projectName := filepath.Base(root)
-	if isNew {
-		projectName, err = askProjectName(projectName, styles)
-		if err != nil {
-			return config.Config{}, err
-		}
 	}
 
 	managerChoice, err := selectManager(managerNames, styles)
@@ -78,26 +71,6 @@ func Init(root string, managerNames []string, styles theme.Styles, logger *log.L
 		Scripts:        map[string]string{},
 	}
 	return cfg, nil
-}
-
-func askIsNew(styles theme.Styles) (bool, error) {
-	choice := "yes"
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title(styles.Heading.Render("No lockfile detected. Is this a new project?")).
-				Value(&choice).
-				Options(
-					huh.NewOption("Yes", "yes"),
-					huh.NewOption("No", "no"),
-				),
-		),
-	).WithTheme(huh.ThemeCharm())
-
-	if err := form.Run(); err != nil {
-		return false, err
-	}
-	return choice == "yes", nil
 }
 
 func selectManager(options []string, styles theme.Styles) (string, error) {
