@@ -24,8 +24,5 @@
     "type": "git",
     "url": "git+https://github.com/ekkolyth/miso.git"
   },
-  "scripts": {
-    "prepublishOnly": "make build-all"
-  },
   "version": "0.2.2"
 }
