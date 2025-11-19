@@ -5,6 +5,7 @@
   },
   "description": "the agnostic package manager",
   "files": [
+    "README.md",
     "miso.mjs",
     "misox.mjs",
     "bin/miso-darwin-amd64",
