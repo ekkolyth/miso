@@ -81,6 +81,11 @@ publish.major:
 # Publish the current version from package.json without bumping it.
 # For non-dry runs, creates a git tag and pushes to origin.
 publish.current:
+	@CURRENT_BRANCH=$$(git branch --show-current); \
+	if [ "$$CURRENT_BRANCH" = "dev" ]; then \
+		echo "Error: Cannot publish from dev branch. Please switch to main or another branch."; \
+		exit 1; \
+	fi
 	@if [ "$$(git status --porcelain)" != "" ]; then \
 		echo "Working tree is not clean. Commit or stash changes before publishing."; \
 		exit 1; \
@@ -102,6 +107,11 @@ publish.current:
 	fi
 
 _publish:
+	@CURRENT_BRANCH=$$(git branch --show-current); \
+	if [ "$$CURRENT_BRANCH" = "dev" ]; then \
+		echo "Error: Cannot publish from dev branch. Please switch to main or another branch."; \
+		exit 1; \
+	fi
 	@if [ "$$(git status --porcelain)" != "" ]; then \
 		echo "Working tree is not clean. Commit or stash changes before publishing."; \
 		exit 1; \
