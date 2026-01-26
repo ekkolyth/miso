@@ -186,7 +186,7 @@ Miso – the agnostic package manager
 Usage:
   miso init
   miso version
-  miso update [--local]
+  miso upgrade [--local]
   miso install
   miso add <pkg>
   miso remove <pkg>

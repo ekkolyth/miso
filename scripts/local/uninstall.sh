@@ -2,7 +2,7 @@
 set -e
 
 BINARY=${BINARY:-miso}
-GOBIN=$(go env GOBIN || go env GOPATH)/bin
+GOBIN=/Users/mikekenway/go/bin
 
 rm -f $GOBIN/$BINARY
 rm -f $GOBIN/misox

@@ -149,6 +149,53 @@ jobs:
                     echo "Package does not exist on npm - first time publish"
                   fi
 
+            - name: Verify files before publish
+              working-directory: dist
+              run: |
+                  echo "Verifying required files exist in dist/..."
+                  echo "Files in dist/:"
+                  ls -la
+                  echo ""
+                  echo "Checking required files:"
+                  if [ ! -f "README.md" ]; then
+                    echo "ERROR: README.md is missing!"
+                    exit 1
+                  fi
+                  echo "✓ README.md exists"
+                  if [ ! -f "miso.mjs" ]; then
+                    echo "ERROR: miso.mjs is missing!"
+                    exit 1
+                  fi
+                  echo "✓ miso.mjs exists"
+                  if [ ! -f "misox.mjs" ]; then
+                    echo "ERROR: misox.mjs is missing!"
+                    exit 1
+                  fi
+                  echo "✓ misox.mjs exists"
+                  if [ ! -f "package.json" ]; then
+                    echo "ERROR: package.json is missing!"
+                    exit 1
+                  fi
+                  echo "✓ package.json exists"
+                  echo ""
+                  echo "Checking bin paths in package.json:"
+                  BIN_MISO=$(node -p "require('./package.json').bin.miso")
+                  BIN_MISOX=$(node -p "require('./package.json').bin.misox")
+                  echo "bin.miso: $BIN_MISO"
+                  echo "bin.misox: $BIN_MISOX"
+                  if [ ! -f "$BIN_MISO" ]; then
+                    echo "ERROR: Bin file $BIN_MISO does not exist!"
+                    exit 1
+                  fi
+                  echo "✓ $BIN_MISO exists"
+                  if [ ! -f "$BIN_MISOX" ]; then
+                    echo "ERROR: Bin file $BIN_MISOX does not exist!"
+                    exit 1
+                  fi
+                  echo "✓ $BIN_MISOX exists"
+                  echo ""
+                  echo "All files verified successfully!"
+
             # Trusted publishing via OIDC
             # Provenance is automatically generated when using trusted publishing
             # Make sure you've configured the trusted publisher on npmjs.com first:
