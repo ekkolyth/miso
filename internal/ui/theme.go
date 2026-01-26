@@ -1,8 +1,8 @@
-package theme
+package ui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Styles centralizes lipgloss styles used across the CLI.
+// lipgloss styles used across cli
 type Styles struct {
 	Heading lipgloss.Style
 	Accent  lipgloss.Style
@@ -11,7 +11,7 @@ type Styles struct {
 	Flavor  lipgloss.Style
 }
 
-// Default returns the default theme for miso.
+// return default miso theme
 func Default() Styles {
 	accent := lipgloss.Color("#7c3aed")  // purple
 	heading := lipgloss.Color("#ec4899") // pink

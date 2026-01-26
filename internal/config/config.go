@@ -8,32 +8,32 @@ import (
 	"path/filepath"
 )
 
-// ErrNotFound indicates that no miso.json file exists in the target directory.
+// return when miso.json not found
 var ErrNotFound = errors.New("config: not found")
 
-// FileName is the default name for the miso config file.
+// default miso config filename
 const FileName = "miso.json"
 
-// Config captures persisted metadata about the current project.
+// persisted project metadata
 type Config struct {
 	PackageManager string            `json:"package-manager"`
 	ProjectName    string            `json:"project-name"`
 	Scripts        map[string]string `json:"scripts"`
 }
 
-// EnsureDefaults makes sure optional maps are initialized.
+// initialize optional maps
 func (c *Config) EnsureDefaults() {
 	if c.Scripts == nil {
 		c.Scripts = map[string]string{}
 	}
 }
 
-// Path resolves the config file path for a given project root.
+// resolve config file path for project root
 func Path(root string) string {
 	return filepath.Join(root, FileName)
 }
 
-// Load reads miso.json from disk.
+// read miso.json from disk
 func Load(root string) (Config, error) {
 	path := Path(root)
 	data, err := os.ReadFile(path)
@@ -52,7 +52,7 @@ func Load(root string) (Config, error) {
 	return cfg, nil
 }
 
-// Save persists miso.json to disk, ensuring parent directories exist.
+// save miso.json to disk, create parent dirs if needed
 func Save(root string, cfg Config) error {
 	cfg.EnsureDefaults()
 	data, err := json.MarshalIndent(cfg, "", "  ")

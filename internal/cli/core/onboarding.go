@@ -1,4 +1,4 @@
-package onboarding
+package core
 
 import (
 	"errors"
@@ -13,14 +13,14 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/ekkolyth/miso/internal/config"
-	"github.com/ekkolyth/miso/internal/ui/theme"
+	"github.com/ekkolyth/miso/internal/ui"
 )
 
-// ErrAborted is returned when the user exits the onboarding flow.
+// return when user exits onboarding
 var ErrAborted = errors.New("onboarding aborted")
 
-// Run executes the onboarding wizard and returns a populated config.
-func Run(root string, managerNames []string, styles theme.Styles, logger *log.Logger) (config.Config, error) {
+// execute onboarding wizard and return config
+func RunOnboarding(root string, managerNames []string, styles ui.Styles, logger *log.Logger) (config.Config, error) {
 	if len(managerNames) == 0 {
 		return config.Config{}, errors.New("no package managers are registered")
 	}
@@ -46,8 +46,8 @@ func Run(root string, managerNames []string, styles theme.Styles, logger *log.Lo
 	return cfg, nil
 }
 
-// Init executes the init wizard (assumes new project) and returns a populated config.
-func Init(root string, managerNames []string, styles theme.Styles, logger *log.Logger) (config.Config, error) {
+// execute init wizard for new project and return config
+func RunInitOnboarding(root string, managerNames []string, styles ui.Styles, logger *log.Logger) (config.Config, error) {
 	if len(managerNames) == 0 {
 		return config.Config{}, errors.New("no package managers are registered")
 	}
@@ -73,7 +73,7 @@ func Init(root string, managerNames []string, styles theme.Styles, logger *log.L
 	return cfg, nil
 }
 
-func selectManager(options []string, styles theme.Styles) (string, error) {
+func selectManager(options []string, styles ui.Styles) (string, error) {
 	if len(options) == 0 {
 		return "", errors.New("no package managers available to select")
 	}
@@ -100,7 +100,7 @@ func selectManager(options []string, styles theme.Styles) (string, error) {
 	return choice, nil
 }
 
-func askProjectName(defaultName string, styles theme.Styles) (string, error) {
+func askProjectName(defaultName string, styles ui.Styles) (string, error) {
 	model := newNameModel(defaultName, styles)
 	final, err := tea.NewProgram(model).Run()
 	if err != nil {
@@ -122,10 +122,10 @@ type nameModel struct {
 	input textinput.Model
 	value string
 	err   error
-	style theme.Styles
+	style ui.Styles
 }
 
-func newNameModel(defaultName string, styles theme.Styles) *nameModel {
+func newNameModel(defaultName string, styles ui.Styles) *nameModel {
 	input := textinput.New()
 	input.Placeholder = defaultName
 	input.Prompt = styles.Accent.Render("› ")
