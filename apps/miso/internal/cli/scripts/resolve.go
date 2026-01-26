@@ -24,6 +24,7 @@ type ResolvedScript struct {
 }
 
 // resolve script by name, checking folder then package.json
+// supports path-based commands (e.g., "publish/patch") and index.sh resolution
 // supports explicit extension (e.g., "jump.sh")
 func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript, error) {
 	scriptsPath := cfg.Scripts
@@ -42,25 +43,27 @@ func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript,
 		return ResolvedScript{}, fmt.Errorf("discover scripts: %w", err)
 	}
 
-	// check for explicit extension (e.g., "jump.sh")
+	// normalize name to use forward slashes for path matching
+	name = filepath.ToSlash(name)
+
+	// check for explicit extension (e.g., "jump.sh" or "publish/patch.sh")
 	ext := filepath.Ext(name)
 	if ext != "" {
-		basename := strings.TrimSuffix(name, ext)
-		if scripts, ok := discovered[basename]; ok {
-			// find exact match
+		// remove extension to get key
+		key := strings.TrimSuffix(name, ext)
+		if scripts, ok := discovered[key]; ok {
+			// find exact match by extension
 			for _, script := range scripts {
-				if filepath.Ext(script.Path) == ext {
-					return ResolvedScript{
-						Source: ScriptSourceFolder,
-						Path:   script.Path,
-					}, nil
-				}
-			}
-		}
-		// check if it's in discovered scripts
-		for _, scripts := range discovered {
-			for _, script := range scripts {
-				if filepath.Base(script.Path) == name {
+				if script.Extension == ext {
+					// check for conflicts
+					if len(scripts) > 1 {
+						var paths []string
+						for _, s := range scripts {
+							paths = append(paths, s.RelativePath)
+						}
+						return ResolvedScript{}, fmt.Errorf("multiple scripts for %q exist, exiting: %s",
+							key, strings.Join(paths, ", "))
+					}
 					return ResolvedScript{
 						Source: ScriptSourceFolder,
 						Path:   script.Path,
@@ -70,17 +73,19 @@ func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript,
 		}
 	}
 
-	// check by basename (without extension)
-	basename := strings.TrimSuffix(name, ext)
-	if scripts, ok := discovered[basename]; ok {
+	// check by key (without extension) - handles path-based commands
+	// This handles both regular files (e.g., "publish/patch.sh" -> key "publish/patch")
+	// and index files (e.g., "publish/index.sh" -> key "publish")
+	key := strings.TrimSuffix(name, ext)
+	if scripts, ok := discovered[key]; ok {
 		if len(scripts) > 1 {
-			// conflict - return error
+			// conflict - return error (e.g., both "publish.sh" and "publish/index.sh" exist)
 			var paths []string
 			for _, script := range scripts {
-				paths = append(paths, filepath.Base(script.Path))
+				paths = append(paths, script.RelativePath)
 			}
-			return ResolvedScript{}, fmt.Errorf("multiple scripts named %q found: %s. use 'miso %s' or 'miso %s'",
-				basename, strings.Join(paths, ", "), paths[0], paths[1])
+			return ResolvedScript{}, fmt.Errorf("multiple scripts for %q exist, exiting: %s",
+				key, strings.Join(paths, ", "))
 		}
 		if len(scripts) == 1 {
 			return ResolvedScript{
@@ -90,17 +95,20 @@ func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript,
 		}
 	}
 
-	// check package.json scripts
-	pkgScripts, err := ReadPackageJSONScripts(root)
-	if err != nil {
-		return ResolvedScript{}, fmt.Errorf("read package.json scripts: %w", err)
-	}
+	// check package.json scripts (only for simple names, not path-based)
+	// Path-based commands like "publish/patch" should not match package.json scripts
+	if !strings.Contains(name, "/") {
+		pkgScripts, err := ReadPackageJSONScripts(root)
+		if err != nil {
+			return ResolvedScript{}, fmt.Errorf("read package.json scripts: %w", err)
+		}
 
-	if command, ok := pkgScripts[name]; ok {
-		return ResolvedScript{
-			Source: ScriptSourcePackageJSON,
-			Path:   command,
-		}, nil
+		if command, ok := pkgScripts[name]; ok {
+			return ResolvedScript{
+				Source: ScriptSourcePackageJSON,
+				Path:   command,
+			}, nil
+		}
 	}
 
 	// not found

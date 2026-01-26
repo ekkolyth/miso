@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/cli/scripts"
@@ -151,7 +152,16 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	}
 
 	// Not a built-in command - check scripts folder and package.json
-	if resolved, err := scripts.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+	resolved, err := scripts.ResolveScript(cmd, root, cfg)
+	if err != nil {
+		// If error contains "multiple scripts", it's a conflict - return the error
+		if strings.Contains(err.Error(), "multiple scripts") {
+			return ParsedCLI{}, err
+		}
+		// Other errors (like discovery errors) - log but continue to passthrough
+		// Discovery errors are non-fatal and shouldn't block passthrough
+	}
+	if err == nil && resolved.Source != scripts.ScriptSourceNone {
 		return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 	}
 
