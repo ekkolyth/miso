@@ -23,7 +23,7 @@ const (
 	ActionInit
 	ActionVersion
 	ActionMisox
-	ActionUpdate
+	ActionUpgrade
 	ActionScriptFolder
 	ActionScriptPackageJSON
 )
@@ -37,7 +37,7 @@ type ParsedCLI struct {
 	ScriptArgs   []string
 	Command      string
 	Args         []string
-	Local        bool // For update command --local flag
+	Local        bool // For upgrade command --local flag
 }
 
 func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) {
@@ -129,10 +129,10 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 			PackageName: packageName,
 			Args:        remainingArgs,
 		}, nil
-	case "update":
+	case "upgrade":
 		// Check if script overrides this
-		if resolved, err := scripts.ResolveScript("update", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
-			return buildScriptAction(resolved, "update", parseInlineArgs(args[1:])), nil
+		if resolved, err := scripts.ResolveScript("upgrade", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+			return buildScriptAction(resolved, "upgrade", parseInlineArgs(args[1:])), nil
 		}
 		// Check for --local flag
 		local := false
@@ -145,7 +145,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 			}
 		}
 		return ParsedCLI{
-			Action: ActionUpdate,
+			Action: ActionUpgrade,
 			Local:  local,
 			Args:   remainingArgs,
 		}, nil

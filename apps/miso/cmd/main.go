@@ -12,6 +12,7 @@ import (
 	"github.com/ekkolyth/miso/internal/cli/pm"
 	"github.com/ekkolyth/miso/internal/cli/pm/managers"
 	"github.com/ekkolyth/miso/internal/cli/scripts"
+	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
@@ -45,12 +46,44 @@ func main() {
 		core.Fail(logger, fmt.Errorf("determine working directory: %w", err), false)
 	}
 
-	// Handle "init" command early, before loading config or ensuring manager
-	if len(args) > 0 && args[0] == "init" {
-		if err := core.RunInit(originalWorkDir, styles, logger); err != nil {
-			core.Fail(logger, err, false)
+	// Handle global commands early, before loading config or ensuring manager
+	if len(args) > 0 {
+		switch args[0] {
+		case "init":
+			if err := core.RunInit(originalWorkDir, styles, logger); err != nil {
+				core.Fail(logger, err, false)
+			}
+			return
+		case "version", "v":
+			// Try to find project root and load config, but don't fail if not found
+			var projectRoot string
+			var cfg config.Config
+			if root, err := core.FindProjectRoot(originalWorkDir); err == nil {
+				projectRoot = root
+				if loadedCfg, err := core.LoadConfig(projectRoot); err == nil {
+					cfg = loadedCfg
+				}
+			}
+			if err := core.RunVersion(projectRoot, cfg); err != nil {
+				core.Fail(logger, err, false)
+			}
+			return
+		case "upgrade":
+			// Parse args to extract --local flag and remaining args
+			local := false
+			remainingArgs := args[1:]
+			for i, arg := range remainingArgs {
+				if arg == "--local" {
+					local = true
+					remainingArgs = append(remainingArgs[:i], remainingArgs[i+1:]...)
+					break
+				}
+			}
+			if err := pm.Upgrade(local, remainingArgs); err != nil {
+				core.Fail(logger, err, false)
+			}
+			return
 		}
-		return
 	}
 
 	// find project root
@@ -67,22 +100,6 @@ func main() {
 	parsed, err := core.ParseCLI(args, cfg, projectRoot)
 	if err != nil {
 		core.Fail(logger, err, true)
-	}
-
-	// Handle "version" command - can work without a manager
-	if parsed.Action == core.ActionVersion {
-		if err := core.RunVersion(projectRoot, cfg); err != nil {
-			core.Fail(logger, err, false)
-		}
-		return
-	}
-
-	// Handle "update" command - can work without a manager
-	if parsed.Action == core.ActionUpdate {
-		if err := pm.Update(parsed.Local, parsed.Args); err != nil {
-			core.Fail(logger, err, false)
-		}
-		return
 	}
 
 	// Ensure manager is configured before proceeding
