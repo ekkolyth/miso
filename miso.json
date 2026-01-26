@@ -1,0 +1,5 @@
+{
+    "package-manager": "bun",
+    "project-name": "miso",
+    "scripts": "./scripts"
+}
