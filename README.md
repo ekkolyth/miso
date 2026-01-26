@@ -2,7 +2,7 @@
 
 the agnostic package manager
 
-<img src="https://raw.githubusercontent.com/ekkolyth/miso/main/internal/assets/miso.png" alt="miso" width="200"/>
+<img src="https://raw.githubusercontent.com/ekkolyth/miso/apps/miso/main/internal/assets/miso.png" alt="miso" width="200"/>
 
 Miso is a tiny cli tool that let's you stop worrying about which package manager your projects are using. Use the tools you and your team want, without the hassle.
 
