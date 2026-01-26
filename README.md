@@ -1,30 +1,67 @@
-# Miso
+# Meet Miso
 
-**The Agnostic Package Manager**
+the agnostic package manager
 
-Miso is a universal package manager wrapper that lets you use any package manager (npm, pnpm, yarn, bun) with a consistent command interface.
+<img src="https://raw.githubusercontent.com/ekkolyth/miso/main/internal/assets/miso.png" alt="miso" width="200"/>
 
-## Features
+Miso is a tiny cli tool that let's you stop worrying about which package manager your projects are using. Use the tools you and your team want, without the hassle.
 
-- 🔄 **Package Manager Agnostic** - Works with npm, pnpm, yarn, and bun
-- 🎯 **Consistent Commands** - Use the same commands regardless of your package manager
-- ⚙️ **Configurable Flags** - Set default flags for your commands
-- 🚀 **Fast & Lightweight** - Written in Go for maximum performance
-- 📦 **Script Management** - Enhanced script handling and discovery
+## Why Miso?
 
-## Quick Start
+Miso doesn't care where you work or what tools you use. It sits as a light wrapper on top of bun, pnpm, and more, that let's you remember one set of commands.
 
-Get started with Miso in minutes:
+## Get Started
+
+### Installation
+
+#### Install via Go
 
 ```bash
-# Install miso globally
-npm install -g miso
-
-# Initialize in your project
-miso init
-
-# Use it like any package manager
-miso install
-miso add react
-miso dev
+go install github.com/ekkolyth/miso@latest
 ```
+
+#### Install via npm
+Global Install (recommended)
+```bash
+npm install -g @ekkolyth/miso
+```
+
+Local Install
+```bash
+npm install @ekkolyth/miso@latest
+```
+
+Then run `miso init` to add miso to your project:
+
+```bash
+miso init
+```
+
+**Note:** If you installed locally, use `npx miso init`.
+
+## Supported commands
+
+- `miso init`
+- `miso version`
+- `miso install`
+- `miso add <pkg>`
+- `miso remove <pkg>`
+- `miso dev <args>`
+- `miso <script> [-- <args>]`
+
+## `miso.json`
+
+```json
+{
+  "packageManager": "pnpm",
+  "projectName": "miso-demo",
+  "scripts": {
+    "dev": "pnpm dev --host",
+    "lint": "pnpm eslint ."
+  }
+}
+```
+
+You can edit this file at any time to switch managers or add more scripts. If a lockfile _is_ present, Miso will still generate the config automatically so you have something to customize later.
+
+## Contributions welcome!
