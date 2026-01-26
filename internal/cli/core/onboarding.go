@@ -42,6 +42,7 @@ func RunInitOnboarding(root string, managerNames []string, preselectedManager st
 		PackageManager: managerChoice,
 		ProjectName:    projectName,
 		Scripts:        "./scripts",
+		Flags:          make(map[string][]string),
 	}
 	return cfg, nil
 }
