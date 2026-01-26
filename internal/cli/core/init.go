@@ -1,16 +1,55 @@
 package core
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/log"
 
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/ui"
 )
+
+// detect manager for init preselection
+// checks package.json packageManager field and lockfiles
+func DetectManagerForInit(root string) (string, error) {
+	// check package.json for packageManager field
+	packageJSONPath := filepath.Join(root, "package.json")
+	if data, err := os.ReadFile(packageJSONPath); err == nil {
+		var pkg struct {
+			PackageManager string `json:"packageManager"`
+		}
+		if err := json.Unmarshal(data, &pkg); err == nil && pkg.PackageManager != "" {
+			// extract manager name (before @)
+			parts := strings.Split(pkg.PackageManager, "@")
+			if len(parts) > 0 && parts[0] != "" {
+				managerName := parts[0]
+				// validate against registered managers
+				registered := GetRegisteredManagers()
+				for _, reg := range registered {
+					if reg == managerName {
+						return managerName, nil
+					}
+				}
+				// unsupported manager
+				return "", fmt.Errorf("unsupported package manager '%s' specified in package.json. supported managers: %v", managerName, registered)
+			}
+		}
+	}
+
+	// check for lockfiles
+	detected, err := DetectManager(root)
+	if err == nil {
+		return detected, nil
+	}
+
+	// neither found - return empty string (no error)
+	return "", nil
+}
 
 // miso init
 func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
@@ -23,8 +62,17 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		return err
 	}
 
+	// display ASCII art and welcome message
+	printMisoWelcome(styles)
+
+	// detect manager for preselection
+	preselectedManager, err := DetectManagerForInit(root)
+	if err != nil {
+		return err
+	}
+
 	managerList := GetRegisteredManagers()
-	newCfg, err := RunInitOnboarding(root, managerList, styles, logger)
+	newCfg, err := RunInitOnboarding(root, managerList, preselectedManager, styles, logger)
 	if err != nil {
 		return err
 	}
@@ -47,7 +95,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		Command: newCfg.PackageManager,
 		Args:    []string{"init"},
 	}
-	if err := Exec(spec, newCfg.PackageManager); err != nil {
+	if err := Exec(spec, newCfg.PackageManager, ""); err != nil {
 		return err
 	}
 	return nil

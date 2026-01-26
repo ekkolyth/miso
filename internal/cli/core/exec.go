@@ -22,12 +22,15 @@ type Manager interface {
 	BuildMisox(packageName string, args []string) ExecSpec
 }
 
-func Exec(spec ExecSpec, detectedManager string) error {
+func Exec(spec ExecSpec, detectedManager string, workDir string) error {
 	if _, err := exec.LookPath(spec.Command); err != nil {
 		return fmt.Errorf("%s is not on PATH", spec.Command)
 	}
 
 	cmd := exec.Command(spec.Command, spec.Args...)
+	if workDir != "" {
+		cmd.Dir = workDir
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr

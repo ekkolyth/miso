@@ -3,6 +3,7 @@ package scripts
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/charmbracelet/log"
@@ -12,19 +13,72 @@ import (
 )
 
 // miso scripts
-func List(cfg config.Config, styles ui.Styles, logger *log.Logger) error {
-	if len(cfg.Scripts) == 0 {
-		logger.Info("no scripts defined in miso.json")
+func List(cfg config.Config, root string, styles ui.Styles, logger *log.Logger) error {
+	scriptsPath := cfg.Scripts
+	if scriptsPath == "" {
+		scriptsPath = "./scripts"
+	}
+
+	// resolve scripts path relative to root
+	if !filepath.IsAbs(scriptsPath) {
+		scriptsPath = filepath.Join(root, scriptsPath)
+	}
+
+	// discover scripts from folder
+	folderScripts, err := DiscoverScripts(scriptsPath)
+	if err != nil {
+		return fmt.Errorf("discover scripts: %w", err)
+	}
+
+	// read package.json scripts
+	pkgScripts, err := ReadPackageJSONScripts(root)
+	if err != nil {
+		return fmt.Errorf("read package.json scripts: %w", err)
+	}
+
+	// check if any scripts exist
+	hasFolderScripts := len(folderScripts) > 0
+	hasPkgScripts := len(pkgScripts) > 0
+
+	if !hasFolderScripts && !hasPkgScripts {
+		logger.Info("no scripts found in scripts folder or package.json")
 		return nil
 	}
-	scriptNames := make([]string, 0, len(cfg.Scripts))
-	for name := range cfg.Scripts {
-		scriptNames = append(scriptNames, name)
-	}
-	sort.Strings(scriptNames)
+
 	logger.Info(styles.Heading.Render("available scripts"))
-	for _, name := range scriptNames {
-		fmt.Fprintf(os.Stdout, "  %s: %s\n", name, cfg.Scripts[name])
+
+	// show scripts from folder
+	if hasFolderScripts {
+		fmt.Fprintf(os.Stdout, "\nscripts folder:\n")
+		var folderNames []string
+		for name := range folderScripts {
+			folderNames = append(folderNames, name)
+		}
+		sort.Strings(folderNames)
+		for _, name := range folderNames {
+			scripts := folderScripts[name]
+			if len(scripts) > 0 {
+				fmt.Fprintf(os.Stdout, "  %s (%s)\n", name, filepath.Base(scripts[0].Path))
+			}
+		}
 	}
+
+	// show scripts from package.json
+	if hasPkgScripts {
+		if hasFolderScripts {
+			fmt.Fprintf(os.Stdout, "\npackage.json:\n")
+		} else {
+			fmt.Fprintf(os.Stdout, "package.json:\n")
+		}
+		var pkgNames []string
+		for name := range pkgScripts {
+			pkgNames = append(pkgNames, name)
+		}
+		sort.Strings(pkgNames)
+		for _, name := range pkgNames {
+			fmt.Fprintf(os.Stdout, "  %s: %s\n", name, pkgScripts[name])
+		}
+	}
+
 	return nil
 }

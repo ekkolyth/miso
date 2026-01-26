@@ -18,13 +18,17 @@ const FileName = "miso.json"
 type Config struct {
 	PackageManager string            `json:"package-manager"`
 	ProjectName    string            `json:"project-name"`
-	Scripts        map[string]string `json:"scripts"`
+	Scripts        string            `json:"scripts"`
+	Flags          map[string][]string `json:"flags,omitempty"`
 }
 
 // initialize optional maps
 func (c *Config) EnsureDefaults() {
-	if c.Scripts == nil {
-		c.Scripts = map[string]string{}
+	if c.Scripts == "" {
+		c.Scripts = "./scripts"
+	}
+	if c.Flags == nil {
+		c.Flags = make(map[string][]string)
 	}
 }
 

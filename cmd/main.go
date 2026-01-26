@@ -12,7 +12,6 @@ import (
 	"github.com/ekkolyth/miso/internal/cli/pm"
 	"github.com/ekkolyth/miso/internal/cli/pm/managers"
 	"github.com/ekkolyth/miso/internal/cli/scripts"
-	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
@@ -41,32 +40,38 @@ func main() {
 		logger.SetLevel(log.DebugLevel)
 	}
 
-	root, err := os.Getwd()
+	originalWorkDir, err := os.Getwd()
 	if err != nil {
 		core.Fail(logger, fmt.Errorf("determine working directory: %w", err), false)
 	}
 
 	// Handle "init" command early, before loading config or ensuring manager
 	if len(args) > 0 && args[0] == "init" {
-		if err := core.RunInit(root, styles, logger); err != nil {
+		if err := core.RunInit(originalWorkDir, styles, logger); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
 	}
 
-	cfg, err := core.LoadConfig(root)
+	// find project root
+	projectRoot, err := core.FindProjectRoot(originalWorkDir)
 	if err != nil {
 		core.Fail(logger, err, false)
 	}
 
-	parsed, err := core.ParseCLI(args, cfg)
+	cfg, err := core.LoadConfig(projectRoot)
+	if err != nil {
+		core.Fail(logger, err, false)
+	}
+
+	parsed, err := core.ParseCLI(args, cfg, projectRoot)
 	if err != nil {
 		core.Fail(logger, err, true)
 	}
 
 	// Handle "version" command - can work without a manager
 	if parsed.Action == core.ActionVersion {
-		if err := core.RunVersion(root, cfg); err != nil {
+		if err := core.RunVersion(projectRoot, cfg); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
@@ -81,14 +86,7 @@ func main() {
 	}
 
 	// Ensure manager is configured before proceeding
-	managerName, cfg, err := core.EnsureManager(root, cfg, func(root string, managerList []string) (config.Config, error) {
-		newCfg, err := core.RunOnboarding(root, managerList, styles, logger)
-		if err != nil {
-			return config.Config{}, err
-		}
-		logger.Info(styles.Heading.Render("detected manager"), "manager", newCfg.PackageManager)
-		return newCfg, nil
-	})
+	managerName, cfg, err := core.EnsureManager(projectRoot, cfg)
 	if err != nil {
 		core.Fail(logger, err, false)
 	}
@@ -100,52 +98,62 @@ func main() {
 	// Route to command handlers
 	switch parsed.Action {
 	case core.ActionScripts:
-		if err := scripts.List(cfg, styles, logger); err != nil {
+		if err := scripts.List(cfg, projectRoot, styles, logger); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
 	case core.ActionRunMultiple:
-		if err := scripts.RunMultiple(managerName, parsed.ScriptNames, parsed.ScriptArgs); err != nil {
+		if err := pm.RunMultiple(managerName, parsed.ScriptNames, parsed.ScriptArgs, originalWorkDir); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
 	case core.ActionScriptOverride:
-		if err := scripts.RunOverride(parsed.ScriptName, parsed.ScriptArgs, cfg); err != nil {
+		if err := scripts.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg); err != nil {
+			core.Fail(logger, err, false)
+		}
+		return
+	case core.ActionScriptFolder:
+		if err := scripts.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir); err != nil {
+			core.Fail(logger, err, false)
+		}
+		return
+	case core.ActionScriptPackageJSON:
+		if err := pm.Run(managerName, parsed.ScriptName, parsed.ScriptArgs, originalWorkDir); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
 	case core.ActionInstall:
-		if err := pm.Install(managerName); err != nil {
+		if err := pm.Install(managerName, originalWorkDir, cfg); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
 	case core.ActionAdd:
-		if err := pm.Add(managerName, parsed.PackageNames); err != nil {
+		if err := pm.Add(managerName, parsed.PackageNames, originalWorkDir, cfg); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
 	case core.ActionRemove:
-		if err := pm.Remove(managerName, parsed.PackageNames); err != nil {
+		if err := pm.Remove(managerName, parsed.PackageNames, originalWorkDir, cfg); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
 	case core.ActionRun:
-		if err := scripts.Run(managerName, parsed.ScriptName, parsed.ScriptArgs); err != nil {
+		if err := pm.Run(managerName, parsed.ScriptName, parsed.ScriptArgs, originalWorkDir); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
 	case core.ActionDev:
-		if err := scripts.Dev(managerName, parsed.ScriptArgs); err != nil {
+		if err := pm.Dev(managerName, parsed.ScriptArgs, originalWorkDir, cfg); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
 	case core.ActionMisox:
-		if err := core.RunMisox(managerName, parsed.PackageName, parsed.Args); err != nil {
+		if err := core.RunMisox(managerName, parsed.PackageName, parsed.Args, originalWorkDir); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
 	case core.ActionPassthrough:
-		if err := core.RunPassthrough(managerName, parsed.Command, parsed.Args); err != nil {
+		if err := core.RunPassthrough(managerName, parsed.Command, parsed.Args, originalWorkDir); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return

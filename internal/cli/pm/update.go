@@ -19,7 +19,7 @@ func Update(local bool, args []string) error {
 		Command: "npm",
 		Args:    npmArgs,
 	}
-	if err := core.Exec(spec, "npm"); err != nil {
+	if err := core.Exec(spec, "npm", ""); err != nil {
 		return err
 	}
 	return nil

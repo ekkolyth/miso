@@ -19,35 +19,8 @@ import (
 // return when user exits onboarding
 var ErrAborted = errors.New("onboarding aborted")
 
-// execute onboarding wizard and return config
-func RunOnboarding(root string, managerNames []string, styles ui.Styles, logger *log.Logger) (config.Config, error) {
-	if len(managerNames) == 0 {
-		return config.Config{}, errors.New("no package managers are registered")
-	}
-
-	// Ask for project name
-	projectName, err := askProjectName(filepath.Base(root), styles)
-	if err != nil {
-		return config.Config{}, err
-	}
-
-	managerChoice, err := selectManager(managerNames, styles)
-	if err != nil {
-		return config.Config{}, err
-	}
-
-	logger.Info("configured project", "project", projectName, "manager", managerChoice)
-
-	cfg := config.Config{
-		PackageManager: managerChoice,
-		ProjectName:    projectName,
-		Scripts:        map[string]string{},
-	}
-	return cfg, nil
-}
-
 // execute init wizard for new project and return config
-func RunInitOnboarding(root string, managerNames []string, styles ui.Styles, logger *log.Logger) (config.Config, error) {
+func RunInitOnboarding(root string, managerNames []string, preselectedManager string, styles ui.Styles, logger *log.Logger) (config.Config, error) {
 	if len(managerNames) == 0 {
 		return config.Config{}, errors.New("no package managers are registered")
 	}
@@ -58,7 +31,7 @@ func RunInitOnboarding(root string, managerNames []string, styles ui.Styles, log
 		return config.Config{}, err
 	}
 
-	managerChoice, err := selectManager(managerNames, styles)
+	managerChoice, err := selectManager(managerNames, preselectedManager, styles)
 	if err != nil {
 		return config.Config{}, err
 	}
@@ -68,17 +41,27 @@ func RunInitOnboarding(root string, managerNames []string, styles ui.Styles, log
 	cfg := config.Config{
 		PackageManager: managerChoice,
 		ProjectName:    projectName,
-		Scripts:        map[string]string{},
+		Scripts:        "./scripts",
 	}
 	return cfg, nil
 }
 
-func selectManager(options []string, styles ui.Styles) (string, error) {
+func selectManager(options []string, preselected string, styles ui.Styles) (string, error) {
 	if len(options) == 0 {
 		return "", errors.New("no package managers available to select")
 	}
 
 	choice := options[0]
+	// use preselected if provided and valid
+	if preselected != "" {
+		for _, opt := range options {
+			if opt == preselected {
+				choice = preselected
+				break
+			}
+		}
+	}
+
 	opts := make([]huh.Option[string], 0, len(options))
 	for _, opt := range options {
 		opts = append(opts, huh.NewOption(opt, opt))

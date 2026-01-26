@@ -14,53 +14,96 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 )
 
-// load config from miso.json or return default if not found
-func LoadConfig(root string) (config.Config, error) {
-	cfg, err := config.Load(root)
-	if errors.Is(err, config.ErrNotFound) {
-		return config.Config{
-			ProjectName: filepath.Base(root),
-			Scripts:     map[string]string{},
-		}, nil
+var lockfiles = []string{
+	"bun.lockb",
+	"bun.lock",
+	"package-lock.json",
+	"pnpm-lock.yaml",
+	"yarn.lock",
+}
+
+// find project root by walking up directories
+// priority: miso.json > lockfile > node_modules
+func FindProjectRoot(startPath string) (string, error) {
+	absPath, err := filepath.Abs(startPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve path: %w", err)
 	}
+
+	current := absPath
+	root := filepath.VolumeName(absPath) + string(filepath.Separator)
+	if root == string(filepath.Separator) {
+		root = "/"
+	}
+
+	var foundLockfile bool
+	var foundNodeModules bool
+	var projectRoot string
+
+	for {
+		// check for miso.json (highest priority)
+		misoPath := filepath.Join(current, config.FileName)
+		if st, err := os.Stat(misoPath); err == nil && !st.IsDir() {
+			return current, nil
+		}
+
+		// check for lockfiles
+		for _, lockfile := range lockfiles {
+			lockPath := filepath.Join(current, lockfile)
+			if st, err := os.Stat(lockPath); err == nil && !st.IsDir() {
+				foundLockfile = true
+				if projectRoot == "" {
+					projectRoot = current
+				}
+				break
+			}
+		}
+
+		// check for node_modules
+		nodeModulesPath := filepath.Join(current, "node_modules")
+		if st, err := os.Stat(nodeModulesPath); err == nil && st.IsDir() {
+			foundNodeModules = true
+			if projectRoot == "" {
+				projectRoot = current
+			}
+		}
+
+		// stop at filesystem root
+		if current == root || current == filepath.Dir(current) {
+			break
+		}
+
+		current = filepath.Dir(current)
+	}
+
+	// if we found lockfile or node_modules but no miso.json
+	if foundLockfile || foundNodeModules {
+		return "", errors.New("miso is not currently initialized in this project. run 'miso init' from the project root to get started")
+	}
+
+	// nothing found
+	return "", errors.New("no project found. miso was not able to locate a miso.json, node_modules folder, or lockfile in the parent tree. run 'miso init' from the project root to get started")
+}
+
+// load config from miso.json
+func LoadConfig(projectRoot string) (config.Config, error) {
+	cfg, err := config.Load(projectRoot)
 	if err != nil {
 		return config.Config{}, err
 	}
 	cfg.EnsureDefaults()
 	if cfg.ProjectName == "" {
-		cfg.ProjectName = filepath.Base(root)
+		cfg.ProjectName = filepath.Base(projectRoot)
 	}
 	return cfg, nil
 }
 
-// ensure package manager is configured, return manager name and updated config
-func EnsureManager(root string, cfg config.Config, onboardingFn func(string, []string) (config.Config, error)) (string, config.Config, error) {
-	if cfg.PackageManager != "" {
-		return cfg.PackageManager, cfg, nil
+// ensure package manager is configured, return manager name and config
+func EnsureManager(root string, cfg config.Config) (string, config.Config, error) {
+	if cfg.PackageManager == "" {
+		return "", cfg, errors.New("package manager not configured in miso.json")
 	}
-
-	detected, err := DetectManager(root)
-	if err == nil {
-		cfg.PackageManager = detected
-		if err := config.Save(root, cfg); err != nil {
-			return "", cfg, err
-		}
-		return detected, cfg, nil
-	}
-
-	if errors.Is(err, ErrNoLockfile) {
-		managerList := GetRegisteredManagers()
-		newCfg, onboardingErr := onboardingFn(root, managerList)
-		if onboardingErr != nil {
-			return "", cfg, onboardingErr
-		}
-		if err := config.Save(root, newCfg); err != nil {
-			return "", cfg, err
-		}
-		return newCfg.PackageManager, newCfg, nil
-	}
-
-	return "", cfg, err
+	return cfg.PackageManager, cfg, nil
 }
 
 // print error and exit with code 1
