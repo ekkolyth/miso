@@ -1,11 +1,4 @@
 {
-  "name": "@ekkolyth/miso",
-  "version": "0.2.6",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ekkolyth/miso.git"
-  },
   "bin": {
     "miso": "./miso.mjs",
     "misox": "./misox.mjs"
@@ -25,5 +18,12 @@
     "bin/misox-linux-amd64",
     "bin/misox-linux-arm64",
     "bin/misox-windows-amd64.exe"
-  ]
+  ],
+  "license": "MIT",
+  "name": "@ekkolyth/miso",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ekkolyth/miso.git"
+  },
+  "version": "0.2.7"
 }
