@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -52,7 +54,14 @@ func main() {
 }
 
 func readPackage() (*packageInfo, error) {
-	data, err := os.ReadFile("package.json")
+	// Find package.json relative to this source file's location
+	_, filename, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(filename)
+	// bump/ -> release/ -> .github/ -> project root -> apps/miso
+	projectRoot := filepath.Join(dir, "..", "..", "..")
+	packageJSONPath := filepath.Join(projectRoot, "apps", "miso", "package.json")
+	
+	data, err := os.ReadFile(packageJSONPath)
 	if err != nil {
 		return nil, err
 	}
@@ -64,8 +73,15 @@ func readPackage() (*packageInfo, error) {
 }
 
 func writePackage(info *packageInfo) error {
+	// Find package.json relative to this source file's location
+	_, filename, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(filename)
+	// bump/ -> release/ -> .github/ -> project root -> apps/miso
+	projectRoot := filepath.Join(dir, "..", "..", "..")
+	packageJSONPath := filepath.Join(projectRoot, "apps", "miso", "package.json")
+	
 	// Read the full package.json to preserve other fields
-	fullData, err := os.ReadFile("package.json")
+	fullData, err := os.ReadFile(packageJSONPath)
 	if err != nil {
 		return err
 	}
@@ -83,7 +99,7 @@ func writePackage(info *packageInfo) error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile("package.json", data, 0o644)
+	return os.WriteFile(packageJSONPath, data, 0o644)
 }
 
 func bumpVersion(current, level string) (string, error) {

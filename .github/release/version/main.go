@@ -16,9 +16,9 @@ func main() {
 	// Find package.json relative to this source file's location
 	_, filename, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(filename)
-	// version/ -> release/ -> .github/ -> project root
+	// version/ -> release/ -> .github/ -> project root -> apps/miso
 	projectRoot := filepath.Join(dir, "..", "..", "..")
-	packageJSONPath := filepath.Join(projectRoot, "package.json")
+	packageJSONPath := filepath.Join(projectRoot, "apps", "miso", "package.json")
 	
 	data, err := os.ReadFile(packageJSONPath)
 	if err != nil {

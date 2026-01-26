@@ -3,7 +3,7 @@
 DRY_RUN ?= 0
 
 BINARY ?= miso
-PKG    := ./cmd
+PKG    := ./apps/miso/cmd
 
 GOBIN ?= $(shell go env GOBIN)
 ifeq ($(GOBIN),)
@@ -11,26 +11,26 @@ GOBIN := $(shell go env GOPATH)/bin
 endif
 
 build:
-	@mkdir -p bin
-	go build -o bin/$(BINARY) $(PKG)
+	@mkdir -p apps/miso/bin
+	go build -o apps/miso/bin/$(BINARY) $(PKG)
 
 build-all:
-	@mkdir -p bin
-	GOOS=darwin GOARCH=amd64 go build -o bin/$(BINARY)-darwin-amd64 $(PKG)
-	GOOS=darwin GOARCH=amd64 go build -o bin/misox-darwin-amd64 $(PKG)
-	GOOS=darwin GOARCH=arm64 go build -o bin/$(BINARY)-darwin-arm64 $(PKG)
-	GOOS=darwin GOARCH=arm64 go build -o bin/misox-darwin-arm64 $(PKG)
-	GOOS=linux GOARCH=amd64 go build -o bin/$(BINARY)-linux-amd64 $(PKG)
-	GOOS=linux GOARCH=amd64 go build -o bin/misox-linux-amd64 $(PKG)
-	GOOS=linux GOARCH=arm64 go build -o bin/$(BINARY)-linux-arm64 $(PKG)
-	GOOS=linux GOARCH=arm64 go build -o bin/misox-linux-arm64 $(PKG)
-	GOOS=windows GOARCH=amd64 go build -o bin/$(BINARY)-windows-amd64.exe $(PKG)
-	GOOS=windows GOARCH=amd64 go build -o bin/misox-windows-amd64.exe $(PKG)
+	@mkdir -p apps/miso/bin
+	GOOS=darwin GOARCH=amd64 go build -o apps/miso/bin/$(BINARY)-darwin-amd64 $(PKG)
+	GOOS=darwin GOARCH=amd64 go build -o apps/miso/bin/misox-darwin-amd64 $(PKG)
+	GOOS=darwin GOARCH=arm64 go build -o apps/miso/bin/$(BINARY)-darwin-arm64 $(PKG)
+	GOOS=darwin GOARCH=arm64 go build -o apps/miso/bin/misox-darwin-arm64 $(PKG)
+	GOOS=linux GOARCH=amd64 go build -o apps/miso/bin/$(BINARY)-linux-amd64 $(PKG)
+	GOOS=linux GOARCH=amd64 go build -o apps/miso/bin/misox-linux-amd64 $(PKG)
+	GOOS=linux GOARCH=arm64 go build -o apps/miso/bin/$(BINARY)-linux-arm64 $(PKG)
+	GOOS=linux GOARCH=arm64 go build -o apps/miso/bin/misox-linux-arm64 $(PKG)
+	GOOS=windows GOARCH=amd64 go build -o apps/miso/bin/$(BINARY)-windows-amd64.exe $(PKG)
+	GOOS=windows GOARCH=amd64 go build -o apps/miso/bin/misox-windows-amd64.exe $(PKG)
 
 install: build
 	@echo "Installing $(BINARY) to $(GOBIN)"
-	@cp bin/$(BINARY) $(GOBIN)/$(BINARY)
-	@cp bin/$(BINARY) $(GOBIN)/misox
+	@cp apps/miso/bin/$(BINARY) $(GOBIN)/$(BINARY)
+	@cp apps/miso/bin/$(BINARY) $(GOBIN)/misox
 	@echo "✓ Installed $(BINARY) and misox to $(GOBIN)"
 
 uninstall:
@@ -41,17 +41,17 @@ go: build
 	go run $(PKG) $(ARGS)
 
 test:
-	go test ./...
+	cd apps/miso && go test ./...
 
 tidy:
-	go mod tidy
+	cd apps/miso && go mod tidy
 
 fmt:
-	gofmt -w $$(go list -f '{{.Dir}}' ./...)
+	cd apps/miso && gofmt -w $$(go list -f '{{.Dir}}' ./...)
 
 clean:
-	rm -rf bin
-	rm -f miso-*.tgz
+	rm -rf apps/miso/bin
+	rm -f apps/miso/miso-*.tgz
 
 # Bump the version in package.json and, for non-dry runs, commit the change,
 # create a git tag, and push. Default bump level is "patch".
@@ -131,7 +131,7 @@ _publish:
 		else \
 			NEXT_VERSION=$$(go run ./.github/release/bump -level=$(LEVEL)); \
 			echo "Bumped version to $$NEXT_VERSION"; \
-			git add package.json; \
+			git add apps/miso/package.json; \
 			git commit -m "chore: release v$$NEXT_VERSION"; \
 			if [ -n "$(MESSAGE)" ]; then \
 				git tag -a "v$$NEXT_VERSION" -m "release v$$NEXT_VERSION: $(MESSAGE)"; \
@@ -146,14 +146,14 @@ _publish:
 # Create a tarball to inspect what would be published
 npm.pack:
 	@echo "Creating npm pack tarball..."
-	@npm pack --dry-run
+	@cd apps/miso && npm pack --dry-run
 	@echo "✓ Package tarball created. Inspect the output above."
-	@echo "To see the actual tarball contents, run: npm pack && tar -tzf miso-*.tgz"
+	@echo "To see the actual tarball contents, run: cd apps/miso && npm pack && tar -tzf miso-*.tgz"
 
 # Test npm publish with --dry-run flag (shows what would be published without actually publishing)
 npm.test:
 	@echo "Testing npm publish with --dry-run..."
-	@npm publish --dry-run
+	@cd apps/miso && npm publish --dry-run
 	@echo "✓ Dry run complete. No actual publish was performed."
 
 # Catch-all to prevent make from complaining about unknown targets
