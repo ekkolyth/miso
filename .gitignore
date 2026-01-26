@@ -3,3 +3,5 @@ apps/docs/.docusaurus
 apps/docs/build
 apps/docs/node_modules
 .cursor
+
+.DS_Store
