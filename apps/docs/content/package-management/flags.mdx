@@ -1,0 +1,198 @@
+---
+title: Flags
+---
+
+# Flags
+
+## Overview
+
+The `flags` field in `miso.json` allows you to configure default flags for core package manager commands. Flags from the configuration are prepended to command-line arguments, enabling CLI arguments to override when needed.
+
+## Configuration
+
+Add a `flags` object to your `miso.json`:
+
+```json
+{
+  "package-manager": "pnpm",
+  "project-name": "my-project",
+  "flags": {
+    "add": ["--save-dev"],
+    "remove": ["--recursive"],
+    "install": ["--frozen-lockfile"],
+    "dev": ["--host"]
+  }
+}
+```
+
+## Supported Commands
+
+The following commands support flag configuration:
+
+- **`add`** - Flags are prepended before package names
+- **`remove`** - Flags are prepended before package names
+- **`install`** - Flags are appended to the install command
+- **`dev`** - Flags are prepended to dev script arguments
+
+## How Flags Work
+
+Flags from the configuration are merged with command-line arguments:
+
+1. **Config flags are prepended** - Flags from `miso.json` appear before CLI arguments
+2. **CLI can override** - Command-line arguments follow config flags, allowing you to override or add additional flags
+3. **Order matters** - Config flags come first, then CLI arguments
+
+## Examples
+
+### Add Command
+
+**Configuration:**
+```json
+{
+  "flags": {
+    "add": ["--save-dev"]
+  }
+}
+```
+
+**Usage:**
+```bash
+miso add react
+# Executes: pnpm add --save-dev react
+
+miso add react --peer
+# Executes: pnpm add --save-dev react --peer
+```
+
+### Remove Command
+
+**Configuration:**
+```json
+{
+  "flags": {
+    "remove": ["--recursive"]
+  }
+}
+```
+
+**Usage:**
+```bash
+miso remove lodash
+# Executes: pnpm remove --recursive lodash
+```
+
+### Install Command
+
+**Configuration:**
+```json
+{
+  "flags": {
+    "install": ["--frozen-lockfile"]
+  }
+}
+```
+
+**Usage:**
+```bash
+miso install
+# Executes: pnpm install --frozen-lockfile
+
+miso install --no-frozen-lockfile
+# Executes: pnpm install --frozen-lockfile --no-frozen-lockfile
+```
+
+### Dev Command
+
+**Configuration:**
+```json
+{
+  "flags": {
+    "dev": ["--host"]
+  }
+}
+```
+
+**Usage:**
+```bash
+miso dev
+# Executes: pnpm run dev --host
+
+miso dev --port 3000
+# Executes: pnpm run dev --host --port 3000
+```
+
+## Common Use Cases
+
+### Always Install Dev Dependencies
+
+```json
+{
+  "flags": {
+    "add": ["--save-dev"]
+  }
+}
+```
+
+### Use Frozen Lockfile in CI
+
+```json
+{
+  "flags": {
+    "install": ["--frozen-lockfile"]
+  }
+}
+```
+
+### Enable Host Access for Dev Server
+
+```json
+{
+  "flags": {
+    "dev": ["--host"]
+  }
+}
+```
+
+### Recursive Operations in Monorepos
+
+```json
+{
+  "flags": {
+    "add": ["--recursive"],
+    "remove": ["--recursive"]
+  }
+}
+```
+
+## Package Manager Compatibility
+
+Flags are passed directly to the underlying package manager, so flag compatibility depends on your configured package manager:
+
+- **pnpm** - Supports flags like `--save-dev`, `--frozen-lockfile`, `--recursive`, `--host`
+- **npm** - Supports flags like `--save-dev`, `--package-lock-only`
+- **yarn** - Supports flags like `--dev`, `--frozen-lockfile`
+- **bun** - Supports flags like `--dev`, `--production`
+
+Refer to your package manager's documentation for available flags.
+
+## Editing Configuration
+
+You can edit `miso.json` directly to add, modify, or remove flags. No reinitialization is required.
+
+```json
+{
+  "package-manager": "pnpm",
+  "project-name": "my-project",
+  "flags": {
+    "add": ["--save-dev", "--exact"],
+    "dev": ["--host", "--open"]
+  }
+}
+```
+
+## Notes
+
+- Flags are optional - if a command doesn't have flags configured, it behaves normally
+- Empty flag arrays are ignored
+- Flags are merged, not replaced - CLI arguments are always appended after config flags
+- Flag order matters - config flags appear before CLI arguments

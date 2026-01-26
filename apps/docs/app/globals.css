@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+/* import nextra theme styles */
+@import "nextra-theme-docs/style.css";
+
+@variant dark (&:where(.dark *));
+
+:root {
+    --x-color-primary-50: oklch(96.9% 0.016 293.756);
+    --x-color-primary-100: oklch(94.6% 0.033 307.174);
+    --x-color-primary-200: oklch(89.4% 0.057 293.283);
+    --x-color-primary-300: oklch(82.7% 0.119 306.383);
+    --x-color-primary-400: oklch(70.2% 0.183 293.541);
+    --x-color-primary-500: oklch(60.6% 0.25 292.717);
+    --x-color-primary-600: oklch(54.1% 0.281 293.009);
+    --x-color-primary-700: oklch(49.1% 0.27 292.581);
+    --x-color-primary-800: oklch(43.2% 0.232 292.759);
+    --x-color-primary-900: oklch(38% 0.189 293.745);
+    --x-color-primary-950: oklch(28.3% 0.141 291.089);
+}

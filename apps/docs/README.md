@@ -1,41 +1,44 @@
-# Website
+# Miso Documentation
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+This is the documentation site for Miso, built with [Nextra](https://nextra.site/) and [Tailwind CSS v4](https://tailwindcss.com/).
 
-## Installation
+## Getting Started
 
-```bash
-yarn
-```
-
-## Local Development
+First, install the dependencies:
 
 ```bash
-yarn start
+npm install
+# or
+pnpm install
+# or
+yarn install
+# or
+bun install
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
-
-## Build
+Then, run the development server:
 
 ```bash
-yarn build
+npm run dev
+# or
+pnpm dev
+# or
+yarn dev
+# or
+bun dev
 ```
 
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-## Deployment
+## Project Structure
 
-Using SSH:
+- `app/` - Next.js app directory
+- `content/` - Documentation content (MDX files)
+- `public/` - Static assets
+- `theme.config.tsx` - Nextra theme configuration
 
-```bash
-USE_SSH=true yarn deploy
-```
+## Learn More
 
-Not using SSH:
-
-```bash
-GIT_USER=<Your GitHub username> yarn deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+- [Nextra Documentation](https://nextra.site/)
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Tailwind CSS Documentation](https://tailwindcss.com/docs)
