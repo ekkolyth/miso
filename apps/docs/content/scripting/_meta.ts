@@ -4,5 +4,4 @@ export default {
   'script-execution': 'Script Execution',
   'script-resolution': 'Script Resolution',
   'script-overrides': 'Script Overrides',
-  'package-json-integration': 'Package.json Integration',
 };
