@@ -12,8 +12,5 @@ func RunPassthrough(managerName string, command string, args []string, workDir s
 		Command: managerName,
 		Args:    append([]string{command}, args...),
 	}
-	if err := Exec(spec, managerName, workDir); err != nil {
-		return err
-	}
-	return nil
+	return Exec(spec, managerName, workDir)
 }

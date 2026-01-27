@@ -17,28 +17,28 @@ func RunVersion(root string, cfg config.Config) error {
 	}
 	fmt.Fprintf(os.Stdout, "miso %s\n", misoVersion)
 
-	// Try to get manager version if available, but don't trigger onboarding
+	// get manager version if available
 	var managerName string
 	if cfg.PackageManager != "" {
 		managerName = cfg.PackageManager
 	} else {
-		// Try to detect manager from lockfile, but don't trigger onboarding
+		// detect manager from lockfile
 		detected, err := DetectManager(root)
 		if err == nil {
 			managerName = detected
 		}
 	}
 
-	// If we have a manager, try to run its version command
+	// run manager version if available
 	if managerName != "" {
 		driver, ok := GetManager(managerName)
 		if ok {
 			spec := driver.BuildVersion()
-			// Run version command silently (no logging)
+			// run silently
 			cmd := exec.Command(spec.Command, spec.Args...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			_ = cmd.Run() // Silently ignore errors
+			_ = cmd.Run()
 		}
 	}
 	return nil

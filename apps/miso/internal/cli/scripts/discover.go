@@ -16,10 +16,7 @@ type ScriptInfo struct {
 	IsIndex      bool // true if this is an index.sh file
 }
 
-// discover scripts in folder recursively, return map of relative path -> []ScriptInfo
-// supports subdirectories and index.sh files
-// key format: "publish/patch" for "scripts/publish/patch.sh"
-// key format: "publish" for "scripts/publish/index.sh"
+// discover scripts recursively
 func DiscoverScripts(scriptsPath string) (map[string][]ScriptInfo, error) {
 	result := make(map[string][]ScriptInfo)
 
@@ -27,23 +24,19 @@ func DiscoverScripts(scriptsPath string) (map[string][]ScriptInfo, error) {
 	info, err := os.Stat(scriptsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// folder doesn't exist - not an error, just return empty map
 			return result, nil
 		}
 		return nil, fmt.Errorf("stat scripts folder: %w", err)
 	}
 	if !info.IsDir() {
-		// not a directory - return empty map
 		return result, nil
 	}
 
-	// recursively walk the scripts directory
 	err = filepath.Walk(scriptsPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// skip directories
 		if info.IsDir() {
 			return nil
 		}
@@ -52,12 +45,11 @@ func DiscoverScripts(scriptsPath string) (map[string][]ScriptInfo, error) {
 		ext := filepath.Ext(name)
 		basename := strings.TrimSuffix(name, ext)
 
-		// skip hidden files and helper files (starting with _)
+		// skip hidden and helper files
 		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
 			return nil
 		}
 
-		// check if file is executable or has common script extension
 		isExecutable := info.Mode().Perm()&0111 != 0
 		hasKnownExt := isKnownScriptExtension(ext)
 
@@ -65,35 +57,24 @@ func DiscoverScripts(scriptsPath string) (map[string][]ScriptInfo, error) {
 			return nil
 		}
 
-		// calculate relative path from scripts root
 		relPath, err := filepath.Rel(scriptsPath, path)
 		if err != nil {
 			return fmt.Errorf("calculate relative path: %w", err)
 		}
 
-		// normalize path separators to forward slashes for consistency
 		relPath = filepath.ToSlash(relPath)
 
-		// determine if this is an index file
 		isIndex := basename == "index"
 
-		// determine the key for this script
-		// For index.sh files: "publish/index.sh" -> key "publish"
-		// For regular files: "publish/patch.sh" -> key "publish/patch"
 		var key string
 		if isIndex {
-			// index.sh: use parent directory as key
-			// relPath is already normalized with ToSlash, so split by "/"
 			parts := strings.Split(relPath, "/")
 			if len(parts) == 1 {
-				// scripts/index.sh -> key "index"
 				key = "index"
 			} else {
-				// scripts/publish/index.sh -> key "publish"
 				key = strings.Join(parts[:len(parts)-1], "/")
 			}
 		} else {
-			// regular file: use relative path without extension as key
 			key = strings.TrimSuffix(relPath, ext)
 		}
 
@@ -128,8 +109,7 @@ func isKnownScriptExtension(ext string) bool {
 	return false
 }
 
-// check for conflicts (multiple scripts with same key)
-// e.g., both "publish.sh" and "publish/index.sh" would conflict
+// check for script conflicts
 func CheckConflicts(scripts map[string][]ScriptInfo) error {
 	for key, infos := range scripts {
 		if len(infos) > 1 {

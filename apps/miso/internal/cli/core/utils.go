@@ -122,22 +122,19 @@ func GetMisoVersion() (string, error) {
 		Version string `json:"version"`
 	}
 
-	// Try multiple locations for package.json
+	// search multiple package.json locations
 	var packageJSONPaths []string
 
-	// 1. Current directory (for npm installs)
+	// current directory
 	cwd, _ := os.Getwd()
 	packageJSONPaths = append(packageJSONPaths, filepath.Join(cwd, "package.json"))
 
-	// 2. node_modules/@ekkolyth/miso/package.json (for local npm installs)
+	// node_modules/@ekkolyth/miso/package.json
 	packageJSONPaths = append(packageJSONPaths, filepath.Join(cwd, "node_modules", "@ekkolyth", "miso", "package.json"))
 
-	// 3. Relative to binary location (for Go installs)
-	// Try to find the project root by looking for package.json
-	// Start from the binary location and walk up
+	// walk up from binary location
 	if exe, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exe)
-		// Walk up to find package.json (max 10 levels)
 		for i := 0; i < 10; i++ {
 			pkgPath := filepath.Join(exeDir, "package.json")
 			packageJSONPaths = append(packageJSONPaths, pkgPath)
@@ -149,16 +146,15 @@ func GetMisoVersion() (string, error) {
 		}
 	}
 
-	// 4. Try relative to source file location (for development)
+	// relative to source file location
 	_, filename, _, ok := runtime.Caller(0)
 	if ok {
 		dir := filepath.Dir(filename)
-		// core/ -> cli/ -> internal/ -> project root
 		projectRoot := filepath.Join(dir, "..", "..", "..")
 		packageJSONPaths = append(packageJSONPaths, filepath.Join(projectRoot, "package.json"))
 	}
 
-	// Try each path
+	// try each path
 	for _, path := range packageJSONPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {

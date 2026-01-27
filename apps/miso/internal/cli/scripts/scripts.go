@@ -57,9 +57,7 @@ func List(cfg config.Config, root string, styles ui.Styles, logger *log.Logger) 
 		sort.Strings(folderNames)
 		for _, name := range folderNames {
 			scripts := folderScripts[name]
-			if len(scripts) > 0 {
-				fmt.Fprintf(os.Stdout, "  %s (%s)\n", name, scripts[0].RelativePath)
-			}
+			fmt.Fprintf(os.Stdout, "  %s (%s)\n", name, scripts[0].RelativePath)
 		}
 	}
 

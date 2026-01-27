@@ -30,7 +30,6 @@ func ExecScriptFile(scriptPath string, args []string, workDir string) error {
 	var interpreter string
 	var interpreterArgs []string
 
-	// check for shebang
 	if strings.HasPrefix(firstLine, "#!") {
 		shebang := strings.TrimPrefix(firstLine, "#!")
 		shebang = strings.TrimSpace(shebang)
@@ -43,20 +42,17 @@ func ExecScriptFile(scriptPath string, args []string, workDir string) error {
 		}
 	}
 
-	// if no shebang, detect by extension
 	if interpreter == "" {
 		ext := strings.ToLower(filepath.Ext(scriptPath))
 		interpreter = getInterpreterByExtension(ext)
 	}
 
-	// if still no interpreter, check if file is executable
 	if interpreter == "" {
 		info, err := os.Stat(scriptPath)
 		if err != nil {
 			return fmt.Errorf("stat script file: %w", err)
 		}
 		if info.Mode().Perm()&0111 != 0 {
-			// executable - run directly
 			cmd := exec.Command(scriptPath, args...)
 			if workDir != "" {
 				cmd.Dir = workDir
@@ -69,12 +65,10 @@ func ExecScriptFile(scriptPath string, args []string, workDir string) error {
 		return fmt.Errorf("no interpreter found for script %q. add shebang or use known extension", scriptPath)
 	}
 
-	// check if interpreter is in PATH
 	if _, err := exec.LookPath(interpreter); err != nil {
 		return fmt.Errorf("interpreter %q not found in PATH. install it or update script shebang", interpreter)
 	}
 
-	// build command: interpreter [interpreter-args] scriptPath [script-args]
 	cmdArgs := append(interpreterArgs, scriptPath)
 	cmdArgs = append(cmdArgs, args...)
 

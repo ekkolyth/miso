@@ -1,9 +1,8 @@
-@import "tailwindcss";
-
-/* import nextra theme styles */
+/* import nextra theme styles first */
 @import "nextra-theme-docs/style.css";
 
-@variant dark (&:where(.dark *));
+@tailwind components;
+@tailwind utilities;
 
 :root {
     --x-color-primary-50: oklch(96.9% 0.016 293.756);
@@ -17,4 +16,5 @@
     --x-color-primary-800: oklch(43.2% 0.232 292.759);
     --x-color-primary-900: oklch(38% 0.189 293.745);
     --x-color-primary-950: oklch(28.3% 0.141 291.089);
+    --x-color-nextra-bg: var(--neutral-950);
 }
