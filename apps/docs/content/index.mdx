@@ -1,34 +1,31 @@
-# Meet Miso - The Agnostic Package Manager
+---
+title: Welcome
+---
 
-Miso is a universal package manager wrapper that lets you use any package manager (npm, pnpm, yarn, bun) with a consistent command interface.
+# Welcome to Miso
 
-## Features
+Miso is a universal package manager wrapper for JavaScript projects. It lets you work with npm, pnpm, yarn, or bun using a single, consistent command interface.
 
-- 🔄 **Package Manager Agnostic** - Works with npm, pnpm, yarn, and bun
-- 🎯 **Consistent Commands** - Use the same commands regardless of your package manager
-- ⚙️ **Configurable Flags** - Set default flags for your commands
-- 🚀 **Fast & Lightweight** - Written in Go for maximum performance
-- 📦 **Script Management** - Enhanced script handling and discovery
+## What Miso Does
 
-## Quick Start
+Miso sits between you and your package manager, providing:
 
-Get started with Miso in minutes:
+- **Consistent commands** across all package managers
+- **Automatic detection** of your project's package manager
+- **Custom script discovery** from a `scripts/` folder
+- **Configurable defaults** for common commands
 
-```bash
-# Install miso globally
-npm install -g miso
+## How It Works
 
-# Initialize in your project
-miso init
+When you run a miso command, it:
 
-# Use it like any package manager
-miso install
-miso add react
-miso dev
-```
+1. Finds your project root and configuration
+2. Detects or reads your configured package manager
+3. Translates the command to the appropriate package manager syntax
+4. Executes the command
 
-## Learn More
+## Why Use Miso
 
-- [Getting Started](/content) - Learn the basics
-- [Package Management](/content/package-management/flags) - Configure flags and options
-- [GitHub Repository](https://github.com/ekkolyth/miso) - View the source code
+Switch between projects using different package managers without remembering different commands. Configure default flags once. Organize scripts in a dedicated folder instead of cramming everything into package.json.
+
+Miso stays out of your way and lets you work the way you want.

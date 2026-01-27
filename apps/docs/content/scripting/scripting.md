@@ -98,6 +98,56 @@ If no shebang is present, Miso selects an interpreter by extension:
 | `.lua` | `lua` |
 | `.php` | `php` |
 
+## Passing Arguments to Scripts
+
+Pass arguments to scripts after the script name:
+
+```bash
+miso build --production
+miso deploy staging
+```
+
+For scripts folder scripts, arguments are passed directly to the script. For package.json scripts, arguments are forwarded to the package manager's run command.
+
+## Script Overrides
+
+Scripts in your scripts folder or package.json can override built-in miso commands. This lets you customize behavior for commands like `install`, `add`, `remove`, `dev`, `init`, or `version`.
+
+### How It Works
+
+When you run a command, miso checks in this order:
+
+1. **Scripts folder** - If a matching script exists, it runs instead of the built-in command
+2. **package.json scripts** - If no scripts folder match, package.json is checked
+3. **Built-in command** - If no script override exists, the built-in runs
+
+### Example: Custom Install
+
+Create `scripts/install.sh` to run custom logic before or after installing:
+
+```bash
+#!/bin/sh
+echo "Running pre-install checks..."
+pnpm install
+echo "Running post-install setup..."
+./scripts/setup.sh
+```
+
+Now `miso install` runs your custom script instead of the built-in install.
+
+### Example: Custom Dev
+
+Add a `dev` script to package.json to override the default behavior:
+
+```json
+{
+  "scripts": {
+    "dev": "concurrently 'vite' 'tsc --watch'"
+  }
+}
+```
+
+Now `miso dev` runs your custom dev command.
 
 ## package.json Scripts
 
