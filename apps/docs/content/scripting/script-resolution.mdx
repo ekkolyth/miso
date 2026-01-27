@@ -1,0 +1,171 @@
+# Script Resolution
+
+Understanding how Miso resolves commands is important for organizing your scripts and avoiding conflicts. This page explains the resolution order and priority.
+
+## Resolution Order
+
+When you run a command with Miso, it resolves the command in the following order:
+
+1. **Built-in commands** - Core Miso functionality
+2. **Scripts folder** - Custom scripts in your configured scripts directory
+3. **Package.json scripts** - Scripts defined in package.json
+4. **Passthrough** - Forwarded to the package manager
+
+Let's examine each step in detail.
+
+## 1. Built-in Commands
+
+Miso checks for built-in commands first. These include:
+
+- `install` - Install dependencies
+- `add` - Add new dependencies
+- `remove` - Remove dependencies
+- `run` - Run package.json scripts explicitly
+- `dev` - Start development server
+- `init` - Initialize a new project
+- `version` - Display Miso version
+- `misox` - Generate shell completions
+- `update` - Update Miso itself
+- `scripts` - List all available scripts
+
+If your command matches a built-in command, it executes immediately - unless you've created an override (see [Script Overrides](/scripting/script-overrides)).
+
+## 2. Scripts Folder
+
+If no built-in command matches, Miso searches the configured scripts folder:
+
+```
+scripts/
+  build.sh       → miso build
+  test.py        → miso test
+  deploy/
+    staging.sh   → miso deploy/staging
+```
+
+The scripts folder is searched recursively, and the first matching script is executed.
+
+### Matching Rules
+
+- Script name (without extension) matches the command
+- Subdirectory paths are preserved (`deploy/staging`)
+- Index files serve as directory defaults
+
+## 3. Package.json Scripts
+
+If no script is found in the scripts folder, Miso looks for a matching entry in package.json:
+
+```json
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "lint": "eslint ."
+  }
+}
+```
+
+If a match is found, it's executed via your configured package manager:
+
+```bash
+miso dev
+# Executes: pnpm run dev (or npm run dev, yarn dev, bun dev)
+```
+
+## 4. Passthrough
+
+If the command isn't found in any of the previous steps, Miso forwards it to your package manager with a notification:
+
+```bash
+miso outdated
+# → forwarding "outdated" to pnpm
+# Executes: pnpm outdated
+```
+
+This allows you to use Miso as a unified interface for all package manager commands without needing to remember which package manager you're using.
+
+## Command Conflicts
+
+When the same command name exists in multiple locations, the resolution order determines which one executes:
+
+### Example 1: Script Overrides Built-in
+
+```
+scripts/install.sh exists
+```
+
+```bash
+miso install
+# Executes: scripts/install.sh (not the built-in install command)
+```
+
+### Example 2: Scripts Folder Takes Precedence
+
+```
+scripts/dev.sh exists
+package.json has "dev": "vite"
+```
+
+```bash
+miso dev
+# Executes: scripts/dev.sh (not package.json script)
+```
+
+### Example 3: Explicit Execution
+
+To force execution of a package.json script when a scripts folder script exists:
+
+```bash
+miso run dev
+# Executes: package.json "dev" script via package manager
+```
+
+## Best Practices
+
+### 1. Avoid Unintentional Overrides
+
+Be aware when naming scripts that match built-in commands. Only override built-in commands when you specifically want to customize behavior.
+
+### 2. Use Descriptive Names
+
+Use specific, descriptive names to avoid conflicts:
+
+- ✅ `scripts/build/frontend.sh`
+- ✅ `scripts/deploy/staging.sh`
+- ❌ `scripts/i.sh` (too vague)
+
+### 3. Organize by Purpose
+
+Group related scripts in subdirectories:
+
+```
+scripts/
+  build/
+    index.sh
+    miso.sh
+    docs.sh
+  test/
+    unit.sh
+    integration.sh
+```
+
+### 4. Document Overrides
+
+If you override built-in commands, document why in comments:
+
+```bash
+#!/bin/sh
+# Custom install that runs additional setup
+# Overrides: miso install
+pnpm install
+./scripts/setup.sh
+```
+
+## Listing All Commands
+
+Use the `miso scripts` command to see all available commands and their sources:
+
+```bash
+miso scripts
+```
+
+This shows scripts from both the scripts folder and package.json, helping you understand what's available and identify any conflicts.

@@ -1,0 +1,104 @@
+# Scripts Folder
+
+The scripts folder is where Miso discovers your custom project scripts. This page covers how to configure, organize, and name your scripts.
+
+## Configuration
+
+The scripts folder path is configured in `miso.json`:
+
+```json
+{
+  "scripts": "./scripts"
+}
+```
+
+If not specified, the default is `./scripts` relative to the project root.
+
+## Execution Context
+
+All scripts execute from the project root directory, regardless of where they're located in the scripts folder. Use relative paths accordingly:
+
+```bash
+# scripts/build/miso.sh
+#!/bin/sh
+cd apps/miso && go build ./cmd
+```
+
+This means you can reference project files consistently without worrying about the script's location.
+
+## Discovery
+
+Miso recursively scans the scripts directory to find executable scripts. It looks for:
+
+### Executable Files
+Files with executable permissions are automatically discovered.
+
+### Known Extensions
+Files with recognized extensions are discovered even without executable permissions:
+
+- `.sh`, `.bash`, `.zsh` - Shell scripts
+- `.js`, `.mjs` - JavaScript
+- `.ts` - TypeScript
+- `.py` - Python
+- `.rb` - Ruby
+- `.pl` - Perl
+- `.lua` - Lua
+- `.php` - PHP
+
+### Excluded Files
+Hidden files (starting with `.`) and helper files (starting with `_`) are automatically skipped during discovery.
+
+## Script Naming
+
+Scripts are identified by their path relative to the scripts directory. The file extension is optional when running the command:
+
+| Script Path | Command |
+|-------------|---------|
+| `scripts/jump.sh` | `miso jump` |
+| `scripts/publish/patch.sh` | `miso publish/patch` |
+| `scripts/build/miso.sh` | `miso build/miso` |
+
+## Index Files
+
+An `index` file (with any supported extension) in a subdirectory acts as the default handler for that directory:
+
+| Script Path | Command |
+|-------------|---------|
+| `scripts/publish/index.sh` | `miso publish` |
+| `scripts/build/index.sh` | `miso build` |
+
+This allows you to create logical command groups with a default action.
+
+## Explicit Extension Support
+
+Use the explicit filename with extension to target a specific file when multiple scripts have the same base name:
+
+- `miso jump.sh` - runs `scripts/jump.sh` even if `jump.py` exists
+- `miso publish/patch.sh` - runs `scripts/publish/patch.sh` specifically
+
+This is useful when you have multiple implementations or when transitioning between languages.
+
+## Organizing Scripts
+
+Here's a recommended structure for organizing your scripts:
+
+```
+scripts/
+  build/           # Build-related scripts
+    index.sh       # Default build command
+    miso.sh
+    docs.sh
+  deploy/          # Deployment scripts
+    staging.sh
+    production.sh
+  test/            # Testing scripts
+    unit.sh
+    integration.sh
+  local/           # Local development
+    install.sh
+    uninstall.sh
+  _helpers/        # Helper scripts (not discovered)
+    common.sh
+```
+
+Use subdirectories to group related scripts and `_helpers/` for shared utilities that shouldn't be directly executable via Miso.
