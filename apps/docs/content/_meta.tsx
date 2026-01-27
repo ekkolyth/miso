@@ -1,5 +1,7 @@
 export default {
-  index: "Get Started",
+  index: "Welcome",
+  installation: "Installation",
   "working-with-miso": "Working with Miso",
-  "package-management": "Package Management",
+  scripting: "Scripting",
+  contributing: "Contributing to Miso",
 };

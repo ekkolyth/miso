@@ -1,0 +1,123 @@
+---
+title: Basic Commands
+---
+
+# Basic Commands
+
+## Install Dependencies
+
+Install all dependencies from your lockfile:
+
+```bash
+miso install
+# or
+miso i
+```
+
+## Add Packages
+
+Add one or more packages to your project:
+
+```bash
+miso add react
+miso add react react-dom typescript
+```
+
+Flags are passed through to your package manager:
+
+```bash
+miso add -D vitest    # dev dependency
+miso add -E lodash    # exact version
+```
+
+## Remove Packages
+
+Remove one or more packages:
+
+```bash
+miso remove lodash
+# or
+miso rm lodash react-dom
+```
+
+## Dev
+
+Shortcut for running the `dev` script:
+
+```bash
+miso dev
+```
+
+This is equivalent to `miso run dev` but also supports [flag configuration](/content/working-with-miso/flags).
+
+## Scripts
+
+List all available scripts from both the scripts folder and package.json:
+
+```bash
+miso scripts
+```
+
+Output:
+
+```
+available scripts
+
+scripts folder:
+  build (build/index.sh)
+  publish/patch (publish/patch.sh)
+
+package.json:
+  dev: vite
+  lint: eslint .
+```
+
+## misox
+
+`misox` is a standalone binary for running packages without installing them. Use it anywhere you'd use `npx`, `bunx`, `pnpm dlx`, or `yarn dlx`:
+
+```bash
+misox create-vite my-app
+misox prettier --write .
+misox eslint --init
+```
+
+It automatically uses the right tool for your package manager:
+
+| Package Manager | Equivalent |
+|-----------------|------------|
+| npm | `npx` |
+| bun | `bunx` |
+| pnpm | `pnpm dlx` |
+| yarn | `yarn dlx` |
+
+## Version
+
+Show miso version and your package manager version:
+
+```bash
+miso version
+# or
+miso v
+```
+
+Output:
+
+```
+miso 1.2.3
+pnpm 8.15.0
+```
+
+## Upgrade
+
+Upgrade miso to the latest version:
+
+```bash
+miso upgrade
+```
+
+To upgrade miso as a local dependency instead of globally:
+
+```bash
+miso upgrade --local
+```
