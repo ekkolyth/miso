@@ -1,7 +1,7 @@
 {
   "bin": {
-    "miso": "./miso.mjs",
-    "misox": "./misox.mjs"
+    "miso": "miso.mjs",
+    "misox": "misox.mjs"
   },
   "description": "the agnostic package manager",
   "files": [
