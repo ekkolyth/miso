@@ -10,7 +10,7 @@ func Upgrade(local bool, args []string) error {
 		npmArgs = []string{"install", "@ekkolyth/miso"}
 	} else {
 		// Global install: npm install -g @ekkolyth/miso
-		npmArgs = []string{"sudo install", "-g", "@ekkolyth/miso"}
+		npmArgs = []string{"sudo npm install", "-g", "@ekkolyth/miso"}
 	}
 	// Append any additional args passed to upgrade command
 	npmArgs = append(npmArgs, args...)
