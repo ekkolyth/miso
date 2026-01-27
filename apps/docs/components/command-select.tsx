@@ -15,7 +15,7 @@ const installCommands: Record<PackageManager, string> = {
     go: "go install github.com/ekkolyth/miso/apps/miso/cmd@latest",
 };
 
-export function InstallCommand() {
+export function CommandSelect() {
     const [selected, setSelected] = useState<PackageManager>("pnpm");
     const [copied, setCopied] = useState(false);
 
@@ -28,7 +28,7 @@ export function InstallCommand() {
     return (
         <div className="my-6 rounded-lg border border-neutral-800 bg-neutral-900 overflow-hidden">
             {/* Tabs */}
-            <div className="flex gap-8 px-6 border-b border-neutral-800">
+            <div className="flex gap-8 px-6 bg-neutral-950 border-b border-neutral-800">
                 {tabOrder.map((pm) => (
                     <button
                         key={pm}

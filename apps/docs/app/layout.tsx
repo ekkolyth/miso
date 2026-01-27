@@ -41,7 +41,7 @@ export default async function RootLayout({
             <Head>
                 <link rel="icon" href="/img/favicon.ico" />
             </Head>
-            <body className="dark:bg-neutral-950">
+            <body>
                 <Layout
                     // banner={banner}
                     navbar={navbar}
