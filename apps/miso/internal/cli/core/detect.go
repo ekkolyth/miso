@@ -34,6 +34,7 @@ func DetectManager(directoryPath string) (string, error) {
 		for k := range found {
 			return k, nil
 		}
+		return "", errors.New("unreachable")
 	default:
 		s := "multiple lockfiles detected; resolve conflict:\n"
 		for k, files := range found {
@@ -41,5 +42,4 @@ func DetectManager(directoryPath string) (string, error) {
 		}
 		return "", errors.New(s)
 	}
-	return "", errors.New("unreachable")
 }

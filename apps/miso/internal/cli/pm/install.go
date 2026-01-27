@@ -17,8 +17,5 @@ func Install(managerName string, workDir string, cfg config.Config) error {
 	if flags, ok := cfg.Flags["install"]; ok {
 		spec.Args = append(spec.Args, flags...)
 	}
-	if err := core.Exec(spec, managerName, workDir); err != nil {
-		return err
-	}
-	return nil
+	return core.Exec(spec, managerName, workDir)
 }

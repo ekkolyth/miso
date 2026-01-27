@@ -18,8 +18,5 @@ func Add(managerName string, packageNames []string, workDir string, cfg config.C
 		args = append(flags, packageNames...)
 	}
 	spec := driver.BuildAdd(args)
-	if err := core.Exec(spec, managerName, workDir); err != nil {
-		return err
-	}
-	return nil
+	return core.Exec(spec, managerName, workDir)
 }

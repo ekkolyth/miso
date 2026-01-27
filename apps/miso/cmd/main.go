@@ -37,7 +37,8 @@ func main() {
 		Prefix:          "miso",
 		ReportTimestamp: false,
 	})
-	if os.Getenv("MISO_DEBUG") == "1" {
+	debug := os.Getenv("MISO_DEBUG") == "1"
+	if debug {
 		logger.SetLevel(log.DebugLevel)
 	}
 
@@ -46,7 +47,7 @@ func main() {
 		core.Fail(logger, fmt.Errorf("determine working directory: %w", err), false)
 	}
 
-	// Handle global commands early, before loading config or ensuring manager
+	// handle global commands before loading config
 	if len(args) > 0 {
 		switch args[0] {
 		case "init":
@@ -55,7 +56,7 @@ func main() {
 			}
 			return
 		case "version", "v":
-			// Try to find project root and load config, but don't fail if not found
+			// load config if available
 			var projectRoot string
 			var cfg config.Config
 			if root, err := core.FindProjectRoot(originalWorkDir); err == nil {
@@ -69,16 +70,7 @@ func main() {
 			}
 			return
 		case "upgrade":
-			// Parse args to extract --local flag and remaining args
-			local := false
-			remainingArgs := args[1:]
-			for i, arg := range remainingArgs {
-				if arg == "--local" {
-					local = true
-					remainingArgs = append(remainingArgs[:i], remainingArgs[i+1:]...)
-					break
-				}
-			}
+			local, remainingArgs := core.ParseLocalFlag(args[1:])
 			if err := pm.Upgrade(local, remainingArgs); err != nil {
 				core.Fail(logger, err, false)
 			}
@@ -102,13 +94,13 @@ func main() {
 		core.Fail(logger, err, true)
 	}
 
-	// Ensure manager is configured before proceeding
+	// ensure manager configured
 	managerName, cfg, err := core.EnsureManager(projectRoot, cfg)
 	if err != nil {
 		core.Fail(logger, err, false)
 	}
 
-	if os.Getenv("MISO_DEBUG") == "1" {
+	if debug {
 		logger.Debug("resolved manager", "manager", managerName)
 	}
 

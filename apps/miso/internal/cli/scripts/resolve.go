@@ -23,9 +23,7 @@ type ResolvedScript struct {
 	Path   string // file path for folder scripts, command for package.json scripts
 }
 
-// resolve script by name, checking folder then package.json
-// supports path-based commands (e.g., "publish/patch") and index.sh resolution
-// supports explicit extension (e.g., "jump.sh")
+// resolve script by name from folder or package.json
 func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript, error) {
 	scriptsPath := cfg.Scripts
 	if scriptsPath == "" {
@@ -46,16 +44,13 @@ func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript,
 	// normalize name to use forward slashes for path matching
 	name = filepath.ToSlash(name)
 
-	// check for explicit extension (e.g., "jump.sh" or "publish/patch.sh")
+	// check for explicit extension
 	ext := filepath.Ext(name)
 	if ext != "" {
-		// remove extension to get key
 		key := strings.TrimSuffix(name, ext)
 		if scripts, ok := discovered[key]; ok {
-			// find exact match by extension
 			for _, script := range scripts {
 				if script.Extension == ext {
-					// check for conflicts
 					if len(scripts) > 1 {
 						var paths []string
 						for _, s := range scripts {
@@ -73,13 +68,10 @@ func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript,
 		}
 	}
 
-	// check by key (without extension) - handles path-based commands
-	// This handles both regular files (e.g., "publish/patch.sh" -> key "publish/patch")
-	// and index files (e.g., "publish/index.sh" -> key "publish")
+	// check by key (handles paths and index files)
 	key := strings.TrimSuffix(name, ext)
 	if scripts, ok := discovered[key]; ok {
 		if len(scripts) > 1 {
-			// conflict - return error (e.g., both "publish.sh" and "publish/index.sh" exist)
 			var paths []string
 			for _, script := range scripts {
 				paths = append(paths, script.RelativePath)
@@ -87,16 +79,13 @@ func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript,
 			return ResolvedScript{}, fmt.Errorf("multiple scripts for %q exist, exiting: %s",
 				key, strings.Join(paths, ", "))
 		}
-		if len(scripts) == 1 {
-			return ResolvedScript{
-				Source: ScriptSourceFolder,
-				Path:   scripts[0].Path,
-			}, nil
-		}
+		return ResolvedScript{
+			Source: ScriptSourceFolder,
+			Path:   scripts[0].Path,
+		}, nil
 	}
 
-	// check package.json scripts (only for simple names, not path-based)
-	// Path-based commands like "publish/patch" should not match package.json scripts
+	// check package.json (only for simple names)
 	if !strings.Contains(name, "/") {
 		pkgScripts, err := ReadPackageJSONScripts(root)
 		if err != nil {
@@ -119,7 +108,6 @@ func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript,
 func HasScript(name string, root string, cfg config.Config) (bool, error) {
 	resolved, err := ResolveScript(name, root, cfg)
 	if err != nil {
-		// if error is a conflict, script exists but has conflict
 		if strings.Contains(err.Error(), "multiple scripts") {
 			return true, err
 		}

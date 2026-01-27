@@ -40,6 +40,19 @@ type ParsedCLI struct {
 	Local        bool // For upgrade command --local flag
 }
 
+func ParseLocalFlag(args []string) (bool, []string) {
+	local := false
+	remaining := args
+	for i, arg := range args {
+		if arg == "--local" {
+			local = true
+			remaining = append(args[:i], args[i+1:]...)
+			break
+		}
+	}
+	return local, remaining
+}
+
 func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) {
 	if len(args) == 0 {
 		return ParsedCLI{}, errors.New("missing command")
@@ -47,16 +60,16 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 
 	cmd := args[0]
 
-	// Built-in commands are checked first (can be overridden by custom scripts)
+	// check built-in commands (can be overridden)
 	switch cmd {
 	case "install", "i":
-		// Check if script overrides this (scripts folder or package.json)
+		// check script override
 		if resolved, err := scripts.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
 			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 		}
 		return ParsedCLI{Action: ActionInstall}, nil
 	case "add":
-		// Check if script overrides this
+		// check script override
 		if resolved, err := scripts.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
 			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 		}
@@ -65,7 +78,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		}
 		return ParsedCLI{Action: ActionAdd, PackageNames: args[1:]}, nil
 	case "remove", "rm":
-		// Check if script overrides this
+		// check script override
 		if resolved, err := scripts.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
 			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 		}
@@ -77,7 +90,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		if len(args) < 2 {
 			return ParsedCLI{}, errors.New("usage: miso run <script> [<script>...] [-- <args...>]")
 		}
-		// Check if multiple scripts are provided
+		// check for multiple scripts
 		scriptNames, scriptArgs := splitMultipleScripts(args[1:])
 		if len(scriptNames) > 1 {
 			return ParsedCLI{Action: ActionRunMultiple, ScriptNames: scriptNames, ScriptArgs: scriptArgs}, nil
@@ -86,36 +99,36 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 			return ParsedCLI{}, errors.New("usage: miso run <script> [-- <args...>]")
 		}
 		script := scriptNames[0]
-		// Check scripts folder and package.json
+		// check scripts folder and package.json
 		if resolved, err := scripts.ResolveScript(script, root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
 			return buildScriptAction(resolved, script, scriptArgs), nil
 		}
-		// Fall back to package manager
+		// fall back to package manager
 		return ParsedCLI{Action: ActionRun, ScriptName: script, ScriptArgs: scriptArgs}, nil
 	case "dev":
 		inlineArgs := parseInlineArgs(args[1:])
-		// Check scripts folder and package.json
+		// check scripts folder and package.json
 		if resolved, err := scripts.ResolveScript("dev", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
 			return buildScriptAction(resolved, "dev", inlineArgs), nil
 		}
-		// Built-in: dev is shortcut for "run dev"
+		// dev is shortcut for "run dev"
 		return ParsedCLI{Action: ActionDev, ScriptArgs: inlineArgs}, nil
 	case "scripts":
 		return ParsedCLI{Action: ActionScripts}, nil
 	case "init":
-		// Check if script overrides this
+		// check script override
 		if resolved, err := scripts.ResolveScript("init", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
 			return buildScriptAction(resolved, "init", parseInlineArgs(args[1:])), nil
 		}
 		return ParsedCLI{Action: ActionInit}, nil
 	case "version", "v":
-		// Check if script overrides this
+		// check script override
 		if resolved, err := scripts.ResolveScript("version", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
 			return buildScriptAction(resolved, "version", parseInlineArgs(args[1:])), nil
 		}
 		return ParsedCLI{Action: ActionVersion}, nil
 	case "misox":
-		// Check if script overrides this
+		// check script override
 		if resolved, err := scripts.ResolveScript("misox", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
 			return buildScriptAction(resolved, "misox", parseInlineArgs(args[1:])), nil
 		}
@@ -130,20 +143,11 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 			Args:        remainingArgs,
 		}, nil
 	case "upgrade":
-		// Check if script overrides this
+		// check script override
 		if resolved, err := scripts.ResolveScript("upgrade", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
 			return buildScriptAction(resolved, "upgrade", parseInlineArgs(args[1:])), nil
 		}
-		// Check for --local flag
-		local := false
-		remainingArgs := args[1:]
-		for i, arg := range remainingArgs {
-			if arg == "--local" {
-				local = true
-				remainingArgs = append(remainingArgs[:i], remainingArgs[i+1:]...)
-				break
-			}
-		}
+		local, remainingArgs := ParseLocalFlag(args[1:])
 		return ParsedCLI{
 			Action: ActionUpgrade,
 			Local:  local,
@@ -151,21 +155,20 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		}, nil
 	}
 
-	// Not a built-in command - check scripts folder and package.json
+	// check scripts folder and package.json
 	resolved, err := scripts.ResolveScript(cmd, root, cfg)
 	if err != nil {
-		// If error contains "multiple scripts", it's a conflict - return the error
+		// handle script conflicts
 		if strings.Contains(err.Error(), "multiple scripts") {
 			return ParsedCLI{}, err
 		}
-		// Other errors (like discovery errors) - log but continue to passthrough
-		// Discovery errors are non-fatal and shouldn't block passthrough
+		// discovery errors are non-fatal
 	}
-	if err == nil && resolved.Source != scripts.ScriptSourceNone {
+	if resolved.Source != scripts.ScriptSourceNone {
 		return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 	}
 
-	// Not a built-in and not a script - passthrough to package manager
+	// passthrough to package manager
 	return ParsedCLI{
 		Action:  ActionPassthrough,
 		Command: cmd,

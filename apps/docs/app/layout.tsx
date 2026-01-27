@@ -5,8 +5,8 @@ import "nextra-theme-docs/style.css";
 import "./globals.css";
 
 export const metadata = {
-  title: "Miso - The Agnostic Package Manager",
-  description: "Documentation for Miso, the agnostic package manager",
+    title: "Miso - The Agnostic Package Manager",
+    description: "Documentation for Miso, the agnostic package manager",
 };
 
 // const banner = (
@@ -14,44 +14,44 @@ export const metadata = {
 // );
 
 const navbar = (
-  <Navbar
-    logo={
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        <img src="/miso.png" alt="Miso" width="36" height="36" />
-        <span style={{ fontWeight: "bold" }}>miso.js</span>
-      </div>
-    }
-    projectLink="https://github.com/ekkolyth/miso"
-  />
+    <Navbar
+        logo={
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <img src="/miso.png" alt="Miso" width="36" height="36" />
+                <span style={{ fontWeight: "bold" }}>miso.js</span>
+            </div>
+        }
+        projectLink="https://github.com/ekkolyth/miso"
+    />
 );
 
 const footer = (
-  <Footer>
-    Copyright © {new Date().getFullYear()} Miso. Built with Nextra.
-  </Footer>
+    <Footer className="bg-black py-4">
+        Copyright © {new Date().getFullYear()} Miso.
+    </Footer>
 );
 
 export default async function RootLayout({
-  children,
+    children,
 }: {
-  children: React.ReactNode;
+    children: React.ReactNode;
 }) {
-  return (
-    <html lang="en" dir="ltr" suppressHydrationWarning>
-      <Head>
-        <link rel="icon" href="/img/favicon.ico" />
-      </Head>
-      <body>
-        <Layout
-          // banner={banner}
-          navbar={navbar}
-          pageMap={await getPageMap()}
-          docsRepositoryBase="https://github.com/ekkolyth/miso/apps/docs"
-          footer={footer}
-        >
-          {children}
-        </Layout>
-      </body>
-    </html>
-  );
+    return (
+        <html lang="en" dir="ltr" suppressHydrationWarning>
+            <Head>
+                <link rel="icon" href="/img/favicon.ico" />
+            </Head>
+            <body className="dark:bg-neutral-950">
+                <Layout
+                    // banner={banner}
+                    navbar={navbar}
+                    pageMap={await getPageMap()}
+                    docsRepositoryBase="https://github.com/ekkolyth/miso/apps/docs"
+                    footer={footer}
+                >
+                    {children}
+                </Layout>
+            </body>
+        </html>
+    );
 }

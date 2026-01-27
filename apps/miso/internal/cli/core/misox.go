@@ -9,8 +9,5 @@ func RunMisox(managerName string, packageName string, args []string, workDir str
 		return fmt.Errorf("unsupported manager: %s", managerName)
 	}
 	spec := driver.BuildMisox(packageName, args)
-	if err := Exec(spec, managerName, workDir); err != nil {
-		return err
-	}
-	return nil
+	return Exec(spec, managerName, workDir)
 }
