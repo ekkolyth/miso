@@ -14,21 +14,12 @@ Miso doesn't care where you work or what tools you use. It sits as a light wrapp
 
 ### Installation
 
-#### Install via Go
-
-```bash
-go install github.com/ekkolyth/miso@latest
-```
-
 #### Install via npm
+
 Global Install (recommended)
+
 ```bash
 npm install -g @ekkolyth/miso
-```
-
-Local Install
-```bash
-npm install @ekkolyth/miso@latest
 ```
 
 Then run `miso init` to add miso to your project:
@@ -37,31 +28,4 @@ Then run `miso init` to add miso to your project:
 miso init
 ```
 
-**Note:** If you installed locally, use `npx miso init`.
-
-## Supported commands
-
-- `miso init`
-- `miso version`
-- `miso install`
-- `miso add <pkg>`
-- `miso remove <pkg>`
-- `miso dev <args>`
-- `miso <script> [-- <args>]`
-
-## `miso.json`
-
-```json
-{
-  "packageManager": "pnpm",
-  "projectName": "miso-demo",
-  "scripts": {
-    "dev": "pnpm dev --host",
-    "lint": "pnpm eslint ."
-  }
-}
-```
-
-You can edit this file at any time to switch managers or add more scripts. If a lockfile _is_ present, Miso will still generate the config automatically so you have something to customize later.
-
-## Contributions welcome!
+### Contributions welcome!
