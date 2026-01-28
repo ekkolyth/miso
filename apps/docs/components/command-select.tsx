@@ -1,7 +1,7 @@
 "use client";
 
-import { Copy, Check } from "lucide-react";
 import { useState } from "react";
+import { Terminal } from "./terminal";
 
 type PackageManager = "miso" | "npm" | "bun" | "pnpm" | "yarn" | "go";
 
@@ -19,20 +19,13 @@ interface CommandSelectProps {
 export function CommandSelect(props: CommandSelectProps) {
     // Filter tabs to only show those with provided commands
     const availableTabs = tabOrder.filter((pm) => props[pm] !== undefined);
-    
+
     // Default to first available tab
     const [selected, setSelected] = useState<PackageManager>(
-        availableTabs[0] ?? "npm"
+        availableTabs[0] ?? "npm",
     );
-    const [copied, setCopied] = useState(false);
 
     const currentCommand = props[selected] ?? "";
-
-    const copyToClipboard = () => {
-        navigator.clipboard.writeText(currentCommand);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    };
 
     // Don't render if no commands provided
     if (availableTabs.length === 0) {
@@ -71,38 +64,7 @@ export function CommandSelect(props: CommandSelectProps) {
             </div>
 
             {/* Terminal */}
-            <div
-                className="relative"
-                style={{ backgroundColor: "rgb(13, 13, 13)" }}
-            >
-                <div
-                    className="flex bg-zinc-950 items-center justify-between px-4 py-3 border-b"
-                    style={{ borderColor: "rgb(38, 38, 38)" }}
-                >
-                    <div className="flex items-center gap-2 flex-1">
-                        <span className="text-sm text-neutral-500">{">"}</span>
-                        <span className="text-sm text-neutral-500">
-                            Terminal
-                        </span>
-                    </div>
-                    <button
-                        onClick={copyToClipboard}
-                        className="p-1 rounded hover:bg-neutral-800 transition-colors"
-                        title="Copy to clipboard"
-                    >
-                        {copied ? (
-                            <Check className="h-4 w-4 text-green-400" />
-                        ) : (
-                            <Copy className="h-4 w-4 text-neutral-500" />
-                        )}
-                    </button>
-                </div>
-                <div className="px-4 py-3 bg-black">
-                    <code className="text-sm text-green-400">
-                        {currentCommand}
-                    </code>
-                </div>
-            </div>
+            <Terminal command={currentCommand} />
         </div>
     );
 }

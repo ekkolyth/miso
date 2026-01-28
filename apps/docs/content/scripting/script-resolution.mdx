@@ -28,7 +28,7 @@ Miso checks for built-in commands first. These include:
 - `update` - Update Miso itself
 - `scripts` - List all available scripts
 
-If your command matches a built-in command, it executes immediately - unless you've created an override (see [Script Overrides](/scripting/script-overrides)).
+"Built-ins" are the only arguments that take priority over all others. These cannot be overridden with scripts, which is _not_ the case for other package manager's commands you may run with miso.
 
 ## 2. Scripts Folder
 
@@ -56,11 +56,11 @@ If no script is found in the scripts folder, Miso looks for a matching entry in 
 
 ```json
 {
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint ."
-  }
+    "scripts": {
+        "dev": "vite",
+        "build": "tsc && vite build",
+        "lint": "eslint ."
+    }
 }
 ```
 
