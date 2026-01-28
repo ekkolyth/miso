@@ -3,33 +3,47 @@
 import { Copy, Check } from "lucide-react";
 import { useState } from "react";
 
-type PackageManager = "npm" | "bun" | "pnpm" | "yarn" | "go";
+type PackageManager = "miso" | "npm" | "bun" | "pnpm" | "yarn" | "go";
 
-const tabOrder: PackageManager[] = ["npm", "bun", "pnpm", "yarn", "go"];
+const tabOrder: PackageManager[] = ["miso", "npm", "bun", "pnpm", "yarn", "go"];
 
-const installCommands: Record<PackageManager, string> = {
-    npm: "npm install -g @ekkolyth/miso",
-    bun: "bun add -g @ekkolyth/miso",
-    pnpm: "pnpm add -g @ekkolyth/miso",
-    yarn: "yarn global add @ekkolyth/miso",
-    go: "go install github.com/ekkolyth/miso/apps/miso/cmd@latest",
-};
+interface CommandSelectProps {
+    miso?: string;
+    npm?: string;
+    bun?: string;
+    pnpm?: string;
+    yarn?: string;
+    go?: string;
+}
 
-export function CommandSelect() {
-    const [selected, setSelected] = useState<PackageManager>("pnpm");
+export function CommandSelect(props: CommandSelectProps) {
+    // Filter tabs to only show those with provided commands
+    const availableTabs = tabOrder.filter((pm) => props[pm] !== undefined);
+    
+    // Default to first available tab
+    const [selected, setSelected] = useState<PackageManager>(
+        availableTabs[0] ?? "npm"
+    );
     const [copied, setCopied] = useState(false);
 
+    const currentCommand = props[selected] ?? "";
+
     const copyToClipboard = () => {
-        navigator.clipboard.writeText(installCommands[selected]);
+        navigator.clipboard.writeText(currentCommand);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
+
+    // Don't render if no commands provided
+    if (availableTabs.length === 0) {
+        return null;
+    }
 
     return (
         <div className="my-6 rounded-lg border border-neutral-800 bg-neutral-900 overflow-hidden">
             {/* Tabs */}
             <div className="flex gap-8 px-6 bg-neutral-950 border-b border-neutral-800">
-                {tabOrder.map((pm) => (
+                {availableTabs.map((pm) => (
                     <button
                         key={pm}
                         onClick={() => setSelected(pm)}
@@ -85,7 +99,7 @@ export function CommandSelect() {
                 </div>
                 <div className="px-4 py-3 bg-black">
                     <code className="text-sm text-green-400">
-                        {installCommands[selected]}
+                        {currentCommand}
                     </code>
                 </div>
             </div>

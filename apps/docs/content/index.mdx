@@ -2,34 +2,46 @@
 title: Welcome
 ---
 
+# Meet: Miso!
 
-# Meet: Miso! 
 ### The Agnostic Package Manager
 
 Miso is a universal package manager wrapper for JavaScript projects. It lets you work with npm, pnpm, yarn, or bun using a single, consistent command interface.
 
 <Miso />
+*are you an artist that wants to help make miso freakin' ADORABLE?
+[message](https://ekkolyth.com) me! (Seriously. Do it. Paid Work)
 
-## What Miso Does
+## Why?
 
-Miso sits between you and your package manager, providing:
+To be honest? miso at its core is albeit, a bit silly. But, I'm forced to work between a handful of projects with different package managers and it was an annoyance that I constantly had to remember which one I was using at the time.
 
-- **Consistent commands** across all package managers
-- **Automatic detection** of your project's package manager
-- **Custom script discovery** from a `scripts/` folder
-- **Configurable defaults** for common commands
+Additionally, I was (and still am) an early-career developer and the "how" was a fun challenge.
+
+Since then, I've started tackling some extra features that simply compliment the way I like to work. My goal since starting has shifted a bit, and now I've become really interested in making miso a general "DX" tool for javascript devs. I've been thinking through and working on ways I can solve the miniscule annoyances I have with developing modern web apps, and I hope that if nothing else this package's existence brings you a laugh.
 
 ## How It Works
 
-When you run a miso command, it:
+After [installing](/install), simply replace your cli commands with "miso".
 
-1. Finds your project root and configuration
-2. Detects or reads your configured package manager
-3. Translates the command to the appropriate package manager syntax
-4. Executes the command
+For instance:
 
-## Why Use Miso
+<CommandSelect
+    miso="miso dev"
+    npm="npm run dev"
+    bun="bun dev"
+    pnpm="pnpm dev"
+    yarn="yarn run dev"
+/>
 
-Switch between projects using different package managers without remembering different commands. Configure default flags once. Organize scripts in a dedicated folder instead of cramming everything into package.json.
+or even:
 
-Miso stays out of your way and lets you work the way you want.
+<CommandSelect
+    miso="miso add @tanstack/react-query"
+    npm="npm i @tanstack/react-query"
+    bun="bun add @tanstack/react-query"
+    pnpm="pnpm add @tanstack/react-query"
+    yarn="yarn add @tanstack/react-query"
+/>
+
+Now, you can seemlessly bounce between projects with as many different package managers as you like, and you never have to glance to the left and find your lockfile to remember.

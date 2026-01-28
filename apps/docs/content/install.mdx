@@ -1,0 +1,32 @@
+---
+title: Installation
+---
+
+# Installation
+
+## Install Globally (recommended)
+
+Install miso globally using your preferred package manager:
+
+<CommandSelect
+    bun="bun install -g @ekkolyth/miso"
+    pnpm="pnpm install -g @ekkolyth/miso"
+    yarn="yarn global add @ekkolyth/miso"
+    npm="npm install -g @ekkolyth/miso"
+    go="go install github.com/ekkolyth/miso/apps/miso/cmd@latest"
+/>
+
+Once installed, you can update to the latest version of miso any time by running:
+
+<CommandSelect miso="miso upgrade" />
+
+## Install in a project
+
+If you want to install miso only in the project you're currently working on, add it as a dev dependency:
+
+<CommandSelect
+    bun="bun add @ekkolyth/miso -d"
+    pnpm="pnpm add -D @ekkolyth/miso"
+    yarn="yarn add @ekkolyth/miso -D"
+    npm="npm i @ekkolyth/miso -D"
+/>

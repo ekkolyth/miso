@@ -1,0 +1,39 @@
+# Setting Up a Project
+
+Run `miso init` to set up Miso in your project.
+
+<CommandSelect miso="miso init" />
+
+This creates a `miso.json` configuration file in the current directory. Miso will try to assume it's own default configuration, but will ask you to confirm during `miso init` to make sure you're both on the same page.
+
+## Running Commands from Anywhere
+
+Theoretically, you can run Miso commands from any subdirectory within your project.
+
+Because of this, Miso works great in monorepos. You can run commands from any subdirectory, and Miso will find your project configuration at the root.
+
+### Example
+
+```
+my-monorepo/
+├── miso.json
+├── package.json
+├── bunfig.toml
+└── apps/
+    └── react-app/
+        └── src/
+└── packages/
+*etc*
+```
+
+So, let's say you're in `my-monorepo/apps/react-app/` and run `miso add react`:
+
+- miso searches the current directory for a `miso.json` file.
+- If it doesn't find one, it then walks up the directory tree looking for:
+    - `miso.json`
+    - "node_modules" folder
+    - lockfile (bun.lock, package.lock, etc.)
+- miso finds your `miso.json` at the monorepo root
+- The configured package manager command runs from your current directory (`my-monorepo/apps/react-app/`)
+
+So, keep one `miso.json` at your monorepo root, and run miso commands from anywhere in your project directory.
