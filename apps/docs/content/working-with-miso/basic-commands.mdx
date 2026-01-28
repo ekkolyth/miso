@@ -4,13 +4,21 @@ title: Basic Commands
 
 # Basic Commands
 
+Miso comes with a handful of built-in commands to ensure that your experience moving between package managers is perfect.
+
+When you execute commands via miso, it first checks to see if the argument provided is a "built-in" command, if it is, it immediately executes.
+
+To learn more about this, check out [Resolution Order](/scripting/script-resolution#resolution-order)
+
 ## Install Dependencies
 
 Install all dependencies from your lockfile:
 
 ```bash
 miso install
+
 # or
+
 miso i
 ```
 
@@ -19,11 +27,10 @@ miso i
 Add one or more packages to your project:
 
 ```bash
-miso add react
-miso add react react-dom typescript
+miso add @tailwindcss
 ```
 
-Flags are passed through to your package manager:
+Flags are passed through to your package manager, exactly as you would expect:
 
 ```bash
 miso add -D vitest    # dev dependency
@@ -36,8 +43,12 @@ Remove one or more packages:
 
 ```bash
 miso remove lodash
-# or
-miso rm lodash react-dom
+```
+
+_or_
+
+```bash
+miso rm lodash react redux
 ```
 
 ## Dev
@@ -48,11 +59,11 @@ Shortcut for running the `dev` script:
 miso dev
 ```
 
-This is equivalent to `miso run dev` but also supports [flag configuration](/content/working-with-miso/flags).
+This is equivalent to `npm run dev`/`bun dev` but also supports [flag configuration](/content/working-with-miso/flags).
 
 ## Scripts
 
-List all available scripts from both the scripts folder and package.json:
+List all available scripts miso can run from both the configured scripts folder and package.json:
 
 ```bash
 miso scripts
@@ -68,16 +79,15 @@ scripts folder:
   publish/patch (publish/patch.sh)
 
 package.json:
-  dev: vite
+  dev: vite dev
   lint: eslint .
 ```
 
 ## misox
 
-`misox` is a standalone binary for running packages without installing them. Use it anywhere you'd use `npx`, `bunx`, `pnpm dlx`, or `yarn dlx`:
+`misox` is a stand-in replacement for `npx`.
 
 ```bash
-misox create-vite my-app
 misox prettier --write .
 misox eslint --init
 ```
@@ -85,15 +95,15 @@ misox eslint --init
 It automatically uses the right tool for your package manager:
 
 | Package Manager | Equivalent |
-|-----------------|------------|
-| npm | `npx` |
-| bun | `bunx` |
-| pnpm | `pnpm dlx` |
-| yarn | `yarn dlx` |
+| --------------- | ---------- |
+| npm             | `npx`      |
+| bun             | `bunx`     |
+| pnpm            | `pnpm dlx` |
+| yarn            | `yarn dlx` |
 
 ## Version
 
-Show miso version and your package manager version:
+Show miso version:
 
 ```bash
 miso version
@@ -105,7 +115,6 @@ Output:
 
 ```
 miso 1.2.3
-pnpm 8.15.0
 ```
 
 ## Upgrade
@@ -116,7 +125,7 @@ Upgrade miso to the latest version:
 miso upgrade
 ```
 
-To upgrade miso as a local dependency instead of globally:
+To upgrade miso as a local dependency instead of globally, add the `--install` flag:
 
 ```bash
 miso upgrade --local
