@@ -1,4 +1,4 @@
-package core
+package commands
 
 import (
 	"encoding/json"
@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/manager"
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
@@ -29,7 +30,7 @@ func DetectManagerForInit(root string) (string, error) {
 			if len(parts) > 0 && parts[0] != "" {
 				managerName := parts[0]
 				// validate against registered managers
-				registered := GetRegisteredManagers()
+				registered := manager.GetRegisteredManagers()
 				for _, reg := range registered {
 					if reg == managerName {
 						return managerName, nil
@@ -42,7 +43,7 @@ func DetectManagerForInit(root string) (string, error) {
 	}
 
 	// check for lockfiles
-	detected, err := DetectManager(root)
+	detected, err := manager.DetectManager(root)
 	if err == nil {
 		return detected, nil
 	}
@@ -71,7 +72,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		return err
 	}
 
-	managerList := GetRegisteredManagers()
+	managerList := manager.GetRegisteredManagers()
 	newCfg, err := RunInitOnboarding(root, managerList, preselectedManager, styles, logger)
 	if err != nil {
 		return err
@@ -88,14 +89,14 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 	}
 
 	// run manager init command
-	if _, ok := GetManager(newCfg.PackageManager); !ok {
+	if _, ok := manager.GetManager(newCfg.PackageManager); !ok {
 		return fmt.Errorf("unsupported manager: %s", newCfg.PackageManager)
 	}
-	spec := ExecSpec{
+	spec := manager.ExecSpec{
 		Command: newCfg.PackageManager,
 		Args:    []string{"init"},
 	}
-	if err := Exec(spec, newCfg.PackageManager, ""); err != nil {
+	if err := manager.Exec(spec, newCfg.PackageManager, ""); err != nil {
 		return err
 	}
 	return nil

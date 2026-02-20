@@ -1,26 +1,17 @@
-package core
+package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/log"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/manager"
 )
-
-var lockfiles = []string{
-	"bun.lockb",
-	"bun.lock",
-	"package-lock.json",
-	"pnpm-lock.yaml",
-	"yarn.lock",
-}
 
 // find project root by walking up directories
 // priority: miso.json > lockfile > node_modules
@@ -48,7 +39,7 @@ func FindProjectRoot(startPath string) (string, error) {
 		}
 
 		// check for lockfiles
-		for _, lockfile := range lockfiles {
+		for _, lockfile := range manager.LockfileNames() {
 			lockPath := filepath.Join(current, lockfile)
 			if st, err := os.Stat(lockPath); err == nil && !st.IsDir() {
 				foundLockfile = true
@@ -114,64 +105,6 @@ func Fail(logger *log.Logger, err error, showUsage bool) {
 		fmt.Fprintln(os.Stderr, UsageText())
 	}
 	os.Exit(1)
-}
-
-// return miso version from package.json
-func GetMisoVersion() (string, error) {
-	type packageInfo struct {
-		Version string `json:"version"`
-	}
-
-	// search multiple package.json locations
-	var packageJSONPaths []string
-
-	// current directory
-	cwd, _ := os.Getwd()
-	packageJSONPaths = append(packageJSONPaths, filepath.Join(cwd, "package.json"))
-
-	// node_modules/@ekkolyth/miso/package.json
-	packageJSONPaths = append(packageJSONPaths, filepath.Join(cwd, "node_modules", "@ekkolyth", "miso", "package.json"))
-
-	// walk up from binary location
-	if exe, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exe)
-		for i := 0; i < 10; i++ {
-			pkgPath := filepath.Join(exeDir, "package.json")
-			packageJSONPaths = append(packageJSONPaths, pkgPath)
-			parent := filepath.Dir(exeDir)
-			if parent == exeDir {
-				break
-			}
-			exeDir = parent
-		}
-	}
-
-	// relative to source file location
-	_, filename, _, ok := runtime.Caller(0)
-	if ok {
-		dir := filepath.Dir(filename)
-		projectRoot := filepath.Join(dir, "..", "..", "..")
-		packageJSONPaths = append(packageJSONPaths, filepath.Join(projectRoot, "package.json"))
-	}
-
-	// try each path
-	for _, path := range packageJSONPaths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-
-		var info packageInfo
-		if err := json.Unmarshal(data, &info); err != nil {
-			continue
-		}
-
-		if info.Version != "" {
-			return info.Version, nil
-		}
-	}
-
-	return "", fmt.Errorf("could not find package.json with version")
 }
 
 // return usage help text

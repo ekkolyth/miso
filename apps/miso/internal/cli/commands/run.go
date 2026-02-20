@@ -1,31 +1,31 @@
-package pm
+package commands
 
 import (
 	"fmt"
 
-	"github.com/ekkolyth/miso/internal/cli/core"
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/manager"
 )
 
 // miso run <script>
 func Run(managerName string, scriptName string, scriptArgs []string, workDir string) error {
-	driver, ok := core.GetManager(managerName)
+	driver, ok := manager.GetManager(managerName)
 	if !ok {
 		return fmt.Errorf("unsupported manager: %s", managerName)
 	}
 	spec := driver.BuildRun(scriptName, scriptArgs)
-	return core.Exec(spec, managerName, workDir)
+	return manager.Exec(spec, managerName, workDir)
 }
 
 // run multiple scripts sequentially
 func RunMultiple(managerName string, scriptNames []string, scriptArgs []string, workDir string) error {
-	driver, ok := core.GetManager(managerName)
+	driver, ok := manager.GetManager(managerName)
 	if !ok {
 		return fmt.Errorf("unsupported manager: %s", managerName)
 	}
 	for _, scriptName := range scriptNames {
 		spec := driver.BuildRun(scriptName, scriptArgs)
-		if err := core.Exec(spec, managerName, workDir); err != nil {
+		if err := manager.Exec(spec, managerName, workDir); err != nil {
 			return err
 		}
 	}
@@ -34,7 +34,7 @@ func RunMultiple(managerName string, scriptNames []string, scriptArgs []string, 
 
 // miso dev
 func Dev(managerName string, scriptArgs []string, workDir string, cfg config.Config) error {
-	driver, ok := core.GetManager(managerName)
+	driver, ok := manager.GetManager(managerName)
 	if !ok {
 		return fmt.Errorf("unsupported manager: %s", managerName)
 	}
@@ -43,5 +43,5 @@ func Dev(managerName string, scriptArgs []string, workDir string, cfg config.Con
 		args = append(flags, scriptArgs...)
 	}
 	spec := driver.BuildRun("dev", args)
-	return core.Exec(spec, managerName, workDir)
+	return manager.Exec(spec, managerName, workDir)
 }

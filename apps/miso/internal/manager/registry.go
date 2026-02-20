@@ -1,12 +1,12 @@
-package core
+package manager
 
 import "sort"
 
 var driverRegistry = map[string]Manager{}
 
 // register manager driver
-func RegisterManager(name string, manager Manager) {
-	driverRegistry[name] = manager
+func RegisterManager(name string, m Manager) {
+	driverRegistry[name] = m
 }
 
 // return manager driver for given name
