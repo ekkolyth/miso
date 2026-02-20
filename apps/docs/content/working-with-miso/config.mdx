@@ -2,6 +2,21 @@
 
 You can edit `miso.json` directly to change it's settings:
 
+### JSON Schema (IDE Support)
+
+Add a `$schema` property to get autocomplete and validation in VS Code, Cursor, and other editors:
+
+```json
+{
+  "$schema": "https://misojs.dev/miso.schema.json",
+  "package-manager": "bun",
+  "project-name": "my-project",
+  "scripts": "./scripts"
+}
+```
+
+The schema is available at [https://misojs.dev/miso.schema.json](https://misojs.dev/miso.schema.json) — use this URL in your `miso.json` for type-safe editing.
+
 ### Package Manager
 
 Set or update your project's package manager:

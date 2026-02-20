@@ -39,6 +39,7 @@ func RunInitOnboarding(root string, managerNames []string, preselectedManager st
 	logger.Info("initialized project", "project", projectName, "manager", managerChoice)
 
 	cfg := config.Config{
+		Schema:         config.SchemaURL,
 		PackageManager: managerChoice,
 		ProjectName:    projectName,
 		Scripts:        "./scripts",
