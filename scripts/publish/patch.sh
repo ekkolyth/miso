@@ -1,8 +1,5 @@
-#!/bin/sh
 # Publish with patch version bump
 # Usage: publish/patch.sh [MESSAGE...]
-
-set -e
 
 MESSAGE="$*"
 DRY_RUN=${DRY_RUN:-0}

@@ -1,8 +1,5 @@
-#!/bin/sh
 # Publish with major version bump
 # Usage: publish/major.sh [MESSAGE...]
-
-set -e
 
 MESSAGE="$*"
 DRY_RUN=${DRY_RUN:-0}

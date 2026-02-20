@@ -56,6 +56,11 @@ func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShe
 		}
 	}
 
+	// apply safe defaults for shell interpreters: -e (exit on error)
+	if isShell(interpreter) {
+		interpreterArgs = append([]string{"-e"}, interpreterArgs...)
+	}
+
 	if _, err := exec.LookPath(interpreter); err != nil {
 		return fmt.Errorf("interpreter %q not found in PATH. install it or update script shebang", interpreter)
 	}
@@ -71,6 +76,14 @@ func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShe
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func isShell(interpreter string) bool {
+	switch interpreter {
+	case "sh", "bash", "zsh", "dash", "ksh":
+		return true
+	}
+	return false
 }
 
 // get interpreter by file extension

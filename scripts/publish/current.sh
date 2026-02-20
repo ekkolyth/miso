@@ -1,8 +1,5 @@
-#!/bin/sh
 # Publish current version without bumping
 # Usage: publish/current.sh
-
-set -e
 
 DRY_RUN=${DRY_RUN:-0}
 
