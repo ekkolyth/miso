@@ -122,7 +122,7 @@ func main() {
 		}
 		return
 	case core.ActionScriptFolder:
-		if err := scripts.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir); err != nil {
+		if err := scripts.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell); err != nil {
 			core.Fail(logger, err, false)
 		}
 		return
