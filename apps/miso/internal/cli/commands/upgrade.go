@@ -1,6 +1,6 @@
-package pm
+package commands
 
-import "github.com/ekkolyth/miso/internal/cli/core"
+import "github.com/ekkolyth/miso/internal/manager"
 
 // miso upgrade
 func Upgrade(local bool, args []string) error {
@@ -12,9 +12,9 @@ func Upgrade(local bool, args []string) error {
 	}
 	npmArgs = append(npmArgs, args...)
 
-	spec := core.ExecSpec{
+	spec := manager.ExecSpec{
 		Command: "npm",
 		Args:    npmArgs,
 	}
-	return core.Exec(spec, "npm", "")
+	return manager.Exec(spec, "npm", "")
 }

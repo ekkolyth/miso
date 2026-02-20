@@ -1,4 +1,4 @@
-package core
+package manager
 
 import (
 	"errors"
@@ -16,6 +16,15 @@ var lockfileMap = map[string]string{
 }
 
 var ErrNoLockfile = errors.New("no lockfile detected")
+
+// LockfileNames returns the list of lockfile filenames for project root detection.
+func LockfileNames() []string {
+	names := make([]string, 0, len(lockfileMap))
+	for k := range lockfileMap {
+		names = append(names, k)
+	}
+	return names
+}
 
 func DetectManager(directoryPath string) (string, error) {
 	found := map[string][]string{}

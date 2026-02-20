@@ -1,4 +1,4 @@
-package core
+package commands
 
 import (
 	"fmt"
@@ -107,7 +107,7 @@ func printMisoWelcome(styles ui.Styles) {
 		rendered.WriteString(renderedLine.String())
 		rendered.WriteString("\n")
 	}
-	
+
 	asciiArt := rendered.String()
 
 	fmt.Fprint(os.Stdout, asciiArt)

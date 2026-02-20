@@ -1,15 +1,15 @@
-package pm
+package commands
 
 import (
 	"fmt"
 
-	"github.com/ekkolyth/miso/internal/cli/core"
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/manager"
 )
 
 // miso add
 func Add(managerName string, packageNames []string, workDir string, cfg config.Config) error {
-	driver, ok := core.GetManager(managerName)
+	driver, ok := manager.GetManager(managerName)
 	if !ok {
 		return fmt.Errorf("unsupported manager: %s", managerName)
 	}
@@ -18,5 +18,5 @@ func Add(managerName string, packageNames []string, workDir string, cfg config.C
 		args = append(flags, packageNames...)
 	}
 	spec := driver.BuildAdd(args)
-	return core.Exec(spec, managerName, workDir)
+	return manager.Exec(spec, managerName, workDir)
 }
