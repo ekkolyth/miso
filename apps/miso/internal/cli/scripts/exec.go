@@ -89,8 +89,10 @@ func isShell(interpreter string) bool {
 // get interpreter by file extension
 func getInterpreterByExtension(ext string) string {
 	switch ext {
-	case ".sh", ".bash":
+	case ".sh":
 		return "sh"
+	case ".bash":
+		return "bash"
 	case ".zsh":
 		return "zsh"
 	case ".js", ".mjs":

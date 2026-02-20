@@ -18,5 +18,5 @@ func Add(managerName string, packageNames []string, workDir string, cfg config.C
 		args = append(flags, packageNames...)
 	}
 	spec := driver.BuildAdd(args)
-	return manager.Exec(spec, managerName, workDir)
+	return manager.Exec(spec, workDir)
 }

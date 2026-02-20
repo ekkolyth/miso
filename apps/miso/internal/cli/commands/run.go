@@ -14,7 +14,7 @@ func Run(managerName string, scriptName string, scriptArgs []string, workDir str
 		return fmt.Errorf("unsupported manager: %s", managerName)
 	}
 	spec := driver.BuildRun(scriptName, scriptArgs)
-	return manager.Exec(spec, managerName, workDir)
+	return manager.Exec(spec, workDir)
 }
 
 // run multiple scripts sequentially
@@ -25,7 +25,7 @@ func RunMultiple(managerName string, scriptNames []string, scriptArgs []string, 
 	}
 	for _, scriptName := range scriptNames {
 		spec := driver.BuildRun(scriptName, scriptArgs)
-		if err := manager.Exec(spec, managerName, workDir); err != nil {
+		if err := manager.Exec(spec, workDir); err != nil {
 			return err
 		}
 	}
@@ -43,5 +43,5 @@ func Dev(managerName string, scriptArgs []string, workDir string, cfg config.Con
 		args = append(flags, scriptArgs...)
 	}
 	spec := driver.BuildRun("dev", args)
-	return manager.Exec(spec, managerName, workDir)
+	return manager.Exec(spec, workDir)
 }

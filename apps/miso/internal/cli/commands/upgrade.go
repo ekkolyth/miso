@@ -4,17 +4,13 @@ import "github.com/ekkolyth/miso/internal/manager"
 
 // miso upgrade
 func Upgrade(local bool, args []string) error {
-	var npmArgs []string
+	var spec manager.ExecSpec
 	if local {
-		npmArgs = []string{"install", "@ekkolyth/miso"}
+		npmArgs := append([]string{"install", "@ekkolyth/miso"}, args...)
+		spec = manager.ExecSpec{Command: "npm", Args: npmArgs}
 	} else {
-		npmArgs = []string{"sudo npm install", "-g", "@ekkolyth/miso"}
+		npmArgs := append([]string{"npm", "install", "-g", "@ekkolyth/miso"}, args...)
+		spec = manager.ExecSpec{Command: "sudo", Args: npmArgs}
 	}
-	npmArgs = append(npmArgs, args...)
-
-	spec := manager.ExecSpec{
-		Command: "npm",
-		Args:    npmArgs,
-	}
-	return manager.Exec(spec, "npm", "")
+	return manager.Exec(spec, "")
 }

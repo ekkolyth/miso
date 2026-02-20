@@ -18,5 +18,5 @@ func Remove(managerName string, packageNames []string, workDir string, cfg confi
 		args = append(flags, packageNames...)
 	}
 	spec := driver.BuildRemove(args)
-	return manager.Exec(spec, managerName, workDir)
+	return manager.Exec(spec, workDir)
 }

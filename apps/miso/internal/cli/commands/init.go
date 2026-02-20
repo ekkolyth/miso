@@ -96,7 +96,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		Command: newCfg.PackageManager,
 		Args:    []string{"init"},
 	}
-	if err := manager.Exec(spec, newCfg.PackageManager, ""); err != nil {
+	if err := manager.Exec(spec, ""); err != nil {
 		return err
 	}
 	return nil

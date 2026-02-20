@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 var lockfileMap = map[string]string{
@@ -23,6 +24,7 @@ func LockfileNames() []string {
 	for k := range lockfileMap {
 		names = append(names, k)
 	}
+	sort.Strings(names)
 	return names
 }
 
