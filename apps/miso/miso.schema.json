@@ -1,5 +1,5 @@
 {
-    "$schema": "https://json-schema.org/draft-07/schema",
+    "$schema": "https://json-schema.org/draft-07/schema#",
     "$id": "https://misojs.dev/miso.schema.json",
     "title": "Miso Configuration",
     "description": "Configuration for Miso package manager",
