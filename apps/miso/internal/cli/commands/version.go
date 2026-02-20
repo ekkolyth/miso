@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/ekkolyth/miso/internal/config"
@@ -17,17 +16,15 @@ func GetMisoVersion() (string, error) {
 		Version string `json:"version"`
 	}
 
-	// search multiple package.json locations
+	// search multiple package.json locations (miso-specific paths first, cwd last)
 	var packageJSONPaths []string
 
-	// current directory
 	cwd, _ := os.Getwd()
-	packageJSONPaths = append(packageJSONPaths, filepath.Join(cwd, "package.json"))
 
-	// node_modules/@ekkolyth/miso/package.json
+	// 1. node_modules/@ekkolyth/miso/package.json (miso when installed as dep)
 	packageJSONPaths = append(packageJSONPaths, filepath.Join(cwd, "node_modules", "@ekkolyth", "miso", "package.json"))
 
-	// walk up from binary location (or cwd if Executable fails)
+	// 2. walk up from binary location (or cwd if Executable fails) — miso's own package.json
 	var startDir string
 	if exe, err := os.Executable(); err == nil {
 		startDir, _ = filepath.Abs(filepath.Dir(exe))
@@ -36,9 +33,7 @@ func GetMisoVersion() (string, error) {
 	}
 	for i := 0; i < 10; i++ {
 		pkgPath := filepath.Join(startDir, "package.json")
-		if _, err := os.Stat(pkgPath); err == nil {
-			packageJSONPaths = append(packageJSONPaths, pkgPath)
-		}
+		packageJSONPaths = append(packageJSONPaths, pkgPath)
 		parent := filepath.Dir(startDir)
 		if parent == startDir {
 			break
@@ -46,7 +41,7 @@ func GetMisoVersion() (string, error) {
 		startDir = parent
 	}
 
-	// try each path
+	// try each path (miso-specific only; no cwd fallback)
 	for _, path := range packageJSONPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -92,11 +87,9 @@ func RunVersion(root string, cfg config.Config) error {
 		driver, ok := manager.GetManager(managerName)
 		if ok {
 			spec := driver.BuildVersion()
-			// run silently
-			cmd := exec.Command(spec.Command, spec.Args...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			_ = cmd.Run()
+			if err := manager.Exec(spec, root); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
