@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
@@ -28,26 +27,23 @@ func GetMisoVersion() (string, error) {
 	// node_modules/@ekkolyth/miso/package.json
 	packageJSONPaths = append(packageJSONPaths, filepath.Join(cwd, "node_modules", "@ekkolyth", "miso", "package.json"))
 
-	// walk up from binary location
+	// walk up from binary location (or cwd if Executable fails)
+	var startDir string
 	if exe, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exe)
-		for i := 0; i < 10; i++ {
-			pkgPath := filepath.Join(exeDir, "package.json")
-			packageJSONPaths = append(packageJSONPaths, pkgPath)
-			parent := filepath.Dir(exeDir)
-			if parent == exeDir {
-				break
-			}
-			exeDir = parent
-		}
+		startDir, _ = filepath.Abs(filepath.Dir(exe))
+	} else {
+		startDir, _ = filepath.Abs(cwd)
 	}
-
-	// relative to source file location
-	_, filename, _, ok := runtime.Caller(0)
-	if ok {
-		dir := filepath.Dir(filename)
-		projectRoot := filepath.Join(dir, "..", "..", "..")
-		packageJSONPaths = append(packageJSONPaths, filepath.Join(projectRoot, "package.json"))
+	for i := 0; i < 10; i++ {
+		pkgPath := filepath.Join(startDir, "package.json")
+		if _, err := os.Stat(pkgPath); err == nil {
+			packageJSONPaths = append(packageJSONPaths, pkgPath)
+		}
+		parent := filepath.Dir(startDir)
+		if parent == startDir {
+			break
+		}
+		startDir = parent
 	}
 
 	// try each path

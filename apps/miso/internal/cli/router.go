@@ -176,19 +176,6 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	}, nil
 }
 
-func splitScriptArgs(rest []string) (string, []string) {
-	if len(rest) == 0 {
-		return "", nil
-	}
-	script := rest[0]
-	for i, a := range rest {
-		if a == "--" {
-			return script, rest[i+1:]
-		}
-	}
-	return script, nil
-}
-
 func parseInlineArgs(rest []string) []string {
 	for i, a := range rest {
 		if a == "--" {

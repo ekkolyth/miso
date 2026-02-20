@@ -14,5 +14,5 @@ func RunPassthrough(managerName string, command string, args []string, workDir s
 		Command: managerName,
 		Args:    append([]string{command}, args...),
 	}
-	return manager.Exec(spec, managerName, workDir)
+	return manager.Exec(spec, workDir)
 }

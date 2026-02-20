@@ -16,7 +16,12 @@ func (Npm) BuildRemove(pkgs []string) manager.ExecSpec {
 	return manager.ExecSpec{Command: "npm", Args: append([]string{"uninstall"}, pkgs...)}
 }
 func (Npm) BuildRun(script string, scriptArgs []string) manager.ExecSpec {
-	return manager.ExecSpec{Command: "npm", Args: append([]string{"run", script}, scriptArgs...)}
+	args := []string{"run", script}
+	if len(scriptArgs) > 0 {
+		args = append(args, "--")
+		args = append(args, scriptArgs...)
+	}
+	return manager.ExecSpec{Command: "npm", Args: args}
 }
 func (Npm) BuildVersion() manager.ExecSpec {
 	return manager.ExecSpec{Command: "npm", Args: []string{"--version"}}
