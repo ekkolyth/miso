@@ -85,3 +85,18 @@ Sets the path to the folder you want miso to use when you run custom scripts:
 <DocProp prop="string" />
 
 This path is relative to the location of your miso.json file. Learn more about [Scripting in Miso](/scripting)
+
+### Shell
+
+Default interpreter for scripts with no shebang and no recognized extension. If not set, Miso uses `sh`:
+
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    command='shell: "bash"'
+/>
+
+<DocProp prop="string" />
+
+Examples: `"sh"`, `"bash"`, `"zsh"`. The interpreter must be available in your PATH.

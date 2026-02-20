@@ -2,6 +2,16 @@
 
 This page covers how Miso executes scripts, including interpreter detection and argument passing.
 
+## Interpreter Resolution Order
+
+Miso resolves the interpreter for each script in this order:
+
+1. **Shebang** - If the first line starts with `#!`, Miso uses the specified interpreter
+2. **Extension** - For known extensions (`.sh`, `.py`, `.js`, etc.), Miso selects the interpreter from the extension
+3. **Default** - When neither applies, Miso uses `sh` (or the shell specified in `miso.json`)
+
+You don't need a shebang; scripts run with sensible defaults based on extension or `sh`.
+
 ## Shebang Detection
 
 Miso reads the first line of each script to detect shebangs (the `#!` directive). If a shebang is present, Miso uses the specified interpreter:
@@ -19,6 +29,18 @@ print("Running with Python")
 ```
 
 The shebang takes precedence over extension-based detection, giving you full control over script execution.
+
+## Default Shell and miso.json Override
+
+For scripts with no shebang and no recognized extension (e.g. `scripts/deploy` with no extension), Miso defaults to `sh`. You can override this in `miso.json`:
+
+```json
+{
+  "shell": "bash"
+}
+```
+
+The `shell` field specifies the interpreter to use when neither shebang nor extension applies. Leave it unset to use `sh`.
 
 ## Extension-Based Interpreter Selection
 

@@ -10,7 +10,8 @@ import (
 )
 
 // execute script file with shebang detection and extension-based interpreter selection
-func ExecScriptFile(scriptPath string, args []string, workDir string) error {
+// defaultShell: used when no shebang or known extension; empty means "sh"
+func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShell string) error {
 	// read first line to detect shebang
 	file, err := os.Open(scriptPath)
 	if err != nil {
@@ -48,21 +49,11 @@ func ExecScriptFile(scriptPath string, args []string, workDir string) error {
 	}
 
 	if interpreter == "" {
-		info, err := os.Stat(scriptPath)
-		if err != nil {
-			return fmt.Errorf("stat script file: %w", err)
+		if defaultShell != "" {
+			interpreter = defaultShell
+		} else {
+			interpreter = "sh"
 		}
-		if info.Mode().Perm()&0111 != 0 {
-			cmd := exec.Command(scriptPath, args...)
-			if workDir != "" {
-				cmd.Dir = workDir
-			}
-			cmd.Stdout = os.Stdout
-			cmd.Stdin = os.Stdin
-			cmd.Stderr = os.Stderr
-			return cmd.Run()
-		}
-		return fmt.Errorf("no interpreter found for script %q. add shebang or use known extension", scriptPath)
 	}
 
 	if _, err := exec.LookPath(interpreter); err != nil {

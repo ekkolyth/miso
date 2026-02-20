@@ -16,9 +16,10 @@ const FileName = "miso.json"
 
 // persisted project metadata
 type Config struct {
-	PackageManager string            `json:"package-manager"`
-	ProjectName    string            `json:"project-name"`
-	Scripts        string            `json:"scripts"`
+	PackageManager string              `json:"package-manager"`
+	ProjectName    string              `json:"project-name"`
+	Scripts        string              `json:"scripts"`
+	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`
 }
 

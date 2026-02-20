@@ -16,7 +16,7 @@ func RunOverride(scriptName string, scriptArgs []string, root string, cfg config
 		return fmt.Errorf("script %q not found", scriptName)
 	}
 	if resolved.Source == ScriptSourceFolder {
-		return ExecScriptFile(resolved.Path, scriptArgs, "")
+		return ExecScriptFile(resolved.Path, scriptArgs, "", cfg.Shell)
 	}
 	if resolved.Source == ScriptSourcePackageJSON {
 		// this shouldn't happen in RunOverride, but handle it anyway
