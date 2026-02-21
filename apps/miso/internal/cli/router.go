@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/ekkolyth/miso/internal/config"
-	"github.com/ekkolyth/miso/internal/cli/scripts"
+	"github.com/ekkolyth/miso/internal/cli/scripting"
 )
 
 type Action int
@@ -64,13 +64,13 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	switch cmd {
 	case "install", "i":
 		// check script override
-		if resolved, err := scripts.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+		if resolved, err := scripting.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 		}
 		return ParsedCLI{Action: ActionInstall}, nil
 	case "add":
 		// check script override
-		if resolved, err := scripts.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+		if resolved, err := scripting.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 		}
 		if len(args) < 2 {
@@ -79,7 +79,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		return ParsedCLI{Action: ActionAdd, PackageNames: args[1:]}, nil
 	case "remove", "rm":
 		// check script override
-		if resolved, err := scripts.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+		if resolved, err := scripting.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 		}
 		if len(args) < 2 {
@@ -100,7 +100,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		}
 		script := scriptNames[0]
 		// check scripts folder and package.json
-		if resolved, err := scripts.ResolveScript(script, root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+		if resolved, err := scripting.ResolveScript(script, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, script, scriptArgs), nil
 		}
 		// fall back to package manager
@@ -108,7 +108,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	case "dev":
 		inlineArgs := parseInlineArgs(args[1:])
 		// check scripts folder and package.json
-		if resolved, err := scripts.ResolveScript("dev", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+		if resolved, err := scripting.ResolveScript("dev", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, "dev", inlineArgs), nil
 		}
 		// dev is shortcut for "run dev"
@@ -117,19 +117,19 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		return ParsedCLI{Action: ActionScripts}, nil
 	case "init":
 		// check script override
-		if resolved, err := scripts.ResolveScript("init", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+		if resolved, err := scripting.ResolveScript("init", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, "init", parseInlineArgs(args[1:])), nil
 		}
 		return ParsedCLI{Action: ActionInit}, nil
 	case "version", "v":
 		// check script override
-		if resolved, err := scripts.ResolveScript("version", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+		if resolved, err := scripting.ResolveScript("version", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, "version", parseInlineArgs(args[1:])), nil
 		}
 		return ParsedCLI{Action: ActionVersion}, nil
 	case "misox":
 		// check script override
-		if resolved, err := scripts.ResolveScript("misox", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+		if resolved, err := scripting.ResolveScript("misox", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, "misox", parseInlineArgs(args[1:])), nil
 		}
 		if len(args) < 2 {
@@ -144,7 +144,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		}, nil
 	case "upgrade":
 		// check script override
-		if resolved, err := scripts.ResolveScript("upgrade", root, cfg); err == nil && resolved.Source != scripts.ScriptSourceNone {
+		if resolved, err := scripting.ResolveScript("upgrade", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, "upgrade", parseInlineArgs(args[1:])), nil
 		}
 		local, remainingArgs := ParseLocalFlag(args[1:])
@@ -156,7 +156,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	}
 
 	// check scripts folder and package.json
-	resolved, err := scripts.ResolveScript(cmd, root, cfg)
+	resolved, err := scripting.ResolveScript(cmd, root, cfg)
 	if err != nil {
 		// handle script conflicts
 		if strings.Contains(err.Error(), "multiple scripts") {
@@ -164,7 +164,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		}
 		// discovery errors are non-fatal
 	}
-	if resolved.Source != scripts.ScriptSourceNone {
+	if resolved.Source != scripting.ScriptSourceNone {
 		return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 	}
 
@@ -186,16 +186,16 @@ func parseInlineArgs(rest []string) []string {
 }
 
 // build script action from resolved script
-func buildScriptAction(resolved scripts.ResolvedScript, name string, args []string) ParsedCLI {
+func buildScriptAction(resolved scripting.ResolvedScript, name string, args []string) ParsedCLI {
 	switch resolved.Source {
-	case scripts.ScriptSourceFolder:
+	case scripting.ScriptSourceFolder:
 		return ParsedCLI{
 			Action:     ActionScriptFolder,
 			ScriptName: name,
 			ScriptArgs: args,
 			Command:    resolved.Path, // store file path in Command field
 		}
-	case scripts.ScriptSourcePackageJSON:
+	case scripting.ScriptSourcePackageJSON:
 		return ParsedCLI{
 			Action:     ActionScriptPackageJSON,
 			ScriptName: name,

@@ -1,4 +1,4 @@
-package scripts
+package scripting
 
 import (
 	"fmt"
@@ -79,4 +79,45 @@ func List(cfg config.Config, root string, styles ui.Styles, logger *log.Logger) 
 	}
 
 	return nil
+}
+
+// ListNames returns sorted script names from scripts folder and package.json,
+// deduplicated by resolution order (scripts folder takes precedence).
+func ListNames(root string, cfg config.Config) ([]string, error) {
+	scriptsPath := cfg.Scripts
+	if scriptsPath == "" {
+		scriptsPath = "./scripts"
+	}
+	if !filepath.IsAbs(scriptsPath) {
+		scriptsPath = filepath.Join(root, scriptsPath)
+	}
+
+	folderScripts, err := DiscoverScripts(scriptsPath)
+	if err != nil {
+		return nil, fmt.Errorf("discover scripts: %w", err)
+	}
+
+	pkgScripts, err := ReadPackageJSONScripts(root)
+	if err != nil {
+		return nil, fmt.Errorf("read package.json scripts: %w", err)
+	}
+
+	seen := make(map[string]bool)
+	var names []string
+
+	for name := range folderScripts {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	for name := range pkgScripts {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+
+	sort.Strings(names)
+	return names, nil
 }
