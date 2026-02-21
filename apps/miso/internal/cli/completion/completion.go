@@ -6,6 +6,7 @@ import (
 
 	"github.com/ekkolyth/miso/internal/cli"
 	"github.com/ekkolyth/miso/internal/cli/scripting"
+	"github.com/ekkolyth/miso/internal/scripts"
 )
 
 // BuiltinCommands is the list of Miso built-in commands for completion.
@@ -106,68 +107,16 @@ func getCandidates(prev string, cur string, cwd string) []string {
 
 // ScriptBash returns the bash completion script.
 func ScriptBash() string {
-	return `# Miso shell completion for bash
-# Install: Add to ~/.bashrc and restart your shell, or run in current session:
-#   eval "$(miso completion bash)"
-
-_miso_completion() {
-  local cur prev
-  cur="${COMP_WORDS[COMP_CWORD]}"
-  if [ $COMP_CWORD -ge 1 ]; then
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
-  else
-    prev="miso"
-  fi
-  COMPREPLY=($(miso __complete miso "$cur" "$prev" 2>/dev/null))
-}
-
-complete -F _miso_completion miso
-`
+	return scripts.Bash
 }
 
 // ScriptZsh returns the zsh completion script.
 func ScriptZsh() string {
-	return `# Miso shell completion for zsh
-# Install: Add to ~/.zshrc and restart your shell, or run in current session:
-#   eval "$(miso completion zsh)"
-
-_miso() {
-  local cur="${words[CURRENT]}"
-  local prev="${words[CURRENT-1]}"
-  local -a completions
-  completions=("${(f)$(miso __complete miso "$cur" "$prev" 2>/dev/null)}")
-  compadd -a completions
-}
-
-compdef _miso miso
-`
+	return scripts.Zsh
 }
 
 // ScriptFish returns the fish completion script.
 func ScriptFish() string {
-	// Fish: we need to pass the command line. commandline -cp gives the line.
-	// We'll use a wrapper that invokes miso __complete with the right args.
-	// Fish complete -c miso -a '(miso __complete (commandline -cp))' doesn't work well
-	// because we need word-by-word. Use a fish function that parses commandline.
-	return `# Miso shell completion for fish
-# Install: miso completion fish | source
-# Or: eval (miso completion fish)
-
-function __miso_complete
-  set -l cl (commandline -cp)
-  set -l tokens (string split " " -- $cl)
-  set -l cur ""
-  set -l prev "miso"
-  if test (count $tokens) -ge 2
-    set cur $tokens[-1]
-    set prev $tokens[-2]
-  else if test (count $tokens) -eq 1
-    set prev $tokens[1]
-  end
-  miso __complete miso "$cur" "$prev"
-end
-
-complete -c miso -a '(__miso_complete)'
-`
+	return scripts.Fish
 }
 
