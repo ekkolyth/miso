@@ -1,5 +1,5 @@
 export default {
-    index: "Overview",
-    config: "Configuration",
-    reference: "Types & Reference",
-};
+    index: 'Overview',
+    config: 'Configuration',
+    reference: 'Types & Reference',
+}

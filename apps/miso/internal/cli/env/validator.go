@@ -267,4 +267,3 @@ func buildValidatorTag(cfg config.VarConfig) string {
 
 	return strings.Join(parts, ",")
 }
-
