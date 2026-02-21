@@ -30,3 +30,5 @@ pkg.version = next;
 fs.writeFileSync('apps/miso/package.json', JSON.stringify(pkg, null, 2) + '\n');
 console.log(next);
 ")
+
+echo "$NEXT_VERSION"
