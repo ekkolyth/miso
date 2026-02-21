@@ -41,10 +41,36 @@ type EnvRequired struct {
 	Keys []string // when Mode is "", use Keys for specific required keys
 }
 
+// MarshalJSON emits schema-compatible JSON: string ("all"/"none") or array of keys.
+func (r EnvRequired) MarshalJSON() ([]byte, error) {
+	if r.Mode != "" {
+		return json.Marshal(r.Mode)
+	}
+	if len(r.Keys) > 0 {
+		return json.Marshal(r.Keys)
+	}
+	return []byte("null"), nil
+}
+
 // EnvVariables is either object (map) or array - mutually exclusive
 type EnvVariables struct {
 	Object map[string]VarConfigOrString // type validation
 	Array  []string                     // presence only
+}
+
+// MarshalJSON emits schema-compatible JSON: array or object (never both).
+func (v EnvVariables) MarshalJSON() ([]byte, error) {
+	if len(v.Array) > 0 {
+		return json.Marshal(v.Array)
+	}
+	if len(v.Object) > 0 {
+		m := make(map[string]interface{}, len(v.Object))
+		for k, val := range v.Object {
+			m[k] = val
+		}
+		return json.Marshal(m)
+	}
+	return []byte("null"), nil
 }
 
 // VarConfigOrString is either a type string shorthand or full VarConfig
@@ -52,6 +78,14 @@ type VarConfigOrString struct {
 	IsShorthand bool
 	Type        string
 	Config      VarConfig
+}
+
+// MarshalJSON emits schema-compatible JSON: string (shorthand) or VarConfig object.
+func (v VarConfigOrString) MarshalJSON() ([]byte, error) {
+	if v.IsShorthand {
+		return json.Marshal(v.Type)
+	}
+	return json.Marshal(v.Config)
 }
 
 // VarConfig holds per-variable validation rules
