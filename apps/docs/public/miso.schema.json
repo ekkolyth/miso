@@ -1,0 +1,42 @@
+{
+    "$schema": "https://json-schema.org/draft-07/schema",
+    "$id": "https://misojs.dev/miso.schema.json",
+    "title": "Miso Configuration",
+    "description": "Configuration for Miso package manager",
+    "type": "object",
+    "properties": {
+        "$schema": {
+            "type": "string",
+            "description": "Path or URL to this JSON schema for IDE support"
+        },
+        "package-manager": {
+            "type": "string",
+            "enum": ["bun", "npm", "pnpm", "yarn"],
+            "description": "The package manager to use"
+        },
+        "project-name": {
+            "type": "string",
+            "description": "Project name"
+        },
+        "scripts": {
+            "type": "string",
+            "default": "./scripts",
+            "description": "Path to scripts folder (relative to project root)"
+        },
+        "shell": {
+            "type": "string",
+            "enum": ["sh", "zsh", "bash", "dash", "ksh", "fish", "nu", "pwsh"],
+            "description": "Default interpreter for scripts with no shebang or recognized extension (e.g. sh, bash, zsh)"
+        },
+        "flags": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "array",
+                "items": { "type": "string" }
+            },
+            "description": "Default flags for package manager commands (add, remove, install, dev)"
+        }
+    },
+    "required": ["package-manager"],
+    "additionalProperties": false
+}
