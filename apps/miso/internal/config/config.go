@@ -159,6 +159,8 @@ func parseEnvConfig(raw json.RawMessage) (*EnvConfig, error) {
 			var keys []string
 			if err := json.Unmarshal(env.Required, &keys); err == nil {
 				ec.Required.Keys = keys
+			} else {
+				return nil, fmt.Errorf("env.required: invalid value %s (expected string or array of strings)", string(env.Required))
 			}
 		}
 	}
