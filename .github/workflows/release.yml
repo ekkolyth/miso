@@ -51,7 +51,7 @@ jobs:
 
             - name: Build binaries for all platforms
               if: steps.version.outputs.version != ''
-              run: ./scripts/release/build-release.sh
+              run: ./scripts/release/build-npm.sh
 
             - name: Create release archives
               if: steps.version.outputs.version != ''
@@ -101,10 +101,11 @@ jobs:
                   ref: main
                   token: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Setup Go
-              uses: actions/setup-go@v5
+            - name: Download npm dist from build job
+              uses: actions/download-artifact@v4
               with:
-                  go-version-file: apps/miso/go.mod
+                  name: npm-dist
+                  path: dist
 
             - name: Setup Node.js
               uses: actions/setup-node@v5
@@ -121,9 +122,6 @@ jobs:
               run: |
                   node -v
                   npm -v
-
-            - name: Build Go binaries
-              run: ./scripts/release/build-npm.sh
 
             - name: Check package info and authentication
               env:
