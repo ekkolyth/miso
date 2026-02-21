@@ -1,0 +1,120 @@
+---
+title: Env Validation
+---
+
+# Env Validation
+
+`miso env` validates environment variables from your .env file against rules defined in `miso.json`. Run it to confirm your environment is correctly configured before starting your app.
+
+## Usage
+
+```bash
+miso env
+```
+
+- **With env config**: Loads .env, validates variables, prints success or first error (fail fast).
+- **Without env config**: Uses discovery to find .env
+- **Empty variables**: Success — nothing to validate.
+
+## Config Schema
+
+Configure the `env` key in `miso.json`:
+
+```json
+{
+    "env": {
+        "path": [".env.local", ".env"],
+        "required": "all",
+        "variables": {
+            "PORT": "port",
+            "DATABASE_URL": "url",
+            "NODE_ENV": {
+                "type": "enum",
+                "values": ["development", "production", "test"],
+                "optional": true
+            }
+        }
+    }
+}
+```
+
+### path
+
+Array of .env file paths (relative to project root). Loaded in order; later files override earlier. If omitted, miso discovers in the following order:
+
+`.env.local`,
+`.env.production`,
+`.env.development`,
+`.env`.
+
+### required
+
+- `"all"` — Default option. Every variable must be present (unless `optional: true`)
+- `"none"` — No variables required
+- `["KEY1", "KEY2"]` — Only listed keys required
+
+### variables
+
+You can provide either an **object** (for custom type validation) or an **array** (to check presence only). These options are mutually exclusive.
+
+**Object form** — Each value is a type string shorthand or full VarConfig:
+
+```json
+{
+    "variables": {
+        "PORT": "port",
+        "DATABASE_URL": "url",
+        "APP_NAME": { "type": "string", "optional": true }
+    }
+}
+```
+
+**Array form** — Presence only, no type validation:
+
+```json
+{
+    "variables": ["DATABASE_URL", "API_KEY", "REDIS_URL"]
+}
+```
+
+## Shorthand
+
+`"KEY": "type"` validates type only; variable is required.
+
+Shorthand-supported types:
+`string`, `port`, `int`, `int+`, `float`, `bool`, `url`, `email`, `json`,
+
+`uuid`. `pattern` and `enum` cannot use shorthand as they require `pattern`/`values`).
+
+## VarConfig Reference
+
+| Field         | Required                    | Default                    | Notes                                                                                                       |
+| ------------- | --------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `type`        | yes                         | —                          | One of: `string`, `port`, `int`, `int+`, `float`, `bool`, `url`, `enum`, `email`, `json`, `uuid`, `pattern` |
+| `optional`    | no                          | `false`                    | If true, missing value passes                                                                               |
+| `min`         | no                          | type-specific              | string: length (default 1). int/int+/float: value range                                                     |
+| `max`         | no                          | type-specific              | string: length (default 255). int/int+/float: value range                                                   |
+| `pattern`     | no (required for `pattern`) | —                          | Regex                                                                                                       |
+| `values`      | no (required for `enum`)    | —                          | Allowed values                                                                                              |
+| `schemes`     | no                          | `["http","https"]`         | URL schemes                                                                                                 |
+| `trueValues`  | no                          | `["true","1","yes","on"]`  | Bool parsing                                                                                                |
+| `falseValues` | no                          | `["false","0","no","off"]` | Bool parsing                                                                                                |
+
+Unknown VarConfig keys cause an error (strict mode).
+
+## Types
+
+| Type      | Description                                                    |
+| --------- | -------------------------------------------------------------- |
+| `string`  | Non-empty string. `min`/`max` = length (chars).                |
+| `port`    | Integer 1–65535                                                |
+| `int`     | Any integer                                                    |
+| `int+`    | Positive integer. `min` defaults to 1.                         |
+| `float`   | Float                                                          |
+| `bool`    | Boolean. Uses `trueValues`/`falseValues` for parsing.          |
+| `url`     | URL. `schemes` restricts allowed schemes (default http/https). |
+| `enum`    | One of `values`                                                |
+| `email`   | Email address                                                  |
+| `json`    | Valid JSON                                                     |
+| `uuid`    | UUID                                                           |
+| `pattern` | Regex match. `pattern` required.                               |
