@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -35,7 +36,14 @@ func validateVariables(envMap map[string]string, vars map[string]config.VarConfi
 		return re.MatchString(fl.Field().String())
 	})
 
-	for name, v := range vars {
+	names := make([]string, 0, len(vars))
+	for name := range vars {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		v := vars[name]
 		var cfg config.VarConfig
 		if v.IsShorthand {
 			// Shorthand: pattern and enum not allowed
