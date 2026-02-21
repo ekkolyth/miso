@@ -15,7 +15,7 @@ Add a `flags` object to your `miso.json`:
 ```json
 {
   "package-manager": "pnpm",
-  "project-name": "my-project",
+  "name": "my-project",
   "flags": {
     "add": ["--save-dev"],
     "remove": ["--recursive"],
@@ -182,7 +182,7 @@ You can edit `miso.json` directly to add, modify, or remove flags. No reinitiali
 ```json
 {
   "package-manager": "pnpm",
-  "project-name": "my-project",
+  "name": "my-project",
   "flags": {
     "add": ["--save-dev", "--exact"],
     "dev": ["--host", "--open"]

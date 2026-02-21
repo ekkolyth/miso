@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/cli/scripting"
+	"github.com/ekkolyth/miso/internal/config"
 )
 
 type Action int
@@ -26,6 +26,7 @@ const (
 	ActionUpgrade
 	ActionScriptFolder
 	ActionScriptPackageJSON
+	ActionEnv
 )
 
 type ParsedCLI struct {
@@ -115,17 +116,11 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		return ParsedCLI{Action: ActionDev, ScriptArgs: inlineArgs}, nil
 	case "scripts":
 		return ParsedCLI{Action: ActionScripts}, nil
+	case "env":
+		return ParsedCLI{Action: ActionEnv}, nil
 	case "init":
-		// check script override
-		if resolved, err := scripting.ResolveScript("init", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
-			return buildScriptAction(resolved, "init", parseInlineArgs(args[1:])), nil
-		}
 		return ParsedCLI{Action: ActionInit}, nil
 	case "version", "v":
-		// check script override
-		if resolved, err := scripting.ResolveScript("version", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
-			return buildScriptAction(resolved, "version", parseInlineArgs(args[1:])), nil
-		}
 		return ParsedCLI{Action: ActionVersion}, nil
 	case "misox":
 		// check script override
@@ -204,9 +199,9 @@ func buildScriptAction(resolved scripting.ResolvedScript, name string, args []st
 		}
 	default:
 		return ParsedCLI{
-			Action:     ActionPassthrough,
-			Command:    name,
-			Args:       args,
+			Action:  ActionPassthrough,
+			Command: name,
+			Args:    args,
 		}
 	}
 }

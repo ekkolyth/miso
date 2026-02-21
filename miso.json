@@ -1,7 +1,7 @@
 {
     "$schema": "./apps/miso/miso.schema.json",
     "package-manager": "bun",
-    "project-name": "miso",
+    "name": "miso",
     "scripts": "./scripts",
     "shell": "sh"
 }

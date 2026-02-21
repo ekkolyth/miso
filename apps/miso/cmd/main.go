@@ -11,6 +11,7 @@ import (
 	"github.com/ekkolyth/miso/internal/cli"
 	"github.com/ekkolyth/miso/internal/cli/commands"
 	"github.com/ekkolyth/miso/internal/cli/completion"
+	"github.com/ekkolyth/miso/internal/cli/env"
 	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
@@ -119,6 +120,14 @@ func main() {
 		cli.Fail(logger, err, true)
 	}
 
+	// env does not need package manager
+	if parsed.Action == cli.ActionEnv {
+		if err := env.Run(projectRoot, cfg, logger); err != nil {
+			cli.Fail(logger, err, false)
+		}
+		return
+	}
+
 	// ensure manager configured
 	managerName, cfg, err := cli.EnsureManager(projectRoot, cfg)
 	if err != nil {
@@ -128,6 +137,9 @@ func main() {
 	if debug {
 		logger.Debug("resolved manager", "manager", managerName)
 	}
+
+	// --env flag: run env validation first, then strip from args before passing to command
+	cfg, parsed = runEnvIfRequested(projectRoot, cfg, parsed, logger)
 
 	// Route to command handlers
 	switch parsed.Action {
@@ -194,4 +206,49 @@ func main() {
 	default:
 		cli.Fail(logger, fmt.Errorf("unknown action"), true)
 	}
+}
+
+// runEnvIfRequested checks for --env in effective args (config flags + CLI args).
+// If present, runs env validation first; on success, strips --env from cfg and parsed.
+func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedCLI, logger *log.Logger) (config.Config, cli.ParsedCLI) {
+	var effective []string
+	switch parsed.Action {
+	case cli.ActionAdd:
+		effective = append(cfg.Flags["add"], parsed.PackageNames...)
+	case cli.ActionRemove:
+		effective = append(cfg.Flags["remove"], parsed.PackageNames...)
+	case cli.ActionInstall:
+		effective = cfg.Flags["install"]
+	case cli.ActionDev:
+		effective = append(cfg.Flags["dev"], parsed.ScriptArgs...)
+	case cli.ActionRun, cli.ActionRunMultiple:
+		effective = parsed.ScriptArgs
+	case cli.ActionScriptOverride, cli.ActionScriptFolder, cli.ActionScriptPackageJSON:
+		// Script overrides can have flags by script name (e.g. flags["dev"] for dev script)
+		scriptFlags := cfg.Flags[parsed.ScriptName]
+		effective = append(scriptFlags, parsed.ScriptArgs...)
+	default:
+		return cfg, parsed
+	}
+
+	if !env.HasEnvFlag(effective) {
+		return cfg, parsed
+	}
+
+	if err := env.Run(projectRoot, cfg, logger); err != nil {
+		cli.Fail(logger, err, false)
+	}
+
+	// Strip --env from cfg flags and parsed args
+	cfg = env.StripEnvFromFlags(cfg)
+	switch parsed.Action {
+	case cli.ActionAdd:
+		parsed.PackageNames = env.StripEnvFlag(parsed.PackageNames)
+	case cli.ActionRemove:
+		parsed.PackageNames = env.StripEnvFlag(parsed.PackageNames)
+	case cli.ActionDev, cli.ActionRun, cli.ActionRunMultiple,
+		cli.ActionScriptOverride, cli.ActionScriptFolder, cli.ActionScriptPackageJSON:
+		parsed.ScriptArgs = env.StripEnvFlag(parsed.ScriptArgs)
+	}
+	return cfg, parsed
 }
