@@ -115,6 +115,7 @@ Miso – the agnostic package manager
 Usage:
   miso init
   miso version
+  miso env
   miso upgrade [--local]
   miso completion [bash|zsh|fish]
   miso install

@@ -14,7 +14,7 @@
             "enum": ["bun", "npm", "pnpm", "yarn"],
             "description": "The package manager to use"
         },
-        "project-name": {
+        "name": {
             "type": "string",
             "description": "Project name"
         },
@@ -35,6 +35,65 @@
                 "items": { "type": "string" }
             },
             "description": "Default flags for package manager commands (add, remove, install, dev)"
+        },
+        "env": {
+            "oneOf": [
+                { "type": "string", "description": "Path to .env file" },
+                {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Paths to .env files (relative to project root)"
+                        },
+                        "required": {
+                            "oneOf": [
+                                { "type": "string", "enum": ["all", "none"] },
+                                { "type": "array", "items": { "type": "string" } }
+                            ],
+                            "description": "Which variables are required (all, none, or specific keys)"
+                        },
+                        "variables": {
+                            "oneOf": [
+                                {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Variable names for presence-only validation"
+                                },
+                                {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "oneOf": [
+                                            { "type": "string", "description": "Type shorthand (port, int, url, enum, pattern, bool, etc.)" },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "type": { "type": "string" },
+                                                    "optional": { "type": "boolean" },
+                                                    "min": { "type": "number" },
+                                                    "max": { "type": "number" },
+                                                    "pattern": { "type": "string" },
+                                                    "values": { "type": "array", "items": { "type": "string" } },
+                                                    "schemes": { "type": "array", "items": { "type": "string" } },
+                                                    "trueValues": { "type": "array", "items": { "type": "string" } },
+                                                    "falseValues": { "type": "array", "items": { "type": "string" } }
+                                                },
+                                                "additionalProperties": false
+                                            }
+                                        ]
+                                    },
+                                    "description": "Variables to validate (object = type validation per key)"
+                                }
+                            ],
+                            "description": "Variables to validate (array = presence only, object = type validation)"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "description": "Environment file path and variable validation rules"
+                }
+            ],
+            "description": "Environment file path and variable validation rules"
         }
     },
     "required": ["package-manager"],
