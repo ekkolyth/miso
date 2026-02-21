@@ -1,34 +1,34 @@
 {
-    "bin": {
-        "miso": "miso.mjs",
-        "misox": "misox.mjs"
-    },
-    "scripts": {
-        "postinstall": "node scripts/postinstall.mjs"
-    },
-    "description": "the agnostic package manager",
-    "homepage": "https://misojs.dev",
-    "files": [
-        "README.md",
-        "miso.mjs",
-        "misox.mjs",
-        "scripts/postinstall.mjs",
-        "bin/miso-darwin-amd64",
-        "bin/miso-darwin-arm64",
-        "bin/miso-linux-amd64",
-        "bin/miso-linux-arm64",
-        "bin/miso-windows-amd64.exe",
-        "bin/misox-darwin-amd64",
-        "bin/misox-darwin-arm64",
-        "bin/misox-linux-amd64",
-        "bin/misox-linux-arm64",
-        "bin/misox-windows-amd64.exe"
-    ],
-    "license": "MIT",
-    "name": "@ekkolyth/miso",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/ekkolyth/miso.git"
-    },
-    "version": "0.3.1"
+  "bin": {
+    "miso": "miso.mjs",
+    "misox": "misox.mjs"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.mjs"
+  },
+  "description": "the agnostic package manager",
+  "homepage": "https://misojs.dev",
+  "files": [
+    "README.md",
+    "miso.mjs",
+    "misox.mjs",
+    "scripts/postinstall.mjs",
+    "bin/miso-darwin-amd64",
+    "bin/miso-darwin-arm64",
+    "bin/miso-linux-amd64",
+    "bin/miso-linux-arm64",
+    "bin/miso-windows-amd64.exe",
+    "bin/misox-darwin-amd64",
+    "bin/misox-darwin-arm64",
+    "bin/misox-linux-amd64",
+    "bin/misox-linux-arm64",
+    "bin/misox-windows-amd64.exe"
+  ],
+  "license": "MIT",
+  "name": "@ekkolyth/miso",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ekkolyth/miso.git"
+  },
+  "version": "0.3.2"
 }
