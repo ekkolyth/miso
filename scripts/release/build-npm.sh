@@ -24,4 +24,6 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o ../../dist/bin/misox-linux-arm
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ../../dist/bin/misox-windows-amd64.exe ./cmd
 
 cd ../..
+mkdir -p dist/scripts
 cp apps/miso/miso.mjs apps/miso/misox.mjs apps/miso/package.json README.md dist/
+cp apps/miso/scripts/postinstall.mjs dist/scripts/

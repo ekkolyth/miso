@@ -10,7 +10,8 @@ import (
 
 	"github.com/ekkolyth/miso/internal/cli"
 	"github.com/ekkolyth/miso/internal/cli/commands"
-	"github.com/ekkolyth/miso/internal/cli/scripts"
+	"github.com/ekkolyth/miso/internal/cli/completion"
+	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
 	"github.com/ekkolyth/miso/internal/manager/bun"
@@ -54,6 +55,26 @@ func main() {
 	// handle global commands before loading config
 	if len(args) > 0 {
 		switch args[0] {
+		case "__complete":
+			completion.Complete(args, originalWorkDir)
+			return
+		case "completion":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "Usage: miso completion [bash|zsh|fish]")
+				os.Exit(1)
+			}
+			switch args[1] {
+			case "bash":
+				fmt.Print(completion.ScriptBash())
+			case "zsh":
+				fmt.Print(completion.ScriptZsh())
+			case "fish":
+				fmt.Print(completion.ScriptFish())
+			default:
+				fmt.Fprintf(os.Stderr, "Unknown shell: %s (use bash, zsh, or fish)\n", args[1])
+				os.Exit(1)
+			}
+			return
 		case "init":
 			if err := commands.RunInit(originalWorkDir, styles, logger); err != nil {
 				cli.Fail(logger, err, false)
@@ -111,7 +132,7 @@ func main() {
 	// Route to command handlers
 	switch parsed.Action {
 	case cli.ActionScripts:
-		if err := scripts.List(cfg, projectRoot, styles, logger); err != nil {
+		if err := scripting.List(cfg, projectRoot, styles, logger); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -121,12 +142,12 @@ func main() {
 		}
 		return
 	case cli.ActionScriptOverride:
-		if err := scripts.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg); err != nil {
+		if err := scripting.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
 	case cli.ActionScriptFolder:
-		if err := scripts.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell); err != nil {
+		if err := scripting.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return

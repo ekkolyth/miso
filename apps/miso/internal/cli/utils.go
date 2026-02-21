@@ -116,6 +116,7 @@ Usage:
   miso init
   miso version
   miso upgrade [--local]
+  miso completion [bash|zsh|fish]
   miso install
   miso add <pkg>
   miso remove <pkg>
