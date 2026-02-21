@@ -8,7 +8,7 @@ The scripts folder path is configured in `miso.json`:
 
 ```json
 {
-  "scripts": "./scripts"
+    "scripts": "./scripts"
 }
 ```
 
@@ -20,7 +20,6 @@ All scripts execute from the project root directory, regardless of where they're
 
 ```bash
 # scripts/build/miso.sh
-#!/bin/sh
 cd apps/miso && go build ./cmd
 ```
 
@@ -31,9 +30,11 @@ This means you can reference project files consistently without worrying about t
 Miso recursively scans the scripts directory to find executable scripts. It looks for:
 
 ### Executable Files
+
 Files with executable permissions are automatically discovered.
 
 ### Known Extensions
+
 Files with recognized extensions are discovered even without executable permissions:
 
 - `.sh`, `.bash`, `.zsh` - Shell scripts
@@ -46,37 +47,29 @@ Files with recognized extensions are discovered even without executable permissi
 - `.php` - PHP
 
 ### Excluded Files
+
 Hidden files (starting with `.`) and helper files (starting with `_`) are automatically skipped during discovery.
 
 ## Script Naming
 
 Scripts are identified by their path relative to the scripts directory. The file extension is optional when running the command:
 
-| Script Path | Command |
-|-------------|---------|
-| `scripts/jump.sh` | `miso jump` |
+| Script Path                | Command              |
+| -------------------------- | -------------------- |
+| `scripts/jump.sh`          | `miso jump`          |
 | `scripts/publish/patch.sh` | `miso publish/patch` |
-| `scripts/build/miso.sh` | `miso build/miso` |
+| `scripts/build/miso.sh`    | `miso build/miso`    |
 
 ## Index Files
 
 An `index` file (with any supported extension) in a subdirectory acts as the default handler for that directory:
 
-| Script Path | Command |
-|-------------|---------|
+| Script Path                | Command        |
+| -------------------------- | -------------- |
 | `scripts/publish/index.sh` | `miso publish` |
-| `scripts/build/index.sh` | `miso build` |
+| `scripts/build/index.sh`   | `miso build`   |
 
 This allows you to create logical command groups with a default action.
-
-## Explicit Extension Support
-
-Use the explicit filename with extension to target a specific file when multiple scripts have the same base name:
-
-- `miso jump.sh` - runs `scripts/jump.sh` even if `jump.py` exists
-- `miso publish/patch.sh` - runs `scripts/publish/patch.sh` specifically
-
-This is useful when you have multiple implementations or when transitioning between languages.
 
 ## Organizing Scripts
 

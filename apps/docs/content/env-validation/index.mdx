@@ -1,0 +1,50 @@
+---
+title: Env Validation
+---
+
+# Env Validation
+
+`miso env` validates environment variables from your `.env` file against rules defined in `miso.json`.
+
+## Usage
+
+```bash
+miso env
+```
+
+Or use `--env` as a flag behind other commands to validate before running:
+
+```bash
+miso dev --env
+miso build --env
+```
+
+- **With env config**: Loads `.env` (or configured paths), validates all variables, and prints success or the first error.
+- **Without env config**: Uses discovery to find `.env` in the project.
+- **Empty variables**: Succeeds—nothing to validate.
+
+## Quick Start
+
+1. Add an `env` block to `miso.json`:
+
+```json
+{
+    "env": {
+        "variables": {
+            "PORT": "port",
+            "DATABASE_URL": "url"
+        }
+    }
+}
+```
+
+2. Run `miso env` before starting your app (or in CI):
+
+```bash
+miso env && miso dev
+```
+
+## Next Steps
+
+- [Configure](/env-validation/config) path, required variables, and validation rules
+- See the [Types & VarConfig](/env-validation/reference) reference for all supported types and options

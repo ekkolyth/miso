@@ -3,6 +3,8 @@ import { Banner, Head } from "nextra/components";
 import { getPageMap } from "nextra/page-map";
 import "nextra-theme-docs/style-prefixed.css";
 import "./globals.css";
+import misoPackage from "../../miso/package.json";
+import { Badge } from "@/components/ui/badge";
 
 export const metadata = {
     title: "Miso - The Agnostic Package Manager",
@@ -18,7 +20,8 @@ const navbar = (
         logo={
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <img src="/miso.png" alt="Miso" width="36" height="36" />
-                <span style={{ fontWeight: "bold" }}>miso.js</span>
+                <span className="font-bold mr-1">miso.js</span>
+                <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">v{misoPackage.version}</Badge>
             </div>
         }
         projectLink="https://github.com/ekkolyth/miso"
