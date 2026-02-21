@@ -14,11 +14,16 @@ var ErrNotFound = errors.New("config: not found")
 // default miso config filename
 const FileName = "miso.json"
 
+// SchemaURL is the canonical URL for the miso.json JSON schema (IDE autocomplete/validation)
+const SchemaURL = "https://misojs.dev/miso.schema.json"
+
 // persisted project metadata
 type Config struct {
-	PackageManager string            `json:"package-manager"`
-	ProjectName    string            `json:"project-name"`
-	Scripts        string            `json:"scripts"`
+	Schema         string              `json:"$schema,omitempty"`
+	PackageManager string              `json:"package-manager"`
+	ProjectName    string              `json:"project-name"`
+	Scripts        string              `json:"scripts"`
+	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`
 }
 

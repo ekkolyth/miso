@@ -1,8 +1,6 @@
-#!/bin/sh
-set -e
-
 BINARY=${BINARY:-miso}
-GOBIN=/Users/mikekenway/go/bin
+GOBIN=$(go env GOBIN)
+[ -z "$GOBIN" ] && GOBIN=$(go env GOPATH)/bin
 
 rm -f $GOBIN/$BINARY
 rm -f $GOBIN/misox

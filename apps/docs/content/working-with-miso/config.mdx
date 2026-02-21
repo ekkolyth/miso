@@ -2,6 +2,21 @@
 
 You can edit `miso.json` directly to change it's settings:
 
+### JSON Schema (IDE Support)
+
+Add a `$schema` property to get autocomplete and validation in VS Code, Cursor, and other editors:
+
+```json
+{
+  "$schema": "https://misojs.dev/miso.schema.json",
+  "package-manager": "bun",
+  "project-name": "my-project",
+  "scripts": "./scripts"
+}
+```
+
+The schema is available at [https://misojs.dev/miso.schema.json](https://misojs.dev/miso.schema.json) — use this URL in your `miso.json` for type-safe editing.
+
 ### Package Manager
 
 Set or update your project's package manager:
@@ -85,3 +100,18 @@ Sets the path to the folder you want miso to use when you run custom scripts:
 <DocProp prop="string" />
 
 This path is relative to the location of your miso.json file. Learn more about [Scripting in Miso](/scripting)
+
+### Shell
+
+Default interpreter for scripts with no shebang and no recognized extension. If not set, Miso uses `sh`:
+
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    command='shell: "bash"'
+/>
+
+<DocProp prop="string" />
+
+Examples: `"sh"`, `"bash"`, `"zsh"`. The interpreter must be available in your PATH.
