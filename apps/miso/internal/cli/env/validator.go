@@ -207,6 +207,17 @@ func validateVar(validate *validator.Validate, name, val string, cfg config.VarC
 		return fmt.Errorf("variable %s: invalid bool (use %v or %v)", name, trueVals, falseVals)
 	}
 
+	// String with pattern: validate directly (matches_regex tag breaks when pattern contains commas)
+	if cfg.Type == "string" && cfg.Pattern != "" {
+		re, err := regexp.Compile(cfg.Pattern)
+		if err != nil {
+			return fmt.Errorf("variable %s: invalid pattern: %w", name, err)
+		}
+		if !re.MatchString(val) {
+			return fmt.Errorf("variable %s: value does not match pattern", name)
+		}
+	}
+
 	// Use validator for string, email, json, uuid
 	tag := buildValidatorTag(cfg)
 	if tag == "" {
@@ -237,9 +248,7 @@ func buildValidatorTag(cfg config.VarConfig) string {
 			max = int(*cfg.Max)
 		}
 		parts = append(parts, fmt.Sprintf("min=%d", min), fmt.Sprintf("max=%d", max))
-		if cfg.Pattern != "" {
-			parts = append(parts, "matches_regex="+cfg.Pattern)
-		}
+		// Pattern for string is validated directly in validateVar (avoids comma-in-pattern breakage)
 	case "email":
 		parts = append(parts, "email")
 	case "json":
