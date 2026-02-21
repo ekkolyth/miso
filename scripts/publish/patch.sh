@@ -17,15 +17,9 @@ if [ "$(git status --porcelain)" != "" ]; then
   exit 1
 fi
 
-# Build bump tool if needed
-if [ ! -f ".github/release/bump/bump" ]; then
-  cd apps/miso && go build -o ../../.github/release/bump/bump ../../.github/release/bump/main.go
-  cd ../..
-fi
-
 # Bump version and publish
 if [ "$DRY_RUN" = "1" ]; then
-  NEXT_VERSION=$(./.github/release/bump/bump -level=patch -dry-run)
+  NEXT_VERSION=$(LEVEL=patch DRY_RUN=1 ./scripts/release/bump-version.sh)
   if [ -n "$MESSAGE" ]; then
     echo "DRY RUN: next version would be $NEXT_VERSION"
     echo "DRY RUN: would create tag v$NEXT_VERSION with message: release v$NEXT_VERSION: $MESSAGE"
@@ -34,7 +28,7 @@ if [ "$DRY_RUN" = "1" ]; then
     echo "DRY RUN: would create tag v$NEXT_VERSION and push to origin"
   fi
 else
-  NEXT_VERSION=$(./.github/release/bump/bump -level=patch)
+  NEXT_VERSION=$(LEVEL=patch ./scripts/release/bump-version.sh)
   echo "Bumped version to $NEXT_VERSION"
   git add apps/miso/package.json
   git commit -m "chore: release v$NEXT_VERSION"

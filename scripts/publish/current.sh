@@ -16,14 +16,9 @@ if [ "$(git status --porcelain)" != "" ]; then
   exit 1
 fi
 
-# Build version tool if needed
-if [ ! -f ".github/release/version/version" ]; then
-  cd apps/miso && go build -o ../../.github/release/version/version ../../.github/release/version/main.go
-  cd ../..
-fi
+# Get current version from package.json
+CURRENT_VERSION=$(node -p "require('./apps/miso/package.json').version")
 
-# Publish current version without bumping
-CURRENT_VERSION=$(./.github/release/version/version)
 if [ "$DRY_RUN" = "1" ]; then
   echo "DRY RUN: current version is $CURRENT_VERSION"
   echo "DRY RUN: would create tag v$CURRENT_VERSION and push to origin"
