@@ -1,0 +1,87 @@
+---
+title: Types & VarConfig
+---
+
+# Types & VarConfig Reference
+
+## Shorthand
+
+`"KEY": "type"` validates the type only; the variable is required by default.
+
+```json
+{
+    "variables": {
+        "PORT": "port",
+        "DATABASE_URL": "url",
+        "API_KEY": "string"
+    }
+}
+```
+
+Shorthand-supported types: `string`, `port`, `int`, `int+`, `float`, `bool`, `url`, `email`, `json`, `uuid`. The `pattern` and `enum` types cannot use shorthand because they require additional fields (`pattern` or `values`).
+
+## VarConfig
+
+For full control, use an object with a `type` and optional fields:
+
+| Field | Required | Default | Notes |
+|-------|----------|---------|-------|
+| `type` | yes | — | One of: `string`, `port`, `int`, `int+`, `float`, `bool`, `url`, `enum`, `email`, `json`, `uuid`, `pattern` |
+| `optional` | no | `false` | If true, missing value passes validation |
+| `min` | no | type-specific | string: length (default 1). int/int+/float: value range |
+| `max` | no | type-specific | string: length (default 255). int/int+/float: value range |
+| `pattern` | no | — | Regex for `pattern` type |
+| `values` | no | — | Allowed values for `enum` type |
+| `schemes` | no | `["http","https"]` | URL schemes for `url` type |
+| `trueValues` | no | `["true","1","yes","on"]` | Bool parsing |
+| `falseValues` | no | `["false","0","no","off"]` | Bool parsing |
+
+Unknown `VarConfig` keys cause an error (strict mode).
+
+## Types
+
+| Type | Description |
+|------|-------------|
+| `string` | Non-empty string. `min`/`max` = length (chars). |
+| `port` | Integer 1–65535. |
+| `int` | Any integer. |
+| `int+` | Positive integer. `min` defaults to 1. |
+| `float` | Float. |
+| `bool` | Boolean. Uses `trueValues`/`falseValues` for parsing. |
+| `url` | URL. `schemes` restricts allowed schemes (default http/https). |
+| `enum` | One of `values`. Requires `values` array. |
+| `email` | Email address. |
+| `json` | Valid JSON. |
+| `uuid` | UUID. |
+| `pattern` | Regex match. Requires `pattern` field. |
+
+## Examples
+
+**Optional variable with enum:**
+
+```json
+"NODE_ENV": {
+    "type": "enum",
+    "values": ["development", "production", "test"],
+    "optional": true
+}
+```
+
+**String with length constraints:**
+
+```json
+"APP_NAME": {
+    "type": "string",
+    "min": 1,
+    "max": 50
+}
+```
+
+**Custom regex:**
+
+```json
+"VERSION": {
+    "type": "pattern",
+    "pattern": "^v?\\d+\\.\\d+\\.\\d+$"
+}
+```

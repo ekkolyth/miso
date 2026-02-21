@@ -5,6 +5,7 @@
 Miso provides a flexible scripting system that allows you to organize and execute project scripts easily. By default, Miso discovers and executes scripts from the `scripts/` directory, but it also integrates seamlessly with package.json scripts.
 
 Scripts can be:
+
 - Organized in subdirectories for better structure
 - Written in any executable language
 - Used to override built-in Miso commands
@@ -16,15 +17,8 @@ Create a script in your `scripts/` directory:
 
 ```bash
 # scripts/hello.sh
-#!/bin/sh
+
 echo "Hello from Miso!"
-```
-
-Make it executable and run it:
-
-```bash
-chmod +x scripts/hello.sh
-miso hello
 ```
 
 ## Key Features
@@ -55,6 +49,16 @@ Execute them using their path: `miso build/miso`, `miso deploy/staging`
 ### Flexible Integration
 
 Miso works with your existing package.json scripts, providing a unified interface for all your project commands.
+
+## Listing All Commands
+
+Use the `miso scripts` command to see all available commands and their sources:
+
+```bash
+miso scripts
+```
+
+This shows scripts from both the scripts folder and package.json, helping you understand what's available and identify any conflicts.
 
 ## Next Steps
 

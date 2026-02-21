@@ -10,7 +10,7 @@ Add a `$schema` property to get autocomplete and validation in VS Code, Cursor, 
 {
   "$schema": "https://misojs.dev/miso.schema.json",
   "package-manager": "bun",
-  "project-name": "my-project",
+  "name": "my-project",
   "scripts": "./scripts"
 }
 ```
@@ -52,7 +52,7 @@ Set or update your project's package manager:
     copy={false}
     className="mt-4 border border-neutral-700 rounded-sm"
     title="miso.json"
-    command='project-name: "my-cool-react-app"'
+    command='name: "my-cool-react-app"'
 />
 
 <DocProp prop="string" />
@@ -115,3 +115,29 @@ Default interpreter for scripts with no shebang and no recognized extension. If 
 <DocProp prop="string" />
 
 Examples: `"sh"`, `"bash"`, `"zsh"`. The interpreter must be available in your PATH.
+
+### Env
+
+Configure environment variable validation for `miso env`:
+
+```json
+{
+  "env": {
+    "path": [".env.local", ".env"],
+    "required": "all",
+    "variables": {
+      "PORT": "port",
+      "DATABASE_URL": "url",
+      "NODE_ENV": {
+        "type": "enum",
+        "values": ["development", "production", "test"],
+        "optional": true
+      }
+    }
+  }
+}
+```
+
+- **path**: Array of .env file paths (relative to project root). Loaded in order; later files override earlier. If omitted, miso discovers `.env.local`, `.env.production`, `.env.development`, or `.env`.
+- **required**: `"all"` (every variable unless optional), `"none"`, or an array of specific keys.
+- **variables**: Either an object (type validation) or array (presence only). See [Env validation](/env-validation) for the full spec.

@@ -119,4 +119,3 @@ func ScriptZsh() string {
 func ScriptFish() string {
 	return scripts.Fish
 }
-

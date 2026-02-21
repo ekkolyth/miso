@@ -1,3 +1,3 @@
 export default {
-  "coming-soon": "Coming Soon",
-};
+    'coming-soon': 'Coming Soon',
+}
