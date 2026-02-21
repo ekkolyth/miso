@@ -31,7 +31,7 @@ type Config struct {
 // EnvConfig holds env file path and variable validation rules.
 type EnvConfig struct {
 	Path      []string     `json:"path,omitempty"`
-	Required  EnvRequired `json:"required,omitempty"`
+	Required  EnvRequired  `json:"required,omitempty"`
 	Variables EnvVariables `json:"variables,omitempty"`
 }
 
@@ -56,15 +56,15 @@ type VarConfigOrString struct {
 
 // VarConfig holds per-variable validation rules
 type VarConfig struct {
-	Type        string    `json:"type"`
-	Optional    bool      `json:"optional"`
-	Min         *float64  `json:"min,omitempty"`
-	Max         *float64  `json:"max,omitempty"`
-	Pattern     string    `json:"pattern,omitempty"`
-	Values      []string  `json:"values,omitempty"`
-	Schemes     []string  `json:"schemes,omitempty"`
-	TrueValues  []string  `json:"trueValues,omitempty"`
-	FalseValues []string  `json:"falseValues,omitempty"`
+	Type        string   `json:"type"`
+	Optional    bool     `json:"optional"`
+	Min         *float64 `json:"min,omitempty"`
+	Max         *float64 `json:"max,omitempty"`
+	Pattern     string   `json:"pattern,omitempty"`
+	Values      []string `json:"values,omitempty"`
+	Schemes     []string `json:"schemes,omitempty"`
+	TrueValues  []string `json:"trueValues,omitempty"`
+	FalseValues []string `json:"falseValues,omitempty"`
 }
 
 // initialize optional maps
@@ -89,7 +89,7 @@ type configLoad struct {
 	ProjectName    string              `json:"name"`
 	Scripts        string              `json:"scripts"`
 	Shell          string              `json:"shell,omitempty"`
-	Flags          map[string][]string  `json:"flags,omitempty"`
+	Flags          map[string][]string `json:"flags,omitempty"`
 	EnvRaw         json.RawMessage     `json:"env,omitempty"`
 }
 
@@ -140,9 +140,9 @@ func parseEnvConfig(raw json.RawMessage) (*EnvConfig, error) {
 
 	// object - need custom Variables parsing
 	var env struct {
-		Path      []string         `json:"path,omitempty"`
-		Required  json.RawMessage  `json:"required,omitempty"`
-		Variables json.RawMessage  `json:"variables,omitempty"`
+		Path      []string        `json:"path,omitempty"`
+		Required  json.RawMessage `json:"required,omitempty"`
+		Variables json.RawMessage `json:"variables,omitempty"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return nil, err

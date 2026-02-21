@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/cli/scripting"
+	"github.com/ekkolyth/miso/internal/config"
 )
 
 type Action int
@@ -199,9 +199,9 @@ func buildScriptAction(resolved scripting.ResolvedScript, name string, args []st
 		}
 	default:
 		return ParsedCLI{
-			Action:     ActionPassthrough,
-			Command:    name,
-			Args:       args,
+			Action:  ActionPassthrough,
+			Command: name,
+			Args:    args,
 		}
 	}
 }
