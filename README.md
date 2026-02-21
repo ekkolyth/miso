@@ -28,4 +28,57 @@ Then run `miso init` to add miso to your project:
 miso init
 ```
 
+### Example miso.json (Kitchen Sink)
+
+```json
+{
+    "$schema": "https://misojs.dev/miso.schema.json",
+    "package-manager": "bun",
+    "name": "my-project",
+    "scripts": "./scripts",
+    "shell": "bash",
+    "flags": {
+        "add": ["--dev"],
+        "remove": [],
+        "install": ["--frozen-lockfile"],
+        "dev": ["--env"]
+    },
+    "env": {
+        "path": [".env.local", ".env"],
+        "required": "all",
+        "variables": {
+            "PORT": "port",
+            "DATABASE_URL": "url",
+            "API_KEY": {
+                "type": "string",
+                "min": 1,
+                "max": 32
+            },
+            "NODE_ENV": {
+                "type": "enum",
+                "values": ["development", "production", "test"],
+                "optional": true
+            },
+            "REDIS_URL": {
+                "type": "url",
+                "schemes": ["redis", "rediss"]
+            },
+            "RATE_LIMIT": {
+                "type": "int+",
+                "min": 1,
+                "max": 1000
+            },
+            "FEATURE_FLAGS": "json",
+            "USER_ID": "uuid",
+            "ADMIN_EMAIL": "email",
+            "DEBUG_MODE": "bool",
+            "SLUG": {
+                "type": "pattern",
+                "pattern": "^[a-z0-9-]+$"
+            }
+        }
+    }
+}
+```
+
 ### Contributions welcome!

@@ -8,20 +8,26 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	"github.com/ekkolyth/miso/internal/cli/core"
-	"github.com/ekkolyth/miso/internal/cli/pm"
-	"github.com/ekkolyth/miso/internal/cli/pm/managers"
-	"github.com/ekkolyth/miso/internal/cli/scripts"
+	"github.com/ekkolyth/miso/internal/cli"
+	"github.com/ekkolyth/miso/internal/cli/commands"
+	"github.com/ekkolyth/miso/internal/cli/completion"
+	"github.com/ekkolyth/miso/internal/cli/env"
+	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/manager"
+	"github.com/ekkolyth/miso/internal/manager/bun"
+	"github.com/ekkolyth/miso/internal/manager/npm"
+	"github.com/ekkolyth/miso/internal/manager/pnpm"
+	"github.com/ekkolyth/miso/internal/manager/yarn"
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
 func init() {
 	// Register manager drivers
-	core.RegisterManager("bun", managers.Bun{})
-	core.RegisterManager("npm", managers.Npm{})
-	core.RegisterManager("pnpm", managers.Pnpm{})
-	core.RegisterManager("yarn", managers.Yarn{})
+	manager.RegisterManager("bun", bun.Bun{})
+	manager.RegisterManager("npm", npm.Npm{})
+	manager.RegisterManager("pnpm", pnpm.Pnpm{})
+	manager.RegisterManager("yarn", yarn.Yarn{})
 }
 
 func main() {
@@ -44,129 +50,205 @@ func main() {
 
 	originalWorkDir, err := os.Getwd()
 	if err != nil {
-		core.Fail(logger, fmt.Errorf("determine working directory: %w", err), false)
+		cli.Fail(logger, fmt.Errorf("determine working directory: %w", err), false)
 	}
 
 	// handle global commands before loading config
 	if len(args) > 0 {
 		switch args[0] {
+		case "__complete":
+			completion.Complete(args, originalWorkDir)
+			return
+		case "completion":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "Usage: miso completion [bash|zsh|fish]")
+				os.Exit(1)
+			}
+			switch args[1] {
+			case "bash":
+				fmt.Print(completion.ScriptBash())
+			case "zsh":
+				fmt.Print(completion.ScriptZsh())
+			case "fish":
+				fmt.Print(completion.ScriptFish())
+			default:
+				fmt.Fprintf(os.Stderr, "Unknown shell: %s (use bash, zsh, or fish)\n", args[1])
+				os.Exit(1)
+			}
+			return
 		case "init":
-			if err := core.RunInit(originalWorkDir, styles, logger); err != nil {
-				core.Fail(logger, err, false)
+			if err := commands.RunInit(originalWorkDir, styles, logger); err != nil {
+				cli.Fail(logger, err, false)
 			}
 			return
 		case "version", "v":
 			// load config if available
 			var projectRoot string
 			var cfg config.Config
-			if root, err := core.FindProjectRoot(originalWorkDir); err == nil {
+			if root, err := cli.FindProjectRoot(originalWorkDir); err == nil {
 				projectRoot = root
-				if loadedCfg, err := core.LoadConfig(projectRoot); err == nil {
+				if loadedCfg, err := cli.LoadConfig(projectRoot); err == nil {
 					cfg = loadedCfg
 				}
 			}
-			if err := core.RunVersion(projectRoot, cfg); err != nil {
-				core.Fail(logger, err, false)
+			if err := commands.RunVersion(projectRoot, cfg); err != nil {
+				cli.Fail(logger, err, false)
 			}
 			return
 		case "upgrade":
-			local, remainingArgs := core.ParseLocalFlag(args[1:])
-			if err := pm.Upgrade(local, remainingArgs); err != nil {
-				core.Fail(logger, err, false)
+			local, remainingArgs := cli.ParseLocalFlag(args[1:])
+			if err := commands.Upgrade(local, remainingArgs); err != nil {
+				cli.Fail(logger, err, false)
 			}
 			return
 		}
 	}
 
 	// find project root
-	projectRoot, err := core.FindProjectRoot(originalWorkDir)
+	projectRoot, err := cli.FindProjectRoot(originalWorkDir)
 	if err != nil {
-		core.Fail(logger, err, false)
+		cli.Fail(logger, err, false)
 	}
 
-	cfg, err := core.LoadConfig(projectRoot)
+	cfg, err := cli.LoadConfig(projectRoot)
 	if err != nil {
-		core.Fail(logger, err, false)
+		cli.Fail(logger, err, false)
 	}
 
-	parsed, err := core.ParseCLI(args, cfg, projectRoot)
+	parsed, err := cli.ParseCLI(args, cfg, projectRoot)
 	if err != nil {
-		core.Fail(logger, err, true)
+		cli.Fail(logger, err, true)
+	}
+
+	// env does not need package manager
+	if parsed.Action == cli.ActionEnv {
+		if err := env.Run(projectRoot, cfg, logger); err != nil {
+			cli.Fail(logger, err, false)
+		}
+		return
 	}
 
 	// ensure manager configured
-	managerName, cfg, err := core.EnsureManager(projectRoot, cfg)
+	managerName, cfg, err := cli.EnsureManager(projectRoot, cfg)
 	if err != nil {
-		core.Fail(logger, err, false)
+		cli.Fail(logger, err, false)
 	}
 
 	if debug {
 		logger.Debug("resolved manager", "manager", managerName)
 	}
 
+	// --env flag: run env validation first, then strip from args before passing to command
+	cfg, parsed = runEnvIfRequested(projectRoot, cfg, parsed, logger)
+
 	// Route to command handlers
 	switch parsed.Action {
-	case core.ActionScripts:
-		if err := scripts.List(cfg, projectRoot, styles, logger); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionScripts:
+		if err := scripting.List(cfg, projectRoot, styles, logger); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionRunMultiple:
-		if err := pm.RunMultiple(managerName, parsed.ScriptNames, parsed.ScriptArgs, originalWorkDir); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionRunMultiple:
+		if err := commands.RunMultiple(managerName, parsed.ScriptNames, parsed.ScriptArgs, originalWorkDir); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionScriptOverride:
-		if err := scripts.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionScriptOverride:
+		if err := scripting.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionScriptFolder:
-		if err := scripts.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionScriptFolder:
+		if err := scripting.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionScriptPackageJSON:
-		if err := pm.Run(managerName, parsed.ScriptName, parsed.ScriptArgs, originalWorkDir); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionScriptPackageJSON:
+		if err := commands.Run(managerName, parsed.ScriptName, parsed.ScriptArgs, originalWorkDir); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionInstall:
-		if err := pm.Install(managerName, originalWorkDir, cfg); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionInstall:
+		if err := commands.Install(managerName, originalWorkDir, cfg); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionAdd:
-		if err := pm.Add(managerName, parsed.PackageNames, originalWorkDir, cfg); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionAdd:
+		if err := commands.Add(managerName, parsed.PackageNames, originalWorkDir, cfg); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionRemove:
-		if err := pm.Remove(managerName, parsed.PackageNames, originalWorkDir, cfg); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionRemove:
+		if err := commands.Remove(managerName, parsed.PackageNames, originalWorkDir, cfg); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionRun:
-		if err := pm.Run(managerName, parsed.ScriptName, parsed.ScriptArgs, originalWorkDir); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionRun:
+		if err := commands.Run(managerName, parsed.ScriptName, parsed.ScriptArgs, originalWorkDir); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionDev:
-		if err := pm.Dev(managerName, parsed.ScriptArgs, originalWorkDir, cfg); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionDev:
+		if err := commands.Dev(managerName, parsed.ScriptArgs, originalWorkDir, cfg); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionMisox:
-		if err := core.RunMisox(managerName, parsed.PackageName, parsed.Args, originalWorkDir); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionMisox:
+		if err := cli.RunMisox(managerName, parsed.PackageName, parsed.Args, originalWorkDir); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
-	case core.ActionPassthrough:
-		if err := core.RunPassthrough(managerName, parsed.Command, parsed.Args, originalWorkDir); err != nil {
-			core.Fail(logger, err, false)
+	case cli.ActionPassthrough:
+		if err := cli.RunPassthrough(managerName, parsed.Command, parsed.Args, originalWorkDir); err != nil {
+			cli.Fail(logger, err, false)
 		}
 		return
 	default:
-		core.Fail(logger, fmt.Errorf("unknown action"), true)
+		cli.Fail(logger, fmt.Errorf("unknown action"), true)
 	}
+}
+
+// runEnvIfRequested checks for --env in effective args (config flags + CLI args).
+// If present, runs env validation first; on success, strips --env from cfg and parsed.
+func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedCLI, logger *log.Logger) (config.Config, cli.ParsedCLI) {
+	var effective []string
+	switch parsed.Action {
+	case cli.ActionAdd:
+		effective = append(cfg.Flags["add"], parsed.PackageNames...)
+	case cli.ActionRemove:
+		effective = append(cfg.Flags["remove"], parsed.PackageNames...)
+	case cli.ActionInstall:
+		effective = cfg.Flags["install"]
+	case cli.ActionDev:
+		effective = append(cfg.Flags["dev"], parsed.ScriptArgs...)
+	case cli.ActionRun, cli.ActionRunMultiple:
+		effective = parsed.ScriptArgs
+	case cli.ActionScriptOverride, cli.ActionScriptFolder, cli.ActionScriptPackageJSON:
+		// Script overrides can have flags by script name (e.g. flags["dev"] for dev script)
+		scriptFlags := cfg.Flags[parsed.ScriptName]
+		effective = append(scriptFlags, parsed.ScriptArgs...)
+	default:
+		return cfg, parsed
+	}
+
+	if !env.HasEnvFlag(effective) {
+		return cfg, parsed
+	}
+
+	if err := env.Run(projectRoot, cfg, logger); err != nil {
+		cli.Fail(logger, err, false)
+	}
+
+	// Strip --env from cfg flags and parsed args
+	cfg = env.StripEnvFromFlags(cfg)
+	switch parsed.Action {
+	case cli.ActionAdd:
+		parsed.PackageNames = env.StripEnvFlag(parsed.PackageNames)
+	case cli.ActionRemove:
+		parsed.PackageNames = env.StripEnvFlag(parsed.PackageNames)
+	case cli.ActionDev, cli.ActionRun, cli.ActionRunMultiple,
+		cli.ActionScriptOverride, cli.ActionScriptFolder, cli.ActionScriptPackageJSON:
+		parsed.ScriptArgs = env.StripEnvFlag(parsed.ScriptArgs)
+	}
+	return cfg, parsed
 }

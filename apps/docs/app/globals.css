@@ -1,6 +1,3 @@
-/* import nextra theme styles first */
-@import "nextra-theme-docs/style.css";
-
 @tailwind components;
 @tailwind utilities;
 
