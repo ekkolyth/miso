@@ -1,6 +1,3 @@
-#!/bin/sh
-set -e
-
 BINARY=${BINARY:-miso}
 PKG=./apps/miso/cmd
 

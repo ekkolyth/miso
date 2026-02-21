@@ -3,6 +3,8 @@
     "homepage": "https://misojs.dev",
     "private": true,
     "scripts": {
+        "copy:schema": "cp ../miso/miso.schema.json public/miso.schema.json",
+        "prebuild": "cp ../miso/miso.schema.json public/miso.schema.json",
         "dev": "next dev --port 3000",
         "build": "next build",
         "start": "next start",

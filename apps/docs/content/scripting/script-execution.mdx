@@ -1,12 +1,53 @@
 # Script Execution
 
-This page covers how Miso executes scripts, including interpreter detection and argument passing.
-
-## Shebang Detection
-
-Miso reads the first line of each script to detect shebangs (the `#!` directive). If a shebang is present, Miso uses the specified interpreter:
+By default, Miso runs all scripts with `sh`.
 
 ```bash
+# scripts/deploy.sh
+
+echo "Deploying..."
+pnpm run build
+```
+
+_Scripts with a `.sh` or `.bash` extension run with `sh`. Scripts with no recognized extension (e.g. `scripts/deploy` with no extension) also default to `sh`._
+
+## Changing the Interpreter
+
+You can run scripts with a different interpreter in three ways:
+
+### 1. Use a Different File Extension
+
+Miso selects the interpreter based on the file extension when no shebang is present:
+
+| Extension      | Interpreter | Notes                         |
+| -------------- | ----------- | ----------------------------- |
+| `.sh`, `.bash` | `sh`        | POSIX shell (default)         |
+| `.zsh`         | `zsh`       | Z shell                       |
+| `.js`, `.mjs`  | `node`      | Node.js                       |
+| `.ts`          | `ts-node`   | TypeScript (requires ts-node) |
+| `.py`          | `python3`   | Python 3                      |
+| `.rb`          | `ruby`      | Ruby                          |
+| `.pl`          | `perl`      | Perl                          |
+| `.lua`         | `lua`       | Lua                           |
+| `.php`         | `php`       | PHP                           |
+
+### 2. Configure the Default Shell in miso.json
+
+For scripts with no recognized extension, you can override the default `sh` in `miso.json`:
+
+```json
+{
+    "shell": "bash"
+}
+```
+
+The `shell` field applies when neither shebang nor extension specifies an interpreter. Leave it unset to use `sh`.
+
+### 3. Use a Shebang
+
+If the first line starts with `#!`, Miso uses the specified interpreter. The shebang takes precedence over extension-based detection:
+
+```javascript
 #!/usr/bin/env node
 // Your JavaScript code here
 console.log("Running with Node.js");
@@ -18,126 +59,14 @@ console.log("Running with Node.js");
 print("Running with Python")
 ```
 
-The shebang takes precedence over extension-based detection, giving you full control over script execution.
-
-## Extension-Based Interpreter Selection
-
-If no shebang is present, Miso automatically selects an interpreter based on the file extension:
-
-| Extension | Interpreter | Notes |
-|-----------|-------------|-------|
-| `.sh`, `.bash` | `sh` | POSIX shell |
-| `.zsh` | `zsh` | Z shell |
-| `.js`, `.mjs` | `node` | Node.js |
-| `.ts` | `ts-node` | TypeScript (requires ts-node) |
-| `.py` | `python3` | Python 3 |
-| `.rb` | `ruby` | Ruby |
-| `.pl` | `perl` | Perl |
-| `.lua` | `lua` | Lua |
-| `.php` | `php` | PHP |
-
-### Requirements
+### Interpreter Requirements
 
 Make sure the required interpreter is installed and available in your PATH:
 
 ```bash
-# Check if an interpreter is available
 which node
 which python3
 which ruby
-```
-
-For TypeScript scripts, you'll need to install `ts-node`:
-
-```bash
-npm install -g ts-node
-# or
-pnpm add -g ts-node
-```
-
-## Passing Arguments to Scripts
-
-Pass arguments to scripts after the script name:
-
-```bash
-miso build --production
-miso deploy staging --verbose
-miso test unit --watch
-```
-
-### How Arguments Are Passed
-
-The way arguments are passed depends on where the script is located:
-
-#### Scripts Folder Scripts
-Arguments are passed directly to the script:
-
-```bash
-# scripts/deploy.sh
-#!/bin/sh
-ENVIRONMENT=$1
-FLAGS=${@:2}
-echo "Deploying to $ENVIRONMENT with flags: $FLAGS"
-```
-
-```bash
-miso deploy staging --dry-run
-# Output: Deploying to staging with flags: --dry-run
-```
-
-#### Package.json Scripts
-Arguments are forwarded to the package manager's run command:
-
-```json
-{
-  "scripts": {
-    "dev": "vite"
-  }
-}
-```
-
-```bash
-miso dev --port 3000
-# Executes: pnpm run dev --port 3000
-```
-
-## Accessing Arguments in Different Languages
-
-### Shell Scripts
-
-```bash
-#!/bin/sh
-# $1, $2, etc. for positional arguments
-# $@ for all arguments
-echo "First argument: $1"
-echo "All arguments: $@"
-```
-
-### JavaScript/Node.js
-
-```javascript
-#!/usr/bin/env node
-// process.argv contains all arguments
-const args = process.argv.slice(2);
-console.log("Arguments:", args);
-```
-
-### Python
-
-```python
-#!/usr/bin/env python3
-import sys
-# sys.argv[1:] contains script arguments
-args = sys.argv[1:]
-print(f"Arguments: {args}")
-```
-
-### TypeScript
-
-```typescript
-#!/usr/bin/env ts-node
-const args = process.argv.slice(2);
-console.log("Arguments:", args);
 ```
 
 ## Error Handling
@@ -145,7 +74,6 @@ console.log("Arguments:", args);
 If a script exits with a non-zero status code, Miso will display the error and exit with the same code:
 
 ```bash
-#!/bin/sh
 if [ -z "$1" ]; then
   echo "Error: Environment required"
   exit 1

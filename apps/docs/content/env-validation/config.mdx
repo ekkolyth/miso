@@ -1,0 +1,84 @@
+---
+title: Configuration
+---
+
+# Configuration
+
+Configure the `env` key in `miso.json` to define which variables to validate and how.
+
+## Basic Example
+
+```json
+{
+    "env": {
+        "path": [".env.local", ".env"],
+        "required": "all",
+        "variables": {
+            "PORT": "port",
+            "DATABASE_URL": "url",
+            "NODE_ENV": {
+                "type": "enum",
+                "values": ["development", "production", "test"],
+                "optional": true
+            }
+        }
+    }
+}
+```
+
+## path
+
+Array of `.env` file paths (relative to project root). Files are loaded in order; later files override earlier ones.
+
+If omitted, Miso discovers `.env` files in this order:
+
+1. `.env.local`
+2. `.env.production`
+3. `.env.development`
+4. `.env`
+
+Use `path` when you want explicit control over which files are loaded and in what order.
+
+## required
+
+Controls which variables must be present:
+
+| Value | Behavior |
+|-------|----------|
+| `"all"` | Every variable must be present (unless `optional: true` on that variable). Default. |
+| `"none"` | No variables are required; only type-check those that exist. |
+| `["KEY1", "KEY2"]` | Only the listed keys are required; others may be absent. |
+
+## variables
+
+Define the variables to validate. You can use either an **object** (for type validation) or an **array** (presence only). These forms are mutually exclusive.
+
+### Object form
+
+Each key is a variable name; each value is either a type shorthand or a full `VarConfig`:
+
+```json
+{
+    "variables": {
+        "PORT": "port",
+        "DATABASE_URL": "url",
+        "APP_NAME": { "type": "string", "optional": true }
+    }
+}
+```
+
+### Array form
+
+Only checks that variables exist—no type validation:
+
+```json
+{
+    "variables": ["DATABASE_URL", "API_KEY", "REDIS_URL"]
+}
+```
+
+Use the array form when you only care about presence (e.g. in CI) and don't need format validation.
+
+## Next
+
+See the [Types & VarConfig](/env-validation/reference) reference for shorthand types, full `VarConfig` options, and all supported validators.

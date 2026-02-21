@@ -1,0 +1,133 @@
+{
+    "$schema": "https://json-schema.org/draft-07/schema#",
+    "$id": "https://misojs.dev/miso.schema.json",
+    "title": "Miso Configuration",
+    "description": "Configuration for Miso package manager",
+    "type": "object",
+    "properties": {
+        "$schema": {
+            "type": "string",
+            "description": "Path or URL to this JSON schema for IDE support"
+        },
+        "package-manager": {
+            "type": "string",
+            "enum": ["bun", "npm", "pnpm", "yarn"],
+            "description": "The package manager to use"
+        },
+        "name": {
+            "type": "string",
+            "description": "Project name"
+        },
+        "scripts": {
+            "type": "string",
+            "default": "./scripts",
+            "description": "Path to scripts folder (relative to project root)"
+        },
+        "shell": {
+            "type": "string",
+            "enum": ["sh", "zsh", "bash", "dash", "ksh", "fish", "nu", "pwsh"],
+            "description": "Default interpreter for scripts with no shebang or recognized extension (e.g. sh, bash, zsh)"
+        },
+        "flags": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "array",
+                "items": { "type": "string" }
+            },
+            "description": "Default flags for package manager commands (add, remove, install, dev)"
+        },
+        "env": {
+            "oneOf": [
+                { "type": "string", "description": "Path to .env file" },
+                {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Paths to .env files (relative to project root)"
+                        },
+                        "required": {
+                            "oneOf": [
+                                { "type": "string", "enum": ["all", "none"] },
+                                {
+                                    "type": "array",
+                                    "items": { "type": "string" }
+                                }
+                            ],
+                            "description": "Which variables are required (all, none, or specific keys)"
+                        },
+                        "variables": {
+                            "oneOf": [
+                                {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Variable names for presence-only validation"
+                                },
+                                {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "oneOf": [
+                                            {
+                                                "type": "string",
+                                                "description": "Type shorthand (port, int, url, enum, pattern, bool, etc.)"
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "type": {
+                                                        "type": "string"
+                                                    },
+                                                    "optional": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "min": { "type": "number" },
+                                                    "max": { "type": "number" },
+                                                    "pattern": {
+                                                        "type": "string"
+                                                    },
+                                                    "values": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "schemes": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "trueValues": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "falseValues": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "string"
+                                                        }
+                                                    }
+                                                },
+                                                "additionalProperties": false
+                                            }
+                                        ]
+                                    },
+                                    "description": "Variables to validate (object = type validation per key)"
+                                }
+                            ],
+                            "description": "Variables to validate (array = presence only, object = type validation)"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "description": "Environment file path and variable validation rules"
+                }
+            ],
+            "description": "Environment file path and variable validation rules"
+        }
+    },
+    "required": ["package-manager"],
+    "additionalProperties": false
+}
