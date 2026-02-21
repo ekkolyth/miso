@@ -70,6 +70,14 @@ jobs:
                       dist/misox_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
                       dist/misox_${{ steps.version.outputs.version }}_windows_amd64.zip
 
+            - name: Tag and push latest
+              if: steps.version.outputs.version != ''
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git tag -f latest
+                  git push origin latest --force
+
     publish:
         needs: build
         if: needs.build.outputs.version != ''
