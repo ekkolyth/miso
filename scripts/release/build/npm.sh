@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(realpath "$SCRIPT_DIR/../../..")"
 
 cd "$REPO_ROOT"
 
@@ -27,3 +27,7 @@ cd ../..
 mkdir -p dist/scripts
 cp apps/miso/miso.mjs apps/miso/misox.mjs apps/miso/package.json README.md dist/
 cp apps/miso/scripts/postinstall.mjs dist/scripts/
+
+# sync schema to docs public folder so misojs.dev always serves the latest
+cp apps/miso/miso.schema.json apps/docs/public/miso.schema.json
+echo "✓ schema synced to apps/docs/public/miso.schema.json"

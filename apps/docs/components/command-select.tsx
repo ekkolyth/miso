@@ -17,27 +17,24 @@ interface CommandSelectProps {
 }
 
 export function CommandSelect(props: CommandSelectProps) {
-    // Filter tabs to only show those with provided commands
     const availableTabs = tabOrder.filter((pm) => props[pm] !== undefined)
 
-    // Default to first available tab
     const [selected, setSelected] = useState<PackageManager>(
         availableTabs[0] ?? 'npm'
     )
 
     const currentCommand = props[selected] ?? ''
 
-    // Don't render if no commands provided
     if (availableTabs.length === 0) {
         return null
     }
 
     return (
         <div className='my-6 rounded-lg border border-neutral-800 bg-neutral-900 overflow-hidden'>
-            {/* Tabs */}
             <div className='flex gap-8 px-6 bg-neutral-950 border-b border-neutral-800'>
                 {availableTabs.map((pm) => (
                     <button
+                        type='button'
                         key={pm}
                         onClick={() => setSelected(pm)}
                         className={`
@@ -63,7 +60,6 @@ export function CommandSelect(props: CommandSelectProps) {
                 ))}
             </div>
 
-            {/* Terminal */}
             <Terminal command={currentCommand} />
         </div>
     )

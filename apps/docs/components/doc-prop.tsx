@@ -1,7 +1,9 @@
 'use client'
 
-import { Link, Check } from 'lucide-react'
+import { Check, Link } from 'lucide-react'
 import { useState } from 'react'
+
+const COPY_RESET_DELAY = 2000
 
 interface DocPropProps {
     prop: string
@@ -15,7 +17,7 @@ export function DocProp({ prop, className }: DocPropProps) {
         const url = `${window.location.origin}${window.location.pathname}#${prop}`
         navigator.clipboard.writeText(url)
         setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
+        setTimeout(() => setCopied(false), COPY_RESET_DELAY)
     }
 
     return (
@@ -27,6 +29,7 @@ export function DocProp({ prop, className }: DocPropProps) {
                 {prop}
             </code>
             <button
+                type='button'
                 onClick={copyLink}
                 className='opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-neutral-800'
                 title='Copy link to this prop'
