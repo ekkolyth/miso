@@ -1,7 +1,9 @@
 'use client'
 
-import { Copy, Check } from 'lucide-react'
+import { Check, Copy } from 'lucide-react'
 import { useState } from 'react'
+
+const COPY_RESET_DELAY = 2000
 
 interface TerminalProps {
     title?: string
@@ -21,7 +23,7 @@ export function Terminal({
     const copyToClipboard = () => {
         navigator.clipboard.writeText(command)
         setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
+        setTimeout(() => setCopied(false), COPY_RESET_DELAY)
     }
 
     return (
@@ -39,6 +41,7 @@ export function Terminal({
                 </div>
                 {copy && (
                     <button
+                        type='button'
                         onClick={copyToClipboard}
                         className='p-1 rounded hover:bg-neutral-800 transition-colors'
                         title='Copy to clipboard'

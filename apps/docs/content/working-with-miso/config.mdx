@@ -116,6 +116,35 @@ Default interpreter for scripts with no shebang and no recognized extension. If 
 
 Examples: `"sh"`, `"bash"`, `"zsh"`. The interpreter must be available in your PATH.
 
+### Repo
+
+Configure whether your project is a single project or a monorepo:
+
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    command='repo: "mono"'
+/>
+
+<DocProp prop='"single"' />
+
+Default. Treats the project as a single repository. All scripts resolve from the root `scripts/` folder.
+
+<DocProp prop='"mono"' />
+
+Enables monorepo mode. Unlocks workspace-scoped script execution using the `workspace:script` syntax and automatic CWD-based scoping. Requires a `workspaces` field in your root `package.json`.
+
+When set to `"mono"`, miso reads workspace paths from your root `package.json`:
+
+```json
+{
+  "workspaces": ["apps/*", "packages/*"]
+}
+```
+
+See [Monorepo Scripts](/scripting/scripts-folder#monorepo) for full details on workspace script execution.
+
 ### Env
 
 Configure environment variable validation for `miso env`:

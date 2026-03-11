@@ -4,7 +4,7 @@ title: Env Validation
 
 # Env Validation
 
-`miso env` validates environment variables from your `.env` file against rules defined in `miso.json`.
+`miso env` validates environment variables from your `.env` files against rules defined in `miso.json`.
 
 ## Usage
 
@@ -19,22 +19,36 @@ miso dev --env
 miso build --env
 ```
 
-- **With env config**: Loads `.env` (or configured paths), validates all variables, and prints success or the first error.
-- **Without env config**: Uses discovery to find `.env` in the project.
+- **With env config**: Loads each configured `.env` file, validates its variables, and prints success or the first error.
+- **Without env config**: Uses discovery to find a `.env` file in the project root.
 - **Empty variables**: Succeeds—nothing to validate.
 
 ## Quick Start
 
-1. Add an `env` block to `miso.json`:
+1. Add an `env` array to `miso.json`, with one entry per app or `.env` file:
 
 ```json
 {
-    "env": {
-        "variables": {
-            "PORT": "port",
-            "DATABASE_URL": "url"
+    "env": [
+        {
+            "label": "web",
+            "path": "apps/web/.env.local",
+            "variables": {
+                "PORT": "port",
+                "DATABASE_URL": "url"
+            }
+        },
+        {
+            "label": "api",
+            "path": "apps/api/.env",
+            "variables": {
+                "REDIS_URL": {
+                    "type": "url",
+                    "schemes": ["redis", "rediss"]
+                }
+            }
         }
-    }
+    ]
 }
 ```
 
@@ -44,7 +58,13 @@ miso build --env
 miso env && miso dev
 ```
 
+Each entry is validated independently. If a variable fails in the `api` entry, the error will say so:
+
+```
+api: missing required variable: REDIS_URL
+```
+
 ## Next Steps
 
-- [Configure](/env-validation/config) path, required variables, and validation rules
+- [Configure](/env-validation/config) labels, paths, required variables, and validation rules
 - See the [Types & VarConfig](/env-validation/reference) reference for all supported types and options
