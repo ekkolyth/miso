@@ -53,7 +53,7 @@ jobs:
               run: ./scripts/release/version/commit.sh
 
             - name: Setup Go
-              uses: actions/setup-go@v5
+              uses: actions/setup-go@v6
               with:
                   go-version-file: apps/miso/go.mod
 
@@ -61,7 +61,7 @@ jobs:
               run: ./scripts/release/build/npm.sh
 
             - name: Upload npm dist artifact
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v5
               with:
                   name: npm-dist
                   path: dist/
@@ -81,7 +81,7 @@ jobs:
                   token: ${{ secrets.RELEASE_TOKEN }}
 
             - name: Download npm dist artifact
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v5
               with:
                   name: npm-dist
                   path: dist
@@ -131,7 +131,7 @@ jobs:
                   token: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Download npm dist artifact
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v5
               with:
                   name: npm-dist
                   path: dist
