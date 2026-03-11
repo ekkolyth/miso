@@ -120,6 +120,26 @@ func main() {
 		cli.Fail(logger, err, true)
 	}
 
+	// CWD-aware mono scoping: if repo is "mono" and we're inside a workspace,
+	// and the parsed action is a plain script (not already workspace-scoped),
+	// try to resolve the script from the current workspace's scripts folder first.
+	if cfg.IsMono() && originalWorkDir != projectRoot &&
+		parsed.Action == cli.ActionScriptPackageJSON {
+		workspaces, wsErr := config.LoadWorkspaces(projectRoot)
+		if wsErr == nil && len(workspaces) > 0 {
+			if wsDir, inWs := scripting.WorkspaceFromCWD(originalWorkDir, workspaces); inWs {
+				resolved, _, resolveErr := scripting.ResolveWorkspaceScript(
+					filepath.Base(wsDir), parsed.ScriptName, projectRoot, cfg,
+				)
+				if resolveErr == nil && resolved.Source == scripting.ScriptSourceFolder {
+					parsed.Action = cli.ActionWorkspaceScript
+					parsed.WorkspaceName = filepath.Base(wsDir)
+					parsed.Command = resolved.Path
+				}
+			}
+		}
+	}
+
 	// env does not need package manager
 	if parsed.Action == cli.ActionEnv {
 		if err := env.Run(projectRoot, cfg, logger); err != nil {
@@ -143,6 +163,21 @@ func main() {
 
 	// Route to command handlers
 	switch parsed.Action {
+	case cli.ActionWorkspaceScript:
+		// workspace:script syntax — resolve and execute in the workspace directory
+		resolved, workDir, err := scripting.ResolveWorkspaceScript(
+			parsed.WorkspaceName, parsed.ScriptName, projectRoot, cfg,
+		)
+		if err != nil {
+			cli.Fail(logger, err, false)
+		}
+		if resolved.Source == scripting.ScriptSourceNone {
+			cli.Fail(logger, fmt.Errorf("script %q not found in workspace %q", parsed.ScriptName, parsed.WorkspaceName), false)
+		}
+		if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, cfg.Shell); err != nil {
+			cli.Fail(logger, err, false)
+		}
+		return
 	case cli.ActionScripts:
 		if err := scripting.List(cfg, projectRoot, styles, logger); err != nil {
 			cli.Fail(logger, err, false)
@@ -169,7 +204,7 @@ func main() {
 		}
 		return
 	case cli.ActionInstall:
-		if err := commands.Install(managerName, originalWorkDir, cfg); err != nil {
+		if err := commands.Install(managerName, projectRoot, cfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
