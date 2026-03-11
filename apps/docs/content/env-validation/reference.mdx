@@ -10,11 +10,17 @@ title: Types & VarConfig
 
 ```json
 {
-    "variables": {
-        "PORT": "port",
-        "DATABASE_URL": "url",
-        "API_KEY": "string"
-    }
+    "env": [
+        {
+            "label": "web",
+            "path": "apps/web/.env.local",
+            "variables": {
+                "PORT": "port",
+                "DATABASE_URL": "url",
+                "API_KEY": "string"
+            }
+        }
+    ]
 }
 ```
 
@@ -83,5 +89,49 @@ Unknown `VarConfig` keys cause an error (strict mode).
 "VERSION": {
     "type": "pattern",
     "pattern": "^v?\\d+\\.\\d+\\.\\d+$"
+}
+```
+
+**Full multi-app example:**
+
+```json
+{
+    "env": [
+        {
+            "label": "web",
+            "path": "apps/web/.env.local",
+            "variables": {
+                "PORT": "port",
+                "DATABASE_URL": "url",
+                "API_KEY": {
+                    "type": "string",
+                    "min": 1,
+                    "max": 32
+                },
+                "DEBUG_MODE": "bool"
+            }
+        },
+        {
+            "label": "api",
+            "path": "apps/api/.env",
+            "required": "all",
+            "variables": {
+                "NODE_ENV": {
+                    "type": "enum",
+                    "values": ["development", "production", "test"],
+                    "optional": true
+                },
+                "REDIS_URL": {
+                    "type": "url",
+                    "schemes": ["redis", "rediss"]
+                },
+                "RATE_LIMIT": {
+                    "type": "int+",
+                    "min": 1,
+                    "max": 1000
+                }
+            }
+        }
+    ]
 }
 ```

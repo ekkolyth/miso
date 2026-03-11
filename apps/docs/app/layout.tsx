@@ -1,10 +1,11 @@
-import { Footer, Layout, Navbar } from 'nextra-theme-docs'
-import { Banner, Head } from 'nextra/components'
+import Image from 'next/image'
+import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
+import { Footer, Layout, Navbar } from 'nextra-theme-docs'
 import 'nextra-theme-docs/style-prefixed.css'
 import './globals.css'
-import misoPackage from '../../miso/package.json'
 import { Badge } from '@/components/ui/badge'
+import misoPackage from '../../miso/package.json'
 
 export const metadata = {
     title: 'Miso - The Agnostic Package Manager',
@@ -19,7 +20,7 @@ const navbar = (
     <Navbar
         logo={
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <img src='/miso.png' alt='Miso' width='36' height='36' />
+                <Image src='/miso.png' alt='Miso' width={36} height={36} />
                 <span className='font-bold mr-1'>miso.js</span>
                 <Badge
                     variant='default'

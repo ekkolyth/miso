@@ -1,0 +1,49 @@
+{
+	"$schema": "../../apps/miso/miso.schema.json",
+	"package-manager": "bun",
+	"name": "env-test",
+	"scripts": "./scripts",
+	"env": [
+		{
+			"label": "fixture",
+			"path": ".env",
+			"variables": {
+				"APP_NAME": {
+					"type": "string",
+					"min": 1,
+					"max": 50
+				},
+				"PORT": "port",
+				"TIMEOUT": "int",
+				"WORKERS": "int+",
+				"THRESHOLD": "float",
+				"DEBUG_MODE": "bool",
+				"API_URL": "url",
+				"REDIS_URL": {
+					"type": "url",
+					"schemes": ["redis", "rediss"]
+				},
+				"NODE_ENV": {
+					"type": "enum",
+					"values": ["development", "production", "test"]
+				},
+				"ADMIN_EMAIL": "email",
+				"FEATURE_FLAGS": "json",
+				"USER_ID": "uuid",
+				"VERSION": {
+					"type": "pattern",
+					"pattern": "^v?\\d+\\.\\d+\\.\\d+$"
+				},
+				"API_KEY": {
+					"type": "string",
+					"min": 1,
+					"max": 32
+				},
+				"OPTIONAL_VAR": {
+					"type": "string",
+					"optional": true
+				}
+			}
+		}
+	]
+}
