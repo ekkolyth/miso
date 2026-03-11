@@ -20,8 +20,8 @@ const SchemaURL = "https://misojs.dev/miso.schema.json"
 // persisted project metadata
 type Config struct {
 	Schema         string              `json:"$schema,omitempty"`
-	PackageManager string              `json:"package-manager"`
-	ProjectName    string              `json:"name"`
+	PackageManager string              `json:"package-manager,omitempty"`
+	ProjectName    string              `json:"name,omitempty"`
 	Scripts        string              `json:"scripts"`
 	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`
@@ -121,8 +121,8 @@ func Path(root string) string {
 // configLoad is used for two-phase unmarshaling (env can be string, object, or array)
 type configLoad struct {
 	Schema         string              `json:"$schema,omitempty"`
-	PackageManager string              `json:"package-manager"`
-	ProjectName    string              `json:"name"`
+	PackageManager string              `json:"package-manager,omitempty"`
+	ProjectName    string              `json:"name,omitempty"`
 	Scripts        string              `json:"scripts"`
 	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`

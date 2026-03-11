@@ -15,46 +15,60 @@ import (
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
-// detect manager for init preselection
-// checks package.json packageManager field and lockfiles
-func DetectManagerForInit(root string) (string, error) {
-	// check package.json for packageManager field
-	packageJSONPath := filepath.Join(root, "package.json")
-	if data, err := os.ReadFile(packageJSONPath); err == nil {
-		var pkg struct {
-			PackageManager string `json:"packageManager"`
-		}
-		if err := json.Unmarshal(data, &pkg); err == nil && pkg.PackageManager != "" {
-			// extract manager name (before @)
-			parts := strings.Split(pkg.PackageManager, "@")
-			if len(parts) > 0 && parts[0] != "" {
-				managerName := parts[0]
-				// validate against registered managers
-				registered := manager.GetRegisteredManagers()
-				for _, reg := range registered {
-					if reg == managerName {
-						return managerName, nil
-					}
-				}
-				// unsupported manager
-				return "", fmt.Errorf("unsupported package manager '%s' specified in package.json. supported managers: %v", managerName, registered)
-			}
-		}
+// readPackageJSON reads and parses package.json from root, returns nil if not found.
+func readPackageJSON(root string) (map[string]interface{}, error) {
+	path := filepath.Join(root, "package.json")
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
 	}
-
-	// check for lockfiles
-	detected, err := manager.DetectManager(root)
-	if err == nil {
-		return detected, nil
+	if err != nil {
+		return nil, fmt.Errorf("read package.json: %w", err)
 	}
+	var pkg map[string]interface{}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return nil, fmt.Errorf("parse package.json: %w", err)
+	}
+	return pkg, nil
+}
 
-	// neither found - return empty string (no error)
-	return "", nil
+// writePackageJSON marshals and writes pkg back to package.json preserving indent.
+func writePackageJSON(root string, pkg map[string]interface{}) error {
+	data, err := json.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode package.json: %w", err)
+	}
+	path := filepath.Join(root, "package.json")
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write package.json: %w", err)
+	}
+	return nil
+}
+
+// packageManagerFromPackageJSON returns the bare manager name (e.g. "bun") from
+// the packageManager field (e.g. "bun@1.2.3"), or "" if not set.
+func packageManagerFromPackageJSON(pkg map[string]interface{}) string {
+	raw, ok := pkg["packageManager"]
+	if !ok {
+		return ""
+	}
+	s, ok := raw.(string)
+	if !ok || s == "" {
+		return ""
+	}
+	return strings.SplitN(s, "@", 2)[0]
+}
+
+// injectPackageManager sets the packageManager field in package.json to the
+// bare manager name and writes the file back to disk.
+func injectPackageManager(root string, pkg map[string]interface{}, managerName string) error {
+	pkg["packageManager"] = managerName
+	return writePackageJSON(root, pkg)
 }
 
 // miso init
 func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
-	// check if miso.json exists
+	// refuse if miso.json already exists
 	_, err := config.Load(root)
 	if err == nil {
 		return fmt.Errorf("miso.json already exists")
@@ -63,41 +77,124 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		return err
 	}
 
-	// display ASCII art and welcome message
 	printMisoWelcome(styles)
 
-	// detect manager for preselection
-	preselectedManager, err := DetectManagerForInit(root)
+	pkg, err := readPackageJSON(root)
 	if err != nil {
 		return err
 	}
 
 	managerList := manager.GetRegisteredManagers()
-	newCfg, err := RunInitOnboarding(root, managerList, preselectedManager, styles, logger)
-	if err != nil {
-		return err
-	}
-	if err := config.Save(root, newCfg); err != nil {
-		return err
+
+	switch {
+	// ── Case 1: existing package.json with packageManager field ─────────────
+	case pkg != nil && packageManagerFromPackageJSON(pkg) != "":
+		managerName := packageManagerFromPackageJSON(pkg)
+
+		// validate it's a supported manager
+		if _, ok := manager.GetManager(managerName); !ok {
+			return fmt.Errorf(
+				"unsupported package manager %q in package.json (supported: %s)",
+				managerName,
+				strings.Join(managerList, ", "),
+			)
+		}
+
+		logger.Info("using package manager from package.json", "manager", managerName)
+
+		cfg := config.Config{
+			Schema:  config.SchemaURL,
+			Scripts: "./scripts",
+			Flags:   make(map[string][]string),
+		}
+		if err := config.Save(root, cfg); err != nil {
+			return err
+		}
+		logger.Info("created miso.json")
+
+	// ── Case 2: existing package.json, no packageManager; check lockfiles ───
+	case pkg != nil:
+		detected, _ := manager.DetectManager(root)
+
+		managerName, err := selectManager(managerList, detected, styles)
+		if err != nil {
+			return err
+		}
+
+		if err := injectPackageManager(root, pkg, managerName); err != nil {
+			return err
+		}
+		logger.Info("added packageManager to package.json", "manager", managerName)
+
+		cfg := config.Config{
+			Schema:  config.SchemaURL,
+			Scripts: "./scripts",
+			Flags:   make(map[string][]string),
+		}
+		if err := config.Save(root, cfg); err != nil {
+			return err
+		}
+		logger.Info("created miso.json")
+
+	// ── Case 3: no package.json — new project ───────────────────────────────
+	default:
+		projectName, err := askProjectName(filepath.Base(root), styles)
+		if err != nil {
+			return err
+		}
+
+		managerName, err := selectManager(managerList, "", styles)
+		if err != nil {
+			return err
+		}
+
+		logger.Info("scaffolding new project", "name", projectName, "manager", managerName)
+
+		// validate manager is supported
+		if _, ok := manager.GetManager(managerName); !ok {
+			return fmt.Errorf("unsupported manager: %s", managerName)
+		}
+
+		// run <manager> init to scaffold package.json (and whatever else the
+		// manager sets up, e.g. tsconfig for bun)
+		spec := manager.ExecSpec{
+			Command: managerName,
+			Args:    []string{"init"},
+		}
+		if err := manager.Exec(spec, root); err != nil {
+			return err
+		}
+
+		// read the package.json the manager just created and inject name +
+		// packageManager so they live in one place
+		freshPkg, err := readPackageJSON(root)
+		if err != nil {
+			return err
+		}
+		if freshPkg == nil {
+			// manager init didn't produce a package.json; create a minimal one
+			freshPkg = map[string]interface{}{
+				"name":    projectName,
+				"version": "0.0.1",
+			}
+		} else {
+			freshPkg["name"] = projectName
+		}
+		freshPkg["packageManager"] = managerName
+		if err := writePackageJSON(root, freshPkg); err != nil {
+			return err
+		}
+
+		cfg := config.Config{
+			Schema:  config.SchemaURL,
+			Scripts: "./scripts",
+			Flags:   make(map[string][]string),
+		}
+		if err := config.Save(root, cfg); err != nil {
+			return err
+		}
+		logger.Info("created miso.json")
 	}
 
-	// skip manager init if package.json exists
-	packageJsonPath := filepath.Join(root, "package.json")
-	if _, err := os.Stat(packageJsonPath); err == nil {
-		logger.Info("package.json already exists, skipping manager init")
-		return nil
-	}
-
-	// run manager init command
-	if _, ok := manager.GetManager(newCfg.PackageManager); !ok {
-		return fmt.Errorf("unsupported manager: %s", newCfg.PackageManager)
-	}
-	spec := manager.ExecSpec{
-		Command: newCfg.PackageManager,
-		Args:    []string{"init"},
-	}
-	if err := manager.Exec(spec, ""); err != nil {
-		return err
-	}
 	return nil
 }

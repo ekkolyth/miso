@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -89,12 +90,39 @@ func LoadConfig(projectRoot string) (config.Config, error) {
 	return cfg, nil
 }
 
-// ensure package manager is configured, return manager name and config
+// ensure package manager is configured, return manager name and config.
+// Resolution order:
+//  1. miso.json package-manager field (legacy / explicit override)
+//  2. package.json packageManager field
+//  3. lockfile detection
 func EnsureManager(root string, cfg config.Config) (string, config.Config, error) {
-	if cfg.PackageManager == "" {
-		return "", cfg, errors.New("package manager not configured in miso.json")
+	// 1. explicit value in miso.json
+	if cfg.PackageManager != "" {
+		return cfg.PackageManager, cfg, nil
 	}
-	return cfg.PackageManager, cfg, nil
+
+	// 2. package.json packageManager field
+	pkgJSONPath := filepath.Join(root, "package.json")
+	if data, err := os.ReadFile(pkgJSONPath); err == nil {
+		var pkg struct {
+			PackageManager string `json:"packageManager"`
+		}
+		if err := json.Unmarshal(data, &pkg); err == nil && pkg.PackageManager != "" {
+			name := strings.SplitN(pkg.PackageManager, "@", 2)[0]
+			if name != "" {
+				cfg.PackageManager = name
+				return name, cfg, nil
+			}
+		}
+	}
+
+	// 3. lockfile detection
+	if detected, err := manager.DetectManager(root); err == nil {
+		cfg.PackageManager = detected
+		return detected, cfg, nil
+	}
+
+	return "", cfg, errors.New("could not determine package manager: add a packageManager field to package.json, or run 'miso init'")
 }
 
 // print error and exit with code 1
