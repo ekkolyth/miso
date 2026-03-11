@@ -33,6 +33,39 @@ func readPackageJSON(root string) (map[string]interface{}, error) {
 	return pkg, nil
 }
 
+// mergeWorkspaces returns a deduplicated slice that contains all patterns
+// already declared in pkg["workspaces"] followed by any patterns in incoming
+// that were not already present.  If pkg["workspaces"] is absent or empty the
+// function simply returns incoming unchanged.
+func mergeWorkspaces(pkg map[string]interface{}, incoming []string) []string {
+	raw, ok := pkg["workspaces"]
+	if !ok {
+		return incoming
+	}
+
+	// package.json workspaces is always []interface{} after JSON round-trip.
+	existing, ok := raw.([]interface{})
+	if !ok || len(existing) == 0 {
+		return incoming
+	}
+
+	seen := make(map[string]bool, len(existing))
+	merged := make([]string, 0, len(existing)+len(incoming))
+
+	for _, v := range existing {
+		if s, ok := v.(string); ok && s != "" {
+			seen[s] = true
+			merged = append(merged, s)
+		}
+	}
+	for _, p := range incoming {
+		if !seen[p] {
+			merged = append(merged, p)
+		}
+	}
+	return merged
+}
+
 // writePackageJSON marshals and writes pkg back to package.json preserving indent.
 func writePackageJSON(root string, pkg map[string]interface{}) error {
 	data, err := json.MarshalIndent(pkg, "", "  ")
@@ -121,12 +154,13 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		logger.Info("using package manager from package.json", "manager", managerName)
 
 		if repoType == "mono" {
-			pkg["workspaces"] = workspacePatterns
+			merged := mergeWorkspaces(pkg, workspacePatterns)
+			pkg["workspaces"] = merged
 			if err := writePackageJSON(root, pkg); err != nil {
 				return err
 			}
 			logger.Info("added workspaces to package.json")
-			if err := scaffoldWorkspaceDirs(root, workspacePatterns, logger); err != nil {
+			if err := scaffoldWorkspaceDirs(root, merged, logger); err != nil {
 				return err
 			}
 		}
@@ -162,12 +196,13 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			if err != nil {
 				return err
 			}
-			pkg["workspaces"] = workspacePatterns
+			merged := mergeWorkspaces(pkg, workspacePatterns)
+			pkg["workspaces"] = merged
 			if err := writePackageJSON(root, pkg); err != nil {
 				return err
 			}
 			logger.Info("added workspaces to package.json")
-			if err := scaffoldWorkspaceDirs(root, workspacePatterns, logger); err != nil {
+			if err := scaffoldWorkspaceDirs(root, merged, logger); err != nil {
 				return err
 			}
 		}
@@ -311,6 +346,9 @@ func askWorkspacePatterns(styles ui.Styles) ([]string, error) {
 		if p != "" {
 			patterns = append(patterns, p)
 		}
+	}
+	if len(patterns) == 0 {
+		return nil, fmt.Errorf("no workspace patterns provided")
 	}
 	return patterns, nil
 }

@@ -117,6 +117,13 @@ func EnsureManager(root string, cfg config.Config) (string, config.Config, error
 		if pkg.PackageManager != "" {
 			name := strings.SplitN(pkg.PackageManager, "@", 2)[0]
 			if name != "" {
+				if _, ok := manager.GetManager(name); !ok {
+					return "", cfg, fmt.Errorf(
+						"unsupported package manager %q in package.json (supported: %s)",
+						name,
+						strings.Join(manager.GetRegisteredManagers(), ", "),
+					)
+				}
 				cfg.PackageManager = name
 				return name, cfg, nil
 			}

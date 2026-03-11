@@ -1,4 +1,94 @@
 {
     "$schema": "https://biomejs.dev/schemas/2.3.13/schema.json",
-    "extends": ["../../../dvcfg/biome.json"]
+    "vcs": {
+        "enabled": true,
+        "clientKind": "git",
+        "useIgnoreFile": true
+    },
+    "files": {
+        "ignoreUnknown": false,
+        "includes": ["**", "!**/_generated"]
+    },
+    "formatter": {
+        "enabled": true,
+        "indentStyle": "tab"
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true,
+            "correctness": {
+                "noChildrenProp": "off"
+            },
+            "complexity": {
+                "noImportantStyles": "error"
+            },
+            "style": {
+                "noMagicNumbers": "warn",
+                "noCommonJs": "error",
+                "noUselessElse": "error",
+                "useImportType": "info"
+            },
+            "suspicious": {
+                "noUnknownAtRules": "off"
+            },
+            "a11y": {
+                "useSemanticElements": "warn"
+            }
+        }
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "single",
+            "jsxQuoteStyle": "single",
+            "bracketSameLine": false,
+            "bracketSpacing": true,
+            "indentStyle": "space",
+            "indentWidth": 4,
+            "trailingCommas": "es5",
+            "semicolons": "asNeeded",
+            "quoteProperties": "asNeeded",
+            "lineWidth": 80
+        }
+    },
+    "json": {
+        "formatter": {
+            "bracketSpacing": true,
+            "indentWidth": 4,
+            "indentStyle": "space",
+            "trailingCommas": "none",
+            "lineWidth": 80
+        }
+    },
+    "css": {
+        "formatter": {
+            "quoteStyle": "single",
+            "indentStyle": "space",
+            "indentWidth": 4
+        },
+        "parser": {
+            "tailwindDirectives": true
+        }
+    },
+    "overrides": [
+        {
+            "includes": ["tailwind.config.js", "postcss.config.js"],
+            "linter": {
+                "rules": {
+                    "style": {
+                        "noCommonJs": "off"
+                    }
+                }
+            }
+        }
+    ],
+    "assist": {
+        "enabled": true,
+        "actions": {
+            "recommended": true,
+            "source": {
+                "organizeImports": "on"
+            }
+        }
+    }
 }

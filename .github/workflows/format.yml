@@ -1,0 +1,30 @@
+name: Format
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+jobs:
+    format:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Setup Go
+              uses: actions/setup-go@v5
+              with:
+                  go-version-file: apps/miso/go.mod
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+
+            - name: Install miso
+              run: npm install -g @ekkolyth/miso
+
+            - name: Install dependencies
+              run: bun install
+
+            - name: Check formatting
+              run: miso format
