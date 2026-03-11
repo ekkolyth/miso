@@ -25,12 +25,14 @@ type Config struct {
 	Scripts        string              `json:"scripts"`
 	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`
-	Env            *EnvConfig          `json:"env,omitempty"`
+	Env            []*EnvEntry         `json:"env,omitempty"`
 }
 
-// EnvConfig holds env file path and variable validation rules.
-type EnvConfig struct {
-	Path      []string     `json:"path,omitempty"`
+// EnvEntry holds a single env file path and its variable validation rules.
+// label is optional but recommended in multi-app setups.
+type EnvEntry struct {
+	Label     string       `json:"label,omitempty"`
+	Path      string       `json:"path,omitempty"`
 	Required  EnvRequired  `json:"required,omitempty"`
 	Variables EnvVariables `json:"variables,omitempty"`
 }
@@ -116,7 +118,7 @@ func Path(root string) string {
 	return filepath.Join(root, FileName)
 }
 
-// configLoad is used for two-phase unmarshaling (env can be string or object)
+// configLoad is used for two-phase unmarshaling (env can be string, object, or array)
 type configLoad struct {
 	Schema         string              `json:"$schema,omitempty"`
 	PackageManager string              `json:"package-manager"`
@@ -153,62 +155,108 @@ func Load(root string) (Config, error) {
 	}
 
 	if len(load.EnvRaw) > 0 {
-		envCfg, err := parseEnvConfig(load.EnvRaw)
+		entries, err := parseEnvField(load.EnvRaw)
 		if err != nil {
 			return Config{}, fmt.Errorf("parse env config: %w", err)
 		}
-		cfg.Env = envCfg
+		cfg.Env = entries
 	}
 
 	cfg.EnsureDefaults()
 	return cfg, nil
 }
 
-// parseEnvConfig handles env as string or object
-func parseEnvConfig(raw json.RawMessage) (*EnvConfig, error) {
-	// try string first (simple path)
+// parseEnvField handles the three accepted shapes for the "env" field:
+//
+//  1. string  — legacy bare path: normalized to [{path: s}]
+//  2. object  — legacy single-entry object: normalized to [{...}]
+//  3. array   — canonical multi-entry form
+func parseEnvField(raw json.RawMessage) ([]*EnvEntry, error) {
+	// 1. bare string (legacy)
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		return &EnvConfig{Path: []string{s}}, nil
+		return []*EnvEntry{{Path: s}}, nil
 	}
 
-	// object - need custom Variables parsing
-	var env struct {
-		Path      []string        `json:"path,omitempty"`
+	// 2. array (canonical)
+	var arr []json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err == nil {
+		entries := make([]*EnvEntry, 0, len(arr))
+		for i, item := range arr {
+			entry, err := parseEnvEntry(item)
+			if err != nil {
+				return nil, fmt.Errorf("env[%d]: %w", i, err)
+			}
+			entries = append(entries, entry)
+		}
+		return entries, nil
+	}
+
+	// 3. single object (legacy)
+	entry, err := parseEnvEntry(raw)
+	if err != nil {
+		return nil, err
+	}
+	return []*EnvEntry{entry}, nil
+}
+
+// parseEnvEntry decodes a single EnvEntry from its raw JSON representation.
+// The legacy object form supported "path" as an array; we accept that here
+// and use the first element (later elements were loaded together anyway).
+func parseEnvEntry(raw json.RawMessage) (*EnvEntry, error) {
+	var obj struct {
+		Label     string          `json:"label,omitempty"`
+		Path      json.RawMessage `json:"path,omitempty"`
 		Required  json.RawMessage `json:"required,omitempty"`
 		Variables json.RawMessage `json:"variables,omitempty"`
 	}
-	if err := json.Unmarshal(raw, &env); err != nil {
+	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, err
 	}
 
-	ec := &EnvConfig{Path: env.Path}
+	entry := &EnvEntry{Label: obj.Label}
 
-	// parse required
-	if len(env.Required) > 0 {
-		var s string
-		if err := json.Unmarshal(env.Required, &s); err == nil {
-			ec.Required.Mode = s
+	// path: accept string or legacy []string
+	if len(obj.Path) > 0 {
+		var ps string
+		if err := json.Unmarshal(obj.Path, &ps); err == nil {
+			entry.Path = ps
 		} else {
-			var keys []string
-			if err := json.Unmarshal(env.Required, &keys); err == nil {
-				ec.Required.Keys = keys
-			} else {
-				return nil, fmt.Errorf("env.required: invalid value %s (expected string or array of strings)", string(env.Required))
+			var pa []string
+			if err := json.Unmarshal(obj.Path, &pa); err != nil {
+				return nil, fmt.Errorf("env.path: expected string or array of strings")
+			}
+			if len(pa) > 0 {
+				entry.Path = pa[0]
 			}
 		}
 	}
 
-	// parse variables (object or array)
-	if len(env.Variables) > 0 {
-		vars, err := parseEnvVariables(env.Variables)
+	// required
+	if len(obj.Required) > 0 {
+		var rs string
+		if err := json.Unmarshal(obj.Required, &rs); err == nil {
+			entry.Required.Mode = rs
+		} else {
+			var rk []string
+			if err := json.Unmarshal(obj.Required, &rk); err == nil {
+				entry.Required.Keys = rk
+			} else {
+				return nil, fmt.Errorf("env.required: invalid value %s (expected string or array of strings)", string(obj.Required))
+			}
+		}
+	}
+
+	// variables
+	if len(obj.Variables) > 0 {
+		vars, err := parseEnvVariables(obj.Variables)
 		if err != nil {
 			return nil, err
 		}
-		ec.Variables = vars
+		entry.Variables = vars
 	}
 
-	return ec, nil
+	return entry, nil
 }
 
 // parseEnvVariables handles variables as object or array

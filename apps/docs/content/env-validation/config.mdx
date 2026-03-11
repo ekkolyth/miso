@@ -4,58 +4,107 @@ title: Configuration
 
 # Configuration
 
-Configure the `env` key in `miso.json` to define which variables to validate and how.
+Configure the `env` key in `miso.json` as an array of entries — one per app or `.env` file. Each entry defines its own path and validation rules, so variables are always checked against the file they belong to.
 
-## Basic Example
+## Example
 
 ```json
 {
-    "env": {
-        "path": [".env.local", ".env"],
-        "required": "all",
-        "variables": {
-            "PORT": "port",
-            "DATABASE_URL": "url",
-            "NODE_ENV": {
-                "type": "enum",
-                "values": ["development", "production", "test"],
-                "optional": true
+    "env": [
+        {
+            "label": "web",
+            "path": "apps/web/.env.local",
+            "variables": {
+                "PORT": "port",
+                "DATABASE_URL": "url",
+                "API_KEY": {
+                    "type": "string",
+                    "min": 1,
+                    "max": 32
+                }
+            }
+        },
+        {
+            "label": "api",
+            "path": "apps/api/.env",
+            "required": "all",
+            "variables": {
+                "NODE_ENV": {
+                    "type": "enum",
+                    "values": ["development", "production", "test"],
+                    "optional": true
+                },
+                "REDIS_URL": {
+                    "type": "url",
+                    "schemes": ["redis", "rediss"]
+                }
             }
         }
-    }
+    ]
 }
+```
+
+Miso validates each entry in order, stopping at the first failure and including the entry's label in the error message.
+
+## label
+
+An optional name for this entry, used in log output and error messages.
+
+```json
+{ "label": "web" }
+```
+
+If omitted, Miso falls back to the entry's `path` value. Using a label is recommended in any project with more than one env file — it makes errors like the following immediately actionable:
+
+```
+api: missing required variable: REDIS_URL
 ```
 
 ## path
 
-Array of `.env` file paths (relative to project root). Files are loaded in order; later files override earlier ones.
+The path to the `.env` file for this entry, relative to the project root.
 
-If omitted, Miso discovers `.env` files in this order:
+```json
+{ "path": "apps/web/.env.local" }
+```
+
+Each entry has exactly one path. If `path` is omitted, Miso falls back to the same discovery order used when no `env` config is present at all:
 
 1. `.env.local`
 2. `.env.production`
 3. `.env.development`
 4. `.env`
 
-Use `path` when you want explicit control over which files are loaded and in what order.
-
 ## required
 
-Controls which variables must be present:
+Controls which variables in this entry must be present:
 
 | Value | Behavior |
 |-------|----------|
-| `"all"` | Every variable must be present (unless `optional: true` on that variable). Default. |
+| `"all"` | Every variable must be present (unless `optional: true` on that variable). **Default.** |
 | `"none"` | No variables are required; only type-check those that exist. |
 | `["KEY1", "KEY2"]` | Only the listed keys are required; others may be absent. |
 
+```json
+{
+    "label": "api",
+    "path": "apps/api/.env",
+    "required": ["DATABASE_URL", "REDIS_URL"],
+    "variables": {
+        "DATABASE_URL": "url",
+        "REDIS_URL": "url",
+        "DEBUG": { "type": "bool", "optional": true }
+    }
+}
+```
+
 ## variables
 
-Define the variables to validate. You can use either an **object** (for type validation) or an **array** (presence only). These forms are mutually exclusive.
+Defines the variables to validate for this entry. You can use either an **object** (type validation) or an **array** (presence only). These forms are mutually exclusive.
 
 ### Object form
 
-Each key is a variable name; each value is either a type shorthand or a full `VarConfig`:
+Each key is a variable name; each value is either a type shorthand string or a full `VarConfig` object:
 
 ```json
 {
@@ -69,7 +118,7 @@ Each key is a variable name; each value is either a type shorthand or a full `Va
 
 ### Array form
 
-Only checks that variables exist—no type validation:
+Only checks that the listed variables exist — no type validation:
 
 ```json
 {
@@ -78,6 +127,42 @@ Only checks that variables exist—no type validation:
 ```
 
 Use the array form when you only care about presence (e.g. in CI) and don't need format validation.
+
+## Single-app projects
+
+If you only have one `.env` file, you still use an array — just with a single entry:
+
+```json
+{
+    "env": [
+        {
+            "path": ".env.local",
+            "variables": {
+                "PORT": "port",
+                "DATABASE_URL": "url"
+            }
+        }
+    ]
+}
+```
+
+## Migration from the old format
+
+The previous `env` format used a flat object with a `path` array and a single `variables` block:
+
+```json
+{
+    "env": {
+        "path": [".env.local", ".env"],
+        "required": "all",
+        "variables": {
+            "PORT": "port"
+        }
+    }
+}
+```
+
+Miso still accepts this form — it is automatically normalised to a single-entry array at load time, so existing configs continue to work without changes. Migrating to the array form is recommended when you want per-app validation.
 
 ## Next
 
