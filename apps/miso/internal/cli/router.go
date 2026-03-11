@@ -41,7 +41,6 @@ type ParsedCLI struct {
 	Args          []string
 	Local         bool   // For upgrade command --local flag
 	WorkspaceName string // For workspace:script syntax
-	WorkspaceDir  string // Resolved absolute path of the workspace
 }
 
 func ParseLocalFlag(args []string) (bool, []string) {

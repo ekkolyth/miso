@@ -128,13 +128,12 @@ func main() {
 		workspaces, wsErr := config.LoadWorkspaces(projectRoot)
 		if wsErr == nil && len(workspaces) > 0 {
 			if wsDir, inWs := scripting.WorkspaceFromCWD(originalWorkDir, workspaces); inWs {
-				resolved, workDir, resolveErr := scripting.ResolveWorkspaceScript(
+				resolved, _, resolveErr := scripting.ResolveWorkspaceScript(
 					filepath.Base(wsDir), parsed.ScriptName, projectRoot, cfg,
 				)
 				if resolveErr == nil && resolved.Source == scripting.ScriptSourceFolder {
 					parsed.Action = cli.ActionWorkspaceScript
 					parsed.WorkspaceName = filepath.Base(wsDir)
-					parsed.WorkspaceDir = workDir
 					parsed.Command = resolved.Path
 				}
 			}
@@ -205,7 +204,7 @@ func main() {
 		}
 		return
 	case cli.ActionInstall:
-		if err := commands.Install(managerName, originalWorkDir, cfg); err != nil {
+		if err := commands.Install(managerName, projectRoot, cfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return

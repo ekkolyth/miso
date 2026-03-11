@@ -103,11 +103,18 @@ func EnsureManager(root string, cfg config.Config) (string, config.Config, error
 
 	// 2. package.json packageManager field
 	pkgJSONPath := filepath.Join(root, "package.json")
-	if data, err := os.ReadFile(pkgJSONPath); err == nil {
+	data, readErr := os.ReadFile(pkgJSONPath)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return "", cfg, fmt.Errorf("read package.json: %w", readErr)
+	}
+	if readErr == nil {
 		var pkg struct {
 			PackageManager string `json:"packageManager"`
 		}
-		if err := json.Unmarshal(data, &pkg); err == nil && pkg.PackageManager != "" {
+		if err := json.Unmarshal(data, &pkg); err != nil {
+			return "", cfg, fmt.Errorf("parse package.json: %w", err)
+		}
+		if pkg.PackageManager != "" {
 			name := strings.SplitN(pkg.PackageManager, "@", 2)[0]
 			if name != "" {
 				cfg.PackageManager = name

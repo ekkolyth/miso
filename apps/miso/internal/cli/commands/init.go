@@ -60,10 +60,13 @@ func packageManagerFromPackageJSON(pkg map[string]interface{}) string {
 	return strings.SplitN(s, "@", 2)[0]
 }
 
-// injectPackageManager sets the packageManager field in package.json to the
-// bare manager name and writes the file back to disk.
+// injectPackageManager sets the packageManager field in package.json to
+// "name@version" (e.g. "bun@1.2.3") as required by the Corepack spec and
+// writes the file back to disk. If the installed version cannot be determined
+// (binary not found, unexpected output, etc.) it falls back to the bare
+// managerName so that init never fails solely due to a missing version.
 func injectPackageManager(root string, pkg map[string]interface{}, managerName string) error {
-	pkg["packageManager"] = managerName
+	pkg["packageManager"] = manager.ResolveManagerVersion(managerName)
 	return writePackageJSON(root, pkg)
 }
 
@@ -224,7 +227,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		} else {
 			freshPkg["name"] = projectName
 		}
-		freshPkg["packageManager"] = managerName
+		freshPkg["packageManager"] = manager.ResolveManagerVersion(managerName)
 
 		if repoType == "mono" {
 			freshPkg["workspaces"] = workspacePatterns
