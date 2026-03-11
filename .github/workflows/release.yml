@@ -7,12 +7,13 @@ on:
 jobs:
     version:
         runs-on: ubuntu-latest
+        if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
         outputs:
             version: ${{ steps.version.outputs.version }}
             text: ${{ steps.source.outputs.text }}
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
               with:
                   token: ${{ secrets.RELEASE_TOKEN }}
 
@@ -37,7 +38,7 @@ jobs:
             contents: write
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
               with:
                   token: ${{ secrets.RELEASE_TOKEN }}
 
@@ -74,7 +75,7 @@ jobs:
             contents: write
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
               with:
                   ref: main
                   token: ${{ secrets.RELEASE_TOKEN }}
@@ -124,7 +125,7 @@ jobs:
             contents: read
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
               with:
                   ref: main
                   token: ${{ secrets.GITHUB_TOKEN }}
@@ -134,6 +135,9 @@ jobs:
               with:
                   name: npm-dist
                   path: dist
+
+            - name: Restore binary permissions
+              run: chmod +x dist/bin/miso-* dist/bin/misox-* && chmod -x dist/bin/*.exe
 
             - name: Setup Node.js
               uses: actions/setup-node@v5

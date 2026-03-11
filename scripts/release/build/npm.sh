@@ -23,10 +23,18 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../../dist/bin/misox-linux-amd
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o ../../dist/bin/misox-linux-arm64 ./cmd
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ../../dist/bin/misox-windows-amd64.exe ./cmd
 
+chmod +x \
+  ../../dist/bin/miso-darwin-amd64 \
+  ../../dist/bin/miso-darwin-arm64 \
+  ../../dist/bin/miso-linux-amd64 \
+  ../../dist/bin/miso-linux-arm64 \
+  ../../dist/bin/misox-darwin-amd64 \
+  ../../dist/bin/misox-darwin-arm64 \
+  ../../dist/bin/misox-linux-amd64 \
+  ../../dist/bin/misox-linux-arm64
+
 cd ../..
-mkdir -p dist/scripts
 cp apps/miso/miso.mjs apps/miso/misox.mjs apps/miso/package.json README.md dist/
-cp apps/miso/scripts/postinstall.mjs dist/scripts/
 
 # sync schema to docs public folder so misojs.dev always serves the latest
 cp apps/miso/miso.schema.json apps/docs/public/miso.schema.json
