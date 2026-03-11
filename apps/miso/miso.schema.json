@@ -36,6 +36,12 @@
 			},
 			"description": "Default flags for package manager commands (add, remove, install, dev)"
 		},
+		"repo": {
+			"type": "string",
+			"enum": ["single", "mono"],
+			"default": "single",
+			"description": "Repository type. 'single' (default) for a standard project, 'mono' to enable monorepo workspace script execution. Requires a 'workspaces' field in your root package.json when set to 'mono'."
+		},
 		"env": {
 			"oneOf": [
 				{

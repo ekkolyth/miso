@@ -5,13 +5,11 @@ on:
         branches: [main]
 
 jobs:
-    build:
+    version:
         runs-on: ubuntu-latest
-        permissions:
-            contents: write
-            pull-requests: read
         outputs:
             version: ${{ steps.version.outputs.version }}
+            text: ${{ steps.source.outputs.text }}
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
@@ -23,77 +21,57 @@ jobs:
               env:
                   COMMIT_MSG: ${{ github.event.head_commit.message }}
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              run: ./scripts/release/get-version-source.sh
+              run: ./scripts/release/version/get-source.sh
 
             - name: Parse version
               id: version
               env:
                   COMMIT_MSG: ${{ steps.source.outputs.text }}
-              run: ./scripts/release/parse-version.sh
+              run: ./scripts/release/version/parse.sh
 
-            - name: Update package.json
-              if: steps.version.outputs.version != ''
+    build:
+        needs: version
+        if: needs.version.outputs.version != ''
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Update package.json version
               env:
-                  VERSION: ${{ steps.version.outputs.version }}
-              run: ./scripts/release/update-version.sh
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: ./scripts/release/version/update.sh
 
             - name: Commit and push version bump
-              if: steps.version.outputs.version != ''
               env:
-                  VERSION: ${{ steps.version.outputs.version }}
-              run: ./scripts/release/version-bump.sh
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: ./scripts/release/version/commit.sh
 
             - name: Setup Go
-              if: steps.version.outputs.version != ''
               uses: actions/setup-go@v5
               with:
                   go-version-file: apps/miso/go.mod
 
             - name: Build binaries for all platforms
-              if: steps.version.outputs.version != ''
-              run: ./scripts/release/build-npm.sh
+              run: ./scripts/release/build/npm.sh
 
-            - name: Create release archives
-              if: steps.version.outputs.version != ''
-              env:
-                  VERSION: ${{ steps.version.outputs.version }}
-              run: ./scripts/release/create-archives.sh
-
-            - name: Tag and push latest
-              if: steps.version.outputs.version != ''
-              run: |
-                  git config user.name "github-actions[bot]"
-                  git config user.email "github-actions[bot]@users.noreply.github.com"
-                  git tag -f latest
-                  git push origin latest --force
-
-            - name: Create GitHub Release
-              if: steps.version.outputs.version != ''
-              uses: softprops/action-gh-release@v2
+            - name: Upload npm dist artifact
+              uses: actions/upload-artifact@v4
               with:
-                  tag_name: v${{ steps.version.outputs.version }}
-                  name: Release v${{ steps.version.outputs.version }}
-                  body: ${{ steps.source.outputs.text }}
-                  files: |
-                      dist/miso_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
-                      dist/miso_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
-                      dist/miso_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
-                      dist/miso_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
-                      dist/miso_${{ steps.version.outputs.version }}_windows_amd64.zip
-                      dist/misox_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
-                      dist/misox_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
-                      dist/misox_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
-                      dist/misox_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
-                      dist/misox_${{ steps.version.outputs.version }}_windows_amd64.zip
+                  name: npm-dist
+                  path: dist/
+                  retention-days: 1
 
-    publish:
-        needs: build
-        if: needs.build.outputs.version != ''
+    release:
+        needs: [version, build]
+        if: needs.version.outputs.version != ''
         runs-on: ubuntu-latest
         permissions:
-            id-token: write # needed for OIDC / trusted publishing
-            contents: read
-
+            contents: write
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
@@ -101,7 +79,57 @@ jobs:
                   ref: main
                   token: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Download npm dist from build job
+            - name: Download npm dist artifact
+              uses: actions/download-artifact@v4
+              with:
+                  name: npm-dist
+                  path: dist
+
+            - name: Create release archives
+              env:
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: ./scripts/release/create-archives.sh
+
+            - name: Tag and push latest
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git tag -f latest
+                  git push origin latest --force
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: v${{ needs.version.outputs.version }}
+                  name: Release v${{ needs.version.outputs.version }}
+                  body: ${{ needs.version.outputs.text }}
+                  files: |
+                      dist/miso_${{ needs.version.outputs.version }}_darwin_amd64.tar.gz
+                      dist/miso_${{ needs.version.outputs.version }}_darwin_arm64.tar.gz
+                      dist/miso_${{ needs.version.outputs.version }}_linux_amd64.tar.gz
+                      dist/miso_${{ needs.version.outputs.version }}_linux_arm64.tar.gz
+                      dist/miso_${{ needs.version.outputs.version }}_windows_amd64.zip
+                      dist/misox_${{ needs.version.outputs.version }}_darwin_amd64.tar.gz
+                      dist/misox_${{ needs.version.outputs.version }}_darwin_arm64.tar.gz
+                      dist/misox_${{ needs.version.outputs.version }}_linux_amd64.tar.gz
+                      dist/misox_${{ needs.version.outputs.version }}_linux_arm64.tar.gz
+                      dist/misox_${{ needs.version.outputs.version }}_windows_amd64.zip
+
+    publish:
+        needs: [version, release]
+        if: needs.version.outputs.version != ''
+        runs-on: ubuntu-latest
+        permissions:
+            id-token: write # needed for OIDC / trusted publishing
+            contents: read
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  ref: main
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Download npm dist artifact
               uses: actions/download-artifact@v4
               with:
                   name: npm-dist
@@ -125,7 +153,7 @@ jobs:
 
             - name: Check package info and authentication
               env:
-                  VERSION: ${{ needs.build.outputs.version }}
+                  VERSION: ${{ needs.version.outputs.version }}
               run: ./scripts/release/check-package-info.sh
 
             - name: Verify files before publish
