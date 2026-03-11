@@ -14,13 +14,13 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v4
               with:
-                  token: ${{ secrets.GITHUB_TOKEN }}
+                  token: ${{ secrets.RELEASE_TOKEN }}
 
             - name: Get version source (PR title or commit message)
               id: source
               env:
                   COMMIT_MSG: ${{ github.event.head_commit.message }}
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
               run: ./scripts/release/version/get-source.sh
 
             - name: Parse version
@@ -39,7 +39,7 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v4
               with:
-                  token: ${{ secrets.GITHUB_TOKEN }}
+                  token: ${{ secrets.RELEASE_TOKEN }}
 
             - name: Update package.json version
               env:
@@ -77,7 +77,7 @@ jobs:
               uses: actions/checkout@v4
               with:
                   ref: main
-                  token: ${{ secrets.GITHUB_TOKEN }}
+                  token: ${{ secrets.RELEASE_TOKEN }}
 
             - name: Download npm dist artifact
               uses: actions/download-artifact@v4
