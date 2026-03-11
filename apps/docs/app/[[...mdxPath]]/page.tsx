@@ -21,11 +21,12 @@ export async function generateMetadata(props: {
     return metadata
 }
 
-const Wrapper = getMDXComponents().wrapper!
+const Wrapper = getMDXComponents().wrapper
 
 export default async function Page(props: {
     params: Promise<{ mdxPath?: string[] }>
 }) {
+    if (!Wrapper) return null
     const params = await props.params
     if (!isValidMdxPath(params.mdxPath)) notFound()
     const {

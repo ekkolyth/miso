@@ -3,50 +3,18 @@ package commands
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
 
-	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
 // return when user exits onboarding
 var ErrAborted = errors.New("onboarding aborted")
-
-// execute init wizard for new project and return config
-func RunInitOnboarding(root string, managerNames []string, preselectedManager string, styles ui.Styles, logger *log.Logger) (config.Config, error) {
-	if len(managerNames) == 0 {
-		return config.Config{}, errors.New("no package managers are registered")
-	}
-
-	// Assume new project, ask for project name
-	projectName, err := askProjectName(filepath.Base(root), styles)
-	if err != nil {
-		return config.Config{}, err
-	}
-
-	managerChoice, err := selectManager(managerNames, preselectedManager, styles)
-	if err != nil {
-		return config.Config{}, err
-	}
-
-	logger.Info("initialized project", "project", projectName, "manager", managerChoice)
-
-	cfg := config.Config{
-		Schema:         config.SchemaURL,
-		PackageManager: managerChoice,
-		ProjectName:    projectName,
-		Scripts:        "./scripts",
-		Flags:          make(map[string][]string),
-	}
-	return cfg, nil
-}
 
 func selectManager(options []string, preselected string, styles ui.Styles) (string, error) {
 	if len(options) == 0 {

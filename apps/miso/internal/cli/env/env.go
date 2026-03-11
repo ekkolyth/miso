@@ -47,7 +47,7 @@ func StripEnvFromFlags(cfg config.Config) config.Config {
 	return cfg
 }
 
-// discoveryOrder is the default order to look for .env files when path is not set
+// discoveryOrder is the default order to look for .env files when no env config is set
 var discoveryOrder = []string{
 	".env.local",
 	".env.production",
@@ -55,67 +55,106 @@ var discoveryOrder = []string{
 	".env",
 }
 
-// Run executes the miso env command: resolve paths, load .env, validate, output
+// Run executes the miso env command: for each EnvEntry, resolve its path, load the file,
+// validate variables, and report results. When no env config is present, falls back to
+// discovery mode and reports which file was found.
 func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
-	// Resolve paths
-	paths, loadedPath, err := resolvePaths(projectRoot, cfg.Env)
-	if err != nil {
-		return err
-	}
-
-	// Load env files
-	envMap, err := loadEnvFiles(projectRoot, paths)
-	if err != nil {
-		return err
-	}
-
-	// When no env config or no variables: just report where we loaded from
-	if cfg.Env == nil || (len(cfg.Env.Variables.Object) == 0 && len(cfg.Env.Variables.Array) == 0) {
-		logger.Info("env loaded at", "path", loadedPath)
-		return nil
-	}
-
-	// Validate
-	if len(cfg.Env.Variables.Array) > 0 {
-		// Presence-only mode
-		for _, key := range cfg.Env.Variables.Array {
-			if _, ok := envMap[key]; !ok {
-				return fmt.Errorf("missing required variable: %s", key)
-			}
+	if len(cfg.Env) == 0 {
+		// No config: discovery mode
+		path, err := discoverEnvFile(projectRoot)
+		if err != nil {
+			return err
 		}
-		logger.Info("env validation passed", "variables", len(cfg.Env.Variables.Array))
+		logger.Info("env loaded", "path", path)
 		return nil
 	}
 
-	// Object mode - type validation
-	if err := validateVariables(envMap, cfg.Env.Variables.Object, cfg.Env.Required); err != nil {
-		return err
+	for _, entry := range cfg.Env {
+		if err := runEntry(projectRoot, entry, logger); err != nil {
+			return err
+		}
 	}
-	logger.Info("env validation passed", "variables", len(cfg.Env.Variables.Object))
+
 	return nil
 }
 
-func resolvePaths(projectRoot string, envCfg *config.EnvConfig) ([]string, string, error) {
-	if envCfg != nil && len(envCfg.Path) > 0 {
-		// Use configured paths - fail fast on missing
-		paths := make([]string, len(envCfg.Path))
-		for i, p := range envCfg.Path {
-			paths[i] = filepath.Join(projectRoot, p)
-			if _, err := os.Stat(paths[i]); err != nil {
-				if os.IsNotExist(err) {
-					return nil, "", fmt.Errorf("env file not found: %s", paths[i])
-				}
-				return nil, "", fmt.Errorf("env file %s: %w", paths[i], err)
-			}
-		}
-		return paths, paths[0], nil
+// runEntry resolves, loads, and validates a single EnvEntry.
+func runEntry(projectRoot string, entry *config.EnvEntry, logger *log.Logger) error {
+	label := entryLabel(entry)
+
+	// Resolve path
+	absPath, err := resolveEntryPath(projectRoot, entry)
+	if err != nil {
+		return fmt.Errorf("%s: %w", label, err)
 	}
 
-	// Discovery order
+	// Load env file
+	envMap, err := loadEnvFile(absPath)
+	if err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+
+	// No variables defined: just report the load
+	if len(entry.Variables.Object) == 0 && len(entry.Variables.Array) == 0 {
+		logger.Info("env loaded", "label", label, "path", absPath)
+		return nil
+	}
+
+	// Presence-only (array) mode
+	if len(entry.Variables.Array) > 0 {
+		for _, key := range entry.Variables.Array {
+			if _, ok := envMap[key]; !ok {
+				return fmt.Errorf("%s: missing required variable: %s", label, key)
+			}
+		}
+		logger.Info("env validation passed", "label", label, "variables", len(entry.Variables.Array))
+		return nil
+	}
+
+	// Object mode — full type validation
+	if err := validateVariables(envMap, entry.Variables.Object, entry.Required); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	logger.Info("env validation passed", "label", label, "variables", len(entry.Variables.Object))
+	return nil
+}
+
+// entryLabel returns a human-readable identifier for an entry used in log/error output.
+func entryLabel(entry *config.EnvEntry) string {
+	if entry.Label != "" {
+		return entry.Label
+	}
+	if entry.Path != "" {
+		return entry.Path
+	}
+	return "env"
+}
+
+// resolveEntryPath returns the absolute path for the entry's configured path.
+// Unlike the old multi-path form, each entry has exactly one path; if it is
+// empty we fall back to discovery so that label-only entries still work.
+func resolveEntryPath(projectRoot string, entry *config.EnvEntry) (string, error) {
+	if entry.Path != "" {
+		abs := filepath.Join(projectRoot, entry.Path)
+		if _, err := os.Stat(abs); err != nil {
+			if os.IsNotExist(err) {
+				return "", fmt.Errorf("env file not found: %s", abs)
+			}
+			return "", fmt.Errorf("env file %s: %w", abs, err)
+		}
+		return abs, nil
+	}
+
+	// No path on this entry: fall back to discovery
+	return discoverEnvFile(projectRoot)
+}
+
+// discoverEnvFile walks discoveryOrder and returns the first file that exists.
+func discoverEnvFile(projectRoot string) (string, error) {
 	for _, name := range discoveryOrder {
 		p := filepath.Join(projectRoot, name)
 		if _, err := os.Stat(p); err == nil {
-			return []string{p}, p, nil
+			return p, nil
 		}
 	}
 
@@ -126,11 +165,12 @@ func resolvePaths(projectRoot string, envCfg *config.EnvConfig) ([]string, strin
 		}
 		tried += filepath.Join(projectRoot, n)
 	}
-	return nil, "", fmt.Errorf("no .env file found (tried: %s)", tried)
+	return "", fmt.Errorf("no .env file found (tried: %s)", tried)
 }
 
-func loadEnvFiles(projectRoot string, paths []string) (map[string]string, error) {
-	envMap, err := godotenv.Read(paths...)
+// loadEnvFile reads a single .env file and returns its key-value map.
+func loadEnvFile(path string) (map[string]string, error) {
+	envMap, err := godotenv.Read(path)
 	if err != nil {
 		return nil, fmt.Errorf("load env: %w", err)
 	}

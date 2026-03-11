@@ -1,6 +1,7 @@
 apps/miso/bin
 apps/docs/.docusaurus
 apps/docs/build
-apps/docs/node_modules
+node_modules
+bun.lock
 .cursor
 .DS_Store
