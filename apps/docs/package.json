@@ -8,7 +8,9 @@
         "dev": "next dev --port 3000",
         "build": "next build",
         "start": "next start",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "lint": "biome lint .",
+        "format": "biome format --write ."
     },
     "dependencies": {
         "@radix-ui/react-tabs": "^1.1.13",
@@ -30,7 +32,7 @@
         "autoprefixer": "^10.4.23",
         "postcss": "^8.5.6",
         "tailwindcss": "3.4.17",
-        "typescript": "~5.6.2"
+        "typescript": "5.6.3"
     },
     "engines": {
         "node": ">=20.0"
