@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
 
 	"github.com/ekkolyth/miso/internal/config"
@@ -86,6 +87,20 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 
 	managerList := manager.GetRegisteredManagers()
 
+	// ask repo type upfront — applies to all cases
+	repoType, err := askRepoType(styles)
+	if err != nil {
+		return err
+	}
+
+	var workspacePatterns []string
+	if repoType == "mono" {
+		workspacePatterns, err = askWorkspacePatterns(styles)
+		if err != nil {
+			return err
+		}
+	}
+
 	switch {
 	// ── Case 1: existing package.json with packageManager field ─────────────
 	case pkg != nil && packageManagerFromPackageJSON(pkg) != "":
@@ -102,10 +117,22 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 
 		logger.Info("using package manager from package.json", "manager", managerName)
 
+		if repoType == "mono" {
+			pkg["workspaces"] = workspacePatterns
+			if err := writePackageJSON(root, pkg); err != nil {
+				return err
+			}
+			logger.Info("added workspaces to package.json")
+			if err := scaffoldWorkspaceDirs(root, workspacePatterns, logger); err != nil {
+				return err
+			}
+		}
+
 		cfg := config.Config{
 			Schema:  config.SchemaURL,
 			Scripts: "./scripts",
 			Flags:   make(map[string][]string),
+			Repo:    repoType,
 		}
 		if err := config.Save(root, cfg); err != nil {
 			return err
@@ -126,10 +153,27 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		}
 		logger.Info("added packageManager to package.json", "manager", managerName)
 
+		if repoType == "mono" {
+			// re-read after injectPackageManager wrote it
+			pkg, err = readPackageJSON(root)
+			if err != nil {
+				return err
+			}
+			pkg["workspaces"] = workspacePatterns
+			if err := writePackageJSON(root, pkg); err != nil {
+				return err
+			}
+			logger.Info("added workspaces to package.json")
+			if err := scaffoldWorkspaceDirs(root, workspacePatterns, logger); err != nil {
+				return err
+			}
+		}
+
 		cfg := config.Config{
 			Schema:  config.SchemaURL,
 			Scripts: "./scripts",
 			Flags:   make(map[string][]string),
+			Repo:    repoType,
 		}
 		if err := config.Save(root, cfg); err != nil {
 			return err
@@ -181,14 +225,27 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			freshPkg["name"] = projectName
 		}
 		freshPkg["packageManager"] = managerName
+
+		if repoType == "mono" {
+			freshPkg["workspaces"] = workspacePatterns
+		}
+
 		if err := writePackageJSON(root, freshPkg); err != nil {
 			return err
+		}
+
+		if repoType == "mono" {
+			logger.Info("added workspaces to package.json")
+			if err := scaffoldWorkspaceDirs(root, workspacePatterns, logger); err != nil {
+				return err
+			}
 		}
 
 		cfg := config.Config{
 			Schema:  config.SchemaURL,
 			Scripts: "./scripts",
 			Flags:   make(map[string][]string),
+			Repo:    repoType,
 		}
 		if err := config.Save(root, cfg); err != nil {
 			return err
@@ -196,5 +253,91 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		logger.Info("created miso.json")
 	}
 
+	return nil
+}
+
+// askRepoType prompts the user to choose between single project or monorepo.
+func askRepoType(styles ui.Styles) (string, error) {
+	var repoType string
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title(styles.Heading.Render("What type of repository is this?")).
+				Description(styles.Muted.Render("Press ↑/↓ to move, Enter to confirm • ctrl+c to bail")).
+				Options(
+					huh.NewOption("Single project", "single"),
+					huh.NewOption("Monorepo", "mono"),
+				).
+				Value(&repoType),
+		),
+	).WithTheme(huh.ThemeCharm())
+
+	if err := form.Run(); err != nil {
+		return "", err
+	}
+	return repoType, nil
+}
+
+// askWorkspacePatterns prompts the user to enter workspace glob patterns.
+func askWorkspacePatterns(styles ui.Styles) ([]string, error) {
+	var raw string
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title(styles.Heading.Render("Workspace patterns")).
+				Description(styles.Muted.Render("Comma-separated globs, e.g. apps/*, packages/*")).
+				Placeholder("apps/*, packages/*").
+				Value(&raw),
+		),
+	).WithTheme(huh.ThemeCharm())
+
+	if err := form.Run(); err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(raw) == "" {
+		raw = "apps/*, packages/*"
+	}
+
+	parts := strings.Split(raw, ",")
+	patterns := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			patterns = append(patterns, p)
+		}
+	}
+	return patterns, nil
+}
+
+// scaffoldWorkspaceDirs creates the workspace directories derived from glob
+// patterns (only the non-wildcard prefix, e.g. "apps/*" → "apps/").
+func scaffoldWorkspaceDirs(root string, patterns []string, logger *log.Logger) error {
+	seen := make(map[string]bool)
+	for _, pattern := range patterns {
+		// strip wildcard segments to get the base directory
+		parts := strings.Split(filepath.ToSlash(pattern), "/")
+		var baseParts []string
+		for _, p := range parts {
+			if strings.ContainsAny(p, "*?[") {
+				break
+			}
+			baseParts = append(baseParts, p)
+		}
+		if len(baseParts) == 0 {
+			continue
+		}
+		dir := filepath.Join(append([]string{root}, baseParts...)...)
+		if seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create workspace dir %s: %w", dir, err)
+		}
+		logger.Info("created workspace directory", "dir", strings.Join(baseParts, "/"))
+	}
 	return nil
 }

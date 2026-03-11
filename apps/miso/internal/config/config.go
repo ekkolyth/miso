@@ -26,6 +26,7 @@ type Config struct {
 	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`
 	Env            []*EnvEntry         `json:"env,omitempty"`
+	Repo           string              `json:"repo,omitempty"` // "single" (default) or "mono"
 }
 
 // EnvEntry holds a single env file path and its variable validation rules.
@@ -113,6 +114,11 @@ func (c *Config) EnsureDefaults() {
 	}
 }
 
+// IsMono returns true if the repo is configured as a monorepo
+func (c Config) IsMono() bool {
+	return c.Repo == "mono"
+}
+
 // resolve config file path for project root
 func Path(root string) string {
 	return filepath.Join(root, FileName)
@@ -127,6 +133,7 @@ type configLoad struct {
 	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`
 	EnvRaw         json.RawMessage     `json:"env,omitempty"`
+	Repo           string              `json:"repo,omitempty"`
 }
 
 // read miso.json from disk
@@ -152,6 +159,7 @@ func Load(root string) (Config, error) {
 		Scripts:        load.Scripts,
 		Shell:          load.Shell,
 		Flags:          load.Flags,
+		Repo:           load.Repo,
 	}
 
 	if len(load.EnvRaw) > 0 {
@@ -303,4 +311,62 @@ func Save(root string, cfg Config) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
+}
+
+// LoadWorkspaces reads workspace glob patterns from the root package.json
+// and expands them into actual directory paths that exist on disk.
+func LoadWorkspaces(root string) ([]string, error) {
+	pkgPath := filepath.Join(root, "package.json")
+	data, err := os.ReadFile(pkgPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read package.json: %w", err)
+	}
+
+	var pkg struct {
+		Workspaces []string `json:"workspaces"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return nil, fmt.Errorf("parse package.json: %w", err)
+	}
+
+	if len(pkg.Workspaces) == 0 {
+		return nil, nil
+	}
+
+	var result []string
+	for _, pattern := range pkg.Workspaces {
+		if !filepath.IsAbs(pattern) {
+			pattern = filepath.Join(root, pattern)
+		}
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
+		}
+		for _, match := range matches {
+			info, err := os.Stat(match)
+			if err != nil {
+				continue
+			}
+			if info.IsDir() {
+				result = append(result, match)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// FindWorkspace matches a short name (e.g. "onboarding") against discovered
+// workspace paths and returns the full path of the matching workspace.
+// It matches against the final directory segment of each workspace path.
+func FindWorkspace(name string, workspaces []string) (string, bool) {
+	for _, ws := range workspaces {
+		if filepath.Base(ws) == name {
+			return ws, true
+		}
+	}
+	return "", false
 }

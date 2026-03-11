@@ -27,18 +27,21 @@ const (
 	ActionScriptFolder
 	ActionScriptPackageJSON
 	ActionEnv
+	ActionWorkspaceScript
 )
 
 type ParsedCLI struct {
-	Action       Action
-	PackageNames []string
-	PackageName  string // For misox command
-	ScriptName   string
-	ScriptNames  []string // For multiple scripts
-	ScriptArgs   []string
-	Command      string
-	Args         []string
-	Local        bool // For upgrade command --local flag
+	Action        Action
+	PackageNames  []string
+	PackageName   string // For misox command
+	ScriptName    string
+	ScriptNames   []string // For multiple scripts
+	ScriptArgs    []string
+	Command       string
+	Args          []string
+	Local         bool   // For upgrade command --local flag
+	WorkspaceName string // For workspace:script syntax
+	WorkspaceDir  string // Resolved absolute path of the workspace
 }
 
 func ParseLocalFlag(args []string) (bool, []string) {
@@ -148,6 +151,21 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 			Local:  local,
 			Args:   remainingArgs,
 		}, nil
+	}
+
+	// check for workspace:script syntax (only in mono mode)
+	if cfg.IsMono() && strings.Contains(cmd, ":") {
+		parts := strings.SplitN(cmd, ":", 2)
+		workspaceName := parts[0]
+		scriptName := parts[1]
+		if workspaceName != "" && scriptName != "" {
+			return ParsedCLI{
+				Action:        ActionWorkspaceScript,
+				WorkspaceName: workspaceName,
+				ScriptName:    scriptName,
+				ScriptArgs:    parseInlineArgs(args[1:]),
+			}, nil
+		}
 	}
 
 	// check scripts folder and package.json
