@@ -6,3 +6,4 @@ bun.lock
 .cursor
 .DS_Store
 .superpowers
+.claude
