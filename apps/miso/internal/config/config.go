@@ -27,6 +27,8 @@ type Config struct {
 	Flags          map[string][]string `json:"flags,omitempty"`
 	Env            []*EnvEntry         `json:"env,omitempty"`
 	Repo           string              `json:"repo,omitempty"` // "single" (default) or "mono"
+	Tui            string              `json:"tui,omitempty"`  // "off" (default), "tabbed", or "merged"
+	Multi          map[string][]string `json:"multi,omitempty"`
 }
 
 // EnvEntry holds a single env file path and its variable validation rules.
@@ -119,6 +121,11 @@ func (c Config) IsMono() bool {
 	return c.Repo == "mono"
 }
 
+// TuiEnabled returns true when the multi-terminal UI is active (tabbed or merged mode)
+func (c Config) TuiEnabled() bool {
+	return c.Tui == "tabbed" || c.Tui == "merged"
+}
+
 // resolve config file path for project root
 func Path(root string) string {
 	return filepath.Join(root, FileName)
@@ -134,6 +141,8 @@ type configLoad struct {
 	Flags          map[string][]string `json:"flags,omitempty"`
 	EnvRaw         json.RawMessage     `json:"env,omitempty"`
 	Repo           string              `json:"repo,omitempty"`
+	Tui            string              `json:"tui,omitempty"`
+	Multi          map[string][]string `json:"multi,omitempty"`
 }
 
 // read miso.json from disk
@@ -152,6 +161,11 @@ func Load(root string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
 
+	tui := load.Tui
+	if tui == "" {
+		tui = "off"
+	}
+
 	cfg := Config{
 		Schema:         load.Schema,
 		PackageManager: load.PackageManager,
@@ -160,6 +174,8 @@ func Load(root string) (Config, error) {
 		Shell:          load.Shell,
 		Flags:          load.Flags,
 		Repo:           load.Repo,
+		Tui:            tui,
+		Multi:          load.Multi,
 	}
 
 	if len(load.EnvRaw) > 0 {

@@ -42,6 +42,20 @@
 			"default": "single",
 			"description": "Repository type. 'single' (default) for a standard project, 'mono' to enable monorepo workspace script execution. Requires a 'workspaces' field in your root package.json when set to 'mono'."
 		},
+		"tui": {
+			"type": "string",
+			"enum": ["off", "tabbed", "merged"],
+			"default": "off",
+			"description": "Multi-terminal UI mode. 'off' disables TUI (default), 'tabbed' shows panes in separate tabs, 'merged' shows all panes in a single split view."
+		},
+		"multi": {
+			"type": "object",
+			"additionalProperties": {
+				"type": "array",
+				"items": { "type": "string" }
+			},
+			"description": "Named groups of scripts to run together in the TUI. Each key is a group name; the value is an array of script names to run in that group."
+		},
 		"env": {
 			"oneOf": [
 				{
