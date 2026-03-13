@@ -32,6 +32,7 @@ type MergedModel struct {
 	width           int
 	height          int
 	script          string
+	delegated       bool
 	allExitedPending bool
 }
 
@@ -41,17 +42,18 @@ type mergedLine struct {
 	text  string
 }
 
-func NewMergedModel(pm *ProcessManager, script string) MergedModel {
+func NewMergedModel(pm *ProcessManager, script string, delegated bool) MergedModel {
 	visible := make(map[int]bool)
 	for i := range pm.Processes {
 		visible[i] = true
 	}
 
 	return MergedModel{
-		pm:      pm,
-		keys:    DefaultMergedKeyMap(),
-		visible: visible,
-		script:  script,
+		pm:        pm,
+		keys:      DefaultMergedKeyMap(),
+		visible:   visible,
+		script:    script,
+		delegated: delegated,
 	}
 }
 
@@ -81,7 +83,7 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Toggle):
 			m.visible[m.cursor] = !m.visible[m.cursor]
 		case key.Matches(msg, m.keys.Restart):
-			if m.cursor < len(m.pm.Processes) {
+			if !m.delegated && m.cursor < len(m.pm.Processes) {
 				m.allExitedPending = false
 				go m.pm.Restart(m.pm.Processes[m.cursor])
 			}
@@ -223,7 +225,11 @@ func (m MergedModel) renderFilterBar() string {
 		scrollHint = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Render(fmt.Sprintf("(scrolled +%d) ", m.scrollOffset))
 	}
 
-	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("←→ select · space toggle · r restart · ctrl+c quit")
+	hintText := "←→ select · space toggle · r restart · R restart all · ctrl+c quit"
+	if m.delegated {
+		hintText = "←→ select · space toggle · R restart · ctrl+c quit"
+	}
+	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
 	titleLen := lipgloss.Width(title)
 	hintsLen := lipgloss.Width(hints) + lipgloss.Width(scrollHint)

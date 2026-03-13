@@ -182,16 +182,27 @@ func main() {
 				if parsed.Action == cli.ActionDev {
 					scriptName = "dev"
 				}
-				mgr, ok := manager.GetManager(managerName)
-				if !ok {
-					cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
-				}
-				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr)
-				if err != nil {
-					cli.Fail(logger, err, false)
-				}
-				if ran {
-					return // TUI ran and exited
+
+				if cfg.IsDelegated() {
+					ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot)
+					if err != nil {
+						cli.Fail(logger, err, false)
+					}
+					if ran {
+						return
+					}
+				} else {
+					mgr, ok := manager.GetManager(managerName)
+					if !ok {
+						cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+					}
+					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr)
+					if err != nil {
+						cli.Fail(logger, err, false)
+					}
+					if ran {
+						return
+					}
 				}
 				// TUI was not applicable — fall through to normal execution
 			}

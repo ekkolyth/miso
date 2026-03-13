@@ -84,9 +84,9 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 	var model tea.Model
 	switch cfg.Tui {
 	case "tabbed":
-		model = NewTabbedModel(pm, scriptName)
+		model = NewTabbedModel(pm, scriptName, true)
 	case "merged":
-		model = NewMergedModel(pm, scriptName)
+		model = NewMergedModel(pm, scriptName, true)
 	default:
 		return false, fmt.Errorf("unknown tui mode: %s", cfg.Tui)
 	}

@@ -73,9 +73,9 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	var model tea.Model
 	switch cfg.Tui {
 	case "tabbed":
-		model = NewTabbedModel(pm, scriptName)
+		model = NewTabbedModel(pm, scriptName, false)
 	case "merged":
-		model = NewMergedModel(pm, scriptName)
+		model = NewMergedModel(pm, scriptName, false)
 	default:
 		return false, fmt.Errorf("unknown tui mode: %s", cfg.Tui)
 	}
