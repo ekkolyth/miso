@@ -49,7 +49,7 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
-			m.pm.StopAll()
+			// Don't block here — StopAll runs after p.Run() returns in launch.go
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Up):
 			if m.selected > 0 {
@@ -119,9 +119,9 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 		Padding(0, 1).
 		Background(headerBg).
 		Render(
-			lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("miso") +
+			lipgloss.NewStyle().Foreground(accentColor).Background(headerBg).Bold(true).Render("miso") +
 				" " +
-				lipgloss.NewStyle().Foreground(mutedColor).Render(m.script),
+				lipgloss.NewStyle().Foreground(mutedColor).Background(headerBg).Render(m.script),
 		)
 
 	// Available height for the workspace list (below header)
@@ -145,16 +145,22 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 	for i := startIdx; i < endIdx; i++ {
 		proc := procs[i]
 		label := proc.Entry.Label
-		status := lipgloss.NewStyle().Foreground(runningColor).Render("●")
-		labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#aaaaaa"))
+
+		var statusText string
+		statusFg := runningColor
+		labelFg := lipgloss.Color("#aaaaaa")
 
 		if proc.State == StateExited {
 			if proc.ExitCode != 0 {
-				status = lipgloss.NewStyle().Foreground(exitedColor).Render(fmt.Sprintf("✕ %d", proc.ExitCode))
-				labelStyle = labelStyle.Foreground(exitedColor)
+				statusText = fmt.Sprintf("✕ %d", proc.ExitCode)
+				statusFg = exitedColor
+				labelFg = exitedColor
 			} else {
-				status = lipgloss.NewStyle().Foreground(mutedColor).Render("●")
+				statusText = "●"
+				statusFg = mutedColor
 			}
+		} else {
+			statusText = "●"
 		}
 
 		padW := width - 8
@@ -163,18 +169,24 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 		}
 
 		if i == m.selected {
+			bg := accentColor
+			status := lipgloss.NewStyle().Foreground(statusFg).Background(bg).Render(statusText)
 			row := lipgloss.NewStyle().
 				Width(width).
 				Padding(0, 1).
-				Background(accentColor).
+				Background(bg).
 				Foreground(lipgloss.Color("#ffffff")).
 				Render(padRight(label, padW) + status)
 			rows = append(rows, row)
 		} else {
+			bg := headerBg
+			status := lipgloss.NewStyle().Foreground(statusFg).Background(bg).Render(statusText)
+			labelRendered := lipgloss.NewStyle().Foreground(labelFg).Background(bg).Render(padRight(label, padW))
 			row := lipgloss.NewStyle().
 				Width(width).
 				Padding(0, 1).
-				Render(labelStyle.Render(padRight(label, padW)) + status)
+				Background(bg).
+				Render(labelRendered + status)
 			rows = append(rows, row)
 		}
 	}
@@ -189,7 +201,6 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 	return lipgloss.NewStyle().
 		Width(width).
 		MaxHeight(height).
-		Background(headerBg).
 		Render(content)
 }
 
@@ -214,7 +225,6 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	header := lipgloss.NewStyle().
 		Width(width).
 		Padding(0, 1).
-		Background(headerBg).
 		Render(name + strings.Repeat(" ", gap) + hints)
 
 	// Log lines — strictly clamped to available height
@@ -250,8 +260,6 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 		Width(width).
 		MaxHeight(logHeight).
 		Padding(0, 1).
-		Background(panelBg).
-		Foreground(lipgloss.Color("#cccccc")).
 		Render(logContent)
 
 	return header + "\n" + logPanel

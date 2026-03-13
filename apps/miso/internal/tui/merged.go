@@ -66,7 +66,6 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
-			m.pm.StopAll()
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Left):
 			if m.cursor > 0 {
