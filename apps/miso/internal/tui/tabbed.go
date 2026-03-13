@@ -198,8 +198,8 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 				statusFg = exitedColor
 				labelFg = exitedColor
 			} else {
-				statusText = "●"
-				statusFg = mutedColor
+				statusText = "✓"
+				statusFg = runningColor
 			}
 		} else {
 			statusText = "●"
