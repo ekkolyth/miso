@@ -65,19 +65,18 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 		return false, fmt.Errorf("unknown tui mode: %s", cfg.Tui)
 	}
 
-	// Catch OS signals to guarantee process cleanup even if bubbletea doesn't
-	// handle ctrl+c cleanly (e.g. during startup or if the event loop stalls).
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	pm.SetProgram(p)
+
+	// Catch OS signals — tell bubbletea to quit cleanly so it restores
+	// the alt screen. Process cleanup happens after p.Run() returns below.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		pm.StopAll()
-		os.Exit(0)
+		p.Quit()
 	}()
 	defer signal.Stop(sigCh)
-
-	p := tea.NewProgram(model, tea.WithAltScreen())
-	pm.SetProgram(p)
 
 	// Start all processes in a goroutine — prog.Send() blocks until the
 	// bubbletea event loop is running, so we can't call Start before p.Run().
