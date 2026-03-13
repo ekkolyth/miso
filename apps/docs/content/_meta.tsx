@@ -4,5 +4,6 @@ export default {
     'working-with-miso': 'Working with Miso',
     'env-validation': 'Env Validation',
     scripting: 'Scripting',
+    tui: 'Terminal UI (TUI)',
     contributing: 'Contributing to Miso',
 }

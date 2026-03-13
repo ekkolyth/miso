@@ -1,0 +1,49 @@
+---
+title: Terminal UI (TUI)
+description: Run multiple scripts concurrently with a visual terminal interface
+---
+
+# Terminal UI (TUI)
+
+Miso includes a built-in terminal UI for running multiple scripts concurrently — similar to Turborepo's TUI but with per-process restart and two display modes.
+
+## Two Modes
+
+### Tabbed Mode
+
+A sidebar lists your workspaces/scripts with status indicators. Select one to see its full log output. Navigate with arrow keys, restart individual processes with `r`.
+
+### Merged Mode
+
+All logs stream together in one view with color-coded labels per workspace. A filter bar lets you toggle which workspaces are visible.
+
+## When to Use
+
+- **Monorepo development** — run `dev` scripts across all workspaces simultaneously
+- **Single repo with multiple services** — run your app server and a backend like Convex side by side
+- **Any concurrent scripts** — build, lint, test across packages
+
+## Quick Start
+
+Add `"tui": "tabbed"` (or `"merged"`) to your `miso.json`:
+
+```json
+{
+  "package-manager": "bun",
+  "tui": "tabbed"
+}
+```
+
+Then run any script from the project root:
+
+```bash
+miso dev
+```
+
+Miso discovers all matching scripts and launches the TUI.
+
+## Working with Turbo / Nx
+
+If you prefer Turborepo or Nx for orchestration, set `"tui": "off"` (the default). Miso stays out of the way and delegates to your existing tools.
+
+The TUI does not implement dependency graph execution — it starts all scripts simultaneously. If you need build ordering, use Turbo/Nx for that and miso for everything else.

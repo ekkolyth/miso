@@ -1,0 +1,28 @@
+---
+title: Tabbed Mode
+description: Navigate workspaces in a sidebar with per-process log viewing
+---
+
+# Tabbed Mode
+
+Tabbed mode shows a narrow sidebar on the left with your workspace/script list and a log panel on the right showing the selected workspace's output.
+
+## Keybindings
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Navigate workspace list |
+| `r` | Restart selected workspace |
+| `R` | Restart all workspaces |
+| `q` / `Ctrl+C` | Quit (stops all processes) |
+
+## Status Indicators
+
+- Green `●` — process is running
+- Red `✕` with exit code — process crashed
+
+## Restarting
+
+Press `r` to restart only the selected workspace. The log buffer is cleared and the process re-launches. This is a key advantage over Turborepo, where one crash kills everything.
+
+Press `R` to restart all processes.

@@ -1,189 +1,193 @@
 {
-    "$schema": "https://json-schema.org/draft-07/schema#",
-    "$id": "https://misojs.dev/miso.schema.json",
-    "title": "Miso Configuration",
-    "description": "Configuration for Miso package manager",
-    "type": "object",
-    "properties": {
-        "$schema": {
-            "type": "string",
-            "description": "Path or URL to this JSON schema for IDE support"
-        },
-        "package-manager": {
-            "type": "string",
-            "enum": ["bun", "npm", "pnpm", "yarn"],
-            "description": "The package manager to use"
-        },
-        "name": {
-            "type": "string",
-            "description": "Project name"
-        },
-        "scripts": {
-            "type": "string",
-            "default": "./scripts",
-            "description": "Path to scripts folder (relative to project root)"
-        },
-        "shell": {
-            "type": "string",
-            "enum": ["sh", "zsh", "bash", "dash", "ksh", "fish", "nu", "pwsh"],
-            "description": "Default interpreter for scripts with no shebang or recognized extension (e.g. sh, bash, zsh)"
-        },
-        "flags": {
-            "type": "object",
-            "additionalProperties": {
-                "type": "array",
-                "items": { "type": "string" }
-            },
-            "description": "Default flags for package manager commands (add, remove, install, dev)"
-        },
-        "repo": {
-            "type": "string",
-            "enum": ["single", "mono"],
-            "default": "single",
-            "description": "Repository type. 'single' (default) for a standard project, 'mono' to enable monorepo workspace script execution. Requires a 'workspaces' field in your root package.json when set to 'mono'."
-        },
-        "env": {
-            "oneOf": [
-                {
-                    "type": "string",
-                    "description": "Path to a .env file (legacy shorthand)"
-                },
-                {
-                    "$ref": "#/$defs/envEntry",
-                    "description": "Single env entry (legacy object form)"
-                },
-                {
-                    "type": "array",
-                    "items": { "$ref": "#/$defs/envEntry" },
-                    "description": "One entry per app or .env file to validate"
-                }
-            ],
-            "description": "Environment file path(s) and variable validation rules"
-        }
-    },
-    "required": ["package-manager"],
-    "additionalProperties": false,
-    "$defs": {
-        "envEntry": {
-            "type": "object",
-            "description": "A single env file and its validation rules",
-            "properties": {
-                "label": {
-                    "type": "string",
-                    "description": "Human-readable name for this env entry (e.g. 'web', 'api'). Used in log and error output."
-                },
-                "path": {
-                    "oneOf": [
-                        { "type": "string" },
-                        { "type": "array", "items": { "type": "string" } }
-                    ],
-                    "description": "Path to the .env file, relative to project root (string). A legacy array is accepted; only the first element is used."
-                },
-                "required": {
-                    "oneOf": [
-                        { "type": "string", "enum": ["all", "none"] },
-                        { "type": "array", "items": { "type": "string" } }
-                    ],
-                    "description": "Which variables must be present: 'all' (default), 'none', or a list of specific keys"
-                },
-                "variables": {
-                    "oneOf": [
-                        {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Variable names — presence-only validation"
-                        },
-                        {
-                            "type": "object",
-                            "additionalProperties": {
-                                "oneOf": [
-                                    {
-                                        "type": "string",
-                                        "description": "Type shorthand (e.g. 'port', 'url', 'string', 'bool')"
-                                    },
-                                    { "$ref": "#/$defs/varConfig" }
-                                ]
-                            },
-                            "description": "Variable names mapped to type shorthands or full VarConfig objects"
-                        }
-                    ],
-                    "description": "Variables to validate. Array = presence only; object = type validation."
-                }
-            },
-            "additionalProperties": false
-        },
-        "varConfig": {
-            "type": "object",
-            "description": "Full validation config for a single variable",
-            "properties": {
-                "type": {
-                    "type": "string",
-                    "enum": [
-                        "string",
-                        "port",
-                        "int",
-                        "int+",
-                        "float",
-                        "bool",
-                        "url",
-                        "enum",
-                        "email",
-                        "json",
-                        "uuid",
-                        "pattern"
-                    ],
-                    "description": "Validation type"
-                },
-                "optional": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "If true, a missing value passes validation"
-                },
-                "min": {
-                    "type": "number",
-                    "description": "string: min length. int/int+/float: min value"
-                },
-                "max": {
-                    "type": "number",
-                    "description": "string: max length. int/int+/float: max value"
-                },
-                "pattern": {
-                    "type": "string",
-                    "description": "Regex pattern (required for 'pattern' type; also valid on 'string')"
-                },
-                "values": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Allowed values (required for 'enum' type)"
-                },
-                "schemes": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Allowed URL schemes for 'url' type (default: ['http', 'https'])"
-                },
-                "trueValues": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Strings treated as true for 'bool' type (default: ['true','1','yes','on'])"
-                },
-                "falseValues": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Strings treated as false for 'bool' type (default: ['false','0','no','off'])"
-                }
-            },
-            "required": ["type"],
-            "allOf": [
-                {
-                    "if": { "properties": { "type": { "const": "pattern" } } },
-                    "then": { "required": ["pattern"] }
-                },
-                {
-                    "if": { "properties": { "type": { "const": "enum" } } },
-                    "then": { "required": ["values"] }
-                }
-            ],
-            "additionalProperties": false
-        }
-    }
+	"$schema": "https://json-schema.org/draft-07/schema#",
+	"$id": "https://misojs.dev/miso.schema.json",
+	"title": "Miso Configuration",
+	"description": "Configuration for Miso package manager",
+	"type": "object",
+	"properties": {
+		"$schema": {
+			"type": "string",
+			"description": "Path or URL to this JSON schema for IDE support"
+		},
+		"package-manager": {
+			"type": "string",
+			"enum": ["bun", "npm", "pnpm", "yarn"],
+			"description": "The package manager to use"
+		},
+		"name": {
+			"type": "string",
+			"description": "Project name"
+		},
+		"scripts": {
+			"type": "string",
+			"default": "./scripts",
+			"description": "Path to scripts folder (relative to project root)"
+		},
+		"shell": {
+			"type": "string",
+			"enum": ["sh", "zsh", "bash", "dash", "ksh", "fish", "nu", "pwsh"],
+			"description": "Default interpreter for scripts with no shebang or recognized extension (e.g. sh, bash, zsh)"
+		},
+		"flags": {
+			"type": "object",
+			"additionalProperties": {
+				"type": "array",
+				"items": { "type": "string" }
+			},
+			"description": "Default flags for package manager commands (add, remove, install, dev)"
+		},
+		"repo": {
+			"type": "string",
+			"enum": ["single", "mono"],
+			"default": "single",
+			"description": "Repository type. 'single' (default) for a standard project, 'mono' to enable monorepo workspace script execution. Requires a 'workspaces' field in your root package.json when set to 'mono'."
+		},
+		"tui": {
+			"type": "string",
+			"enum": ["off", "tabbed", "merged"],
+			"default": "off",
+			"description": "Multi-terminal UI mode. 'off' disables TUI (default), 'tabbed' shows panes in separate tabs, 'merged' shows all panes in a single split view."
+		},
+		"multi": {
+			"type": "object",
+			"additionalProperties": {
+				"type": "array",
+				"items": { "type": "string" }
+			},
+			"description": "Named groups of scripts to run together in the TUI. Each key is a group name; the value is an array of script names to run in that group."
+		},
+		"env": {
+			"oneOf": [
+				{
+					"type": "string",
+					"description": "Path to a .env file (legacy shorthand)"
+				},
+				{
+					"$ref": "#/$defs/envEntry",
+					"description": "Single env entry (legacy object form)"
+				},
+				{
+					"type": "array",
+					"items": { "$ref": "#/$defs/envEntry" },
+					"description": "One entry per app or .env file to validate"
+				}
+			],
+			"description": "Environment file path(s) and variable validation rules"
+		}
+	},
+	"required": ["package-manager"],
+	"additionalProperties": false,
+	"$defs": {
+		"envEntry": {
+			"type": "object",
+			"description": "A single env file and its validation rules",
+			"properties": {
+				"label": {
+					"type": "string",
+					"description": "Human-readable name for this env entry (e.g. 'web', 'api'). Used in log and error output."
+				},
+				"path": {
+					"oneOf": [
+						{ "type": "string" },
+						{ "type": "array", "items": { "type": "string" } }
+					],
+					"description": "Path to the .env file, relative to project root (string). A legacy array is accepted; only the first element is used."
+				},
+				"required": {
+					"oneOf": [
+						{ "type": "string", "enum": ["all", "none"] },
+						{ "type": "array", "items": { "type": "string" } }
+					],
+					"description": "Which variables must be present: 'all' (default), 'none', or a list of specific keys"
+				},
+				"variables": {
+					"oneOf": [
+						{
+							"type": "array",
+							"items": { "type": "string" },
+							"description": "Variable names — presence-only validation"
+						},
+						{
+							"type": "object",
+							"additionalProperties": {
+								"oneOf": [
+									{
+										"type": "string",
+										"description": "Type shorthand (e.g. 'port', 'url', 'string', 'bool')"
+									},
+									{ "$ref": "#/$defs/varConfig" }
+								]
+							},
+							"description": "Variable names mapped to type shorthands or full VarConfig objects"
+						}
+					],
+					"description": "Variables to validate. Array = presence only; object = type validation."
+				}
+			},
+			"additionalProperties": false
+		},
+		"varConfig": {
+			"type": "object",
+			"description": "Full validation config for a single variable",
+			"properties": {
+				"type": {
+					"type": "string",
+					"enum": [
+						"string",
+						"port",
+						"int",
+						"int+",
+						"float",
+						"bool",
+						"url",
+						"enum",
+						"email",
+						"json",
+						"uuid",
+						"pattern"
+					],
+					"description": "Validation type"
+				},
+				"optional": {
+					"type": "boolean",
+					"default": false,
+					"description": "If true, a missing value passes validation"
+				},
+				"min": {
+					"type": "number",
+					"description": "string: min length. int/int+/float: min value"
+				},
+				"max": {
+					"type": "number",
+					"description": "string: max length. int/int+/float: max value"
+				},
+				"pattern": {
+					"type": "string",
+					"description": "Regex pattern (required for 'pattern' type; also valid on 'string')"
+				},
+				"values": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "Allowed values (required for 'enum' type)"
+				},
+				"schemes": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "Allowed URL schemes for 'url' type (default: ['http', 'https'])"
+				},
+				"trueValues": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "Strings treated as true for 'bool' type (default: ['true','1','yes','on'])"
+				},
+				"falseValues": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "Strings treated as false for 'bool' type (default: ['false','0','no','off'])"
+				}
+			},
+			"required": ["type"],
+			"additionalProperties": false
+		}
+	}
 }
