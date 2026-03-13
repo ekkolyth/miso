@@ -66,12 +66,15 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	pm.SetProgram(p)
 
-	// Start all processes
-	for _, proc := range pm.Processes {
-		if err := pm.Start(proc); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
+	// Start all processes in a goroutine — prog.Send() blocks until the
+	// bubbletea event loop is running, so we can't call Start before p.Run().
+	go func() {
+		for _, proc := range pm.Processes {
+			if err := pm.Start(proc); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
+			}
 		}
-	}
+	}()
 
 	_, err = p.Run()
 	return true, err
