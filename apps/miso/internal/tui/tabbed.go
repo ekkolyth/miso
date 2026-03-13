@@ -3,11 +3,15 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// allExitedMsg fires after all processes have exited and the 2-second delay has passed.
+type allExitedMsg struct{}
 
 var (
 	accentColor  = lipgloss.Color("#7c3aed")
@@ -19,13 +23,14 @@ var (
 )
 
 type TabbedModel struct {
-	pm           *ProcessManager
-	keys         TabbedKeyMap
-	selected     int
-	scrollOffset int // 0 = pinned to bottom (auto-scroll), >0 = scrolled up N lines
-	width        int
-	height       int
-	script       string
+	pm              *ProcessManager
+	keys            TabbedKeyMap
+	selected        int
+	scrollOffset    int // 0 = pinned to bottom (auto-scroll), >0 = scrolled up N lines
+	width           int
+	height          int
+	script          string
+	allExitedPending bool
 }
 
 func NewTabbedModel(pm *ProcessManager, script string) TabbedModel {
@@ -63,9 +68,11 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.Restart):
 			if m.selected < len(m.pm.Processes) {
+				m.allExitedPending = false
 				go m.pm.Restart(m.pm.Processes[m.selected])
 			}
 		case key.Matches(msg, m.keys.RestartAll):
+			m.allExitedPending = false
 			go m.pm.RestartAll()
 		}
 
@@ -98,7 +105,16 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ProcessStateMsg:
+		if !m.allExitedPending && m.pm.AllExited() {
+			m.allExitedPending = true
+			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+				return allExitedMsg{}
+			})
+		}
 		return m, nil
+
+	case allExitedMsg:
+		return m, tea.Quit
 	}
 
 	return m, nil
