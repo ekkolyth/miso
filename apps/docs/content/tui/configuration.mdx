@@ -1,0 +1,54 @@
+---
+title: Configuration
+description: Configure the TUI display mode and multi-script mappings
+---
+
+# Configuration
+
+## `tui` Option
+
+Controls how concurrent scripts are displayed.
+
+| Value | Description |
+|-------|-------------|
+| `"off"` (default) | No TUI. Normal single-process execution. |
+| `"tabbed"` | Sidebar with workspace list, selected workspace's logs on the right. |
+| `"merged"` | Interleaved log stream with colored labels and filter toggles. |
+
+```json
+{
+  "tui": "tabbed"
+}
+```
+
+## `multi` Option (Single Repos)
+
+Maps a command name to multiple scripts for concurrent execution. Only used in single repos — ignored in monorepos where workspace auto-discovery provides the script list.
+
+```json
+{
+  "tui": "tabbed",
+  "multi": {
+    "dev": ["dev:app", "dev:convex"],
+    "build": ["build:client", "build:server"]
+  }
+}
+```
+
+Running `miso dev` with this config launches both `dev:app` and `dev:convex` in the TUI.
+
+## Script Discovery
+
+### Monorepos
+
+When `"repo": "mono"`, miso auto-discovers scripts across all workspaces:
+
+1. Reads workspace globs from root `package.json`
+2. For each workspace, finds matching scripts in both the scripts folder and `package.json`
+3. Prefix matching: `miso dev` matches `dev`, `dev:convex`, `dev:worker`, etc.
+
+### Single Repos
+
+Uses the `multi` config to determine which scripts to run concurrently. Scripts are resolved through the scripts folder first, then `package.json`.
+
+If no `multi` entry exists for the command, the script runs normally without the TUI.
