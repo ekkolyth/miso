@@ -17,18 +17,24 @@ const FileName = "miso.json"
 // SchemaURL is the canonical URL for the miso.json JSON schema (IDE autocomplete/validation)
 const SchemaURL = "https://misojs.dev/miso.schema.json"
 
+// TaskConfig holds per-task configuration for monorepo dependency ordering.
+type TaskConfig struct {
+	DependsOn []string `json:"dependsOn,omitempty"`
+}
+
 // persisted project metadata
 type Config struct {
-	Schema         string              `json:"$schema,omitempty"`
-	PackageManager string              `json:"package-manager,omitempty"`
-	ProjectName    string              `json:"name,omitempty"`
-	Scripts        string              `json:"scripts"`
-	Shell          string              `json:"shell,omitempty"`
-	Flags          map[string][]string `json:"flags,omitempty"`
-	Env            []*EnvEntry         `json:"env,omitempty"`
-	Repo           string              `json:"repo,omitempty"` // "single" (default) or "mono"
-	Tui            string              `json:"tui,omitempty"`  // "off" (default), "tabbed", or "merged"
-	Multi          map[string][]string `json:"multi,omitempty"`
+	Schema         string                `json:"$schema,omitempty"`
+	PackageManager string                `json:"package-manager,omitempty"`
+	ProjectName    string                `json:"name,omitempty"`
+	Scripts        string                `json:"scripts"`
+	Shell          string                `json:"shell,omitempty"`
+	Flags          map[string][]string   `json:"flags,omitempty"`
+	Env            []*EnvEntry           `json:"env,omitempty"`
+	Repo           string                `json:"repo,omitempty"` // "single" (default), "mono", "turbo", or "nx"
+	Tasks          map[string]TaskConfig `json:"-"`              // populated from repo object form; not serialized directly
+	Tui            string                `json:"tui,omitempty"`  // "off" (default), "tabbed", or "merged"
+	Multi          map[string][]string   `json:"multi,omitempty"`
 }
 
 // EnvEntry holds a single env file path and its variable validation rules.
@@ -116,9 +122,22 @@ func (c *Config) EnsureDefaults() {
 	}
 }
 
-// IsMono returns true if the repo is configured as a monorepo
-func (c Config) IsMono() bool {
-	return c.Repo == "mono"
+// IsMonorepo returns true for repo modes that use workspace discovery.
+func (c Config) IsMonorepo() bool {
+	return c.Repo == "mono" || c.Repo == "turbo" || c.Repo == "nx"
+}
+
+// RepoMode returns the resolved repo mode string, defaulting to "single".
+func (c Config) RepoMode() string {
+	if c.Repo == "" {
+		return "single"
+	}
+	return c.Repo
+}
+
+// IsDelegated returns true when orchestration is delegated to turbo or nx.
+func (c Config) IsDelegated() bool {
+	return c.Repo == "turbo" || c.Repo == "nx"
 }
 
 // TuiEnabled returns true when the multi-terminal UI is active (tabbed or merged mode)
@@ -140,7 +159,7 @@ type configLoad struct {
 	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`
 	EnvRaw         json.RawMessage     `json:"env,omitempty"`
-	Repo           string              `json:"repo,omitempty"`
+	RepoRaw        json.RawMessage     `json:"repo,omitempty"`
 	Tui            string              `json:"tui,omitempty"`
 	Multi          map[string][]string `json:"multi,omitempty"`
 }
@@ -173,9 +192,17 @@ func Load(root string) (Config, error) {
 		Scripts:        load.Scripts,
 		Shell:          load.Shell,
 		Flags:          load.Flags,
-		Repo:           load.Repo,
 		Tui:            tui,
 		Multi:          load.Multi,
+	}
+
+	if len(load.RepoRaw) > 0 {
+		repo, tasks, err := parseRepoField(load.RepoRaw)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse repo config: %w", err)
+		}
+		cfg.Repo = repo
+		cfg.Tasks = tasks
 	}
 
 	if len(load.EnvRaw) > 0 {
@@ -222,6 +249,30 @@ func parseEnvField(raw json.RawMessage) ([]*EnvEntry, error) {
 		return nil, err
 	}
 	return []*EnvEntry{entry}, nil
+}
+
+// parseRepoField handles the two accepted shapes for the "repo" field:
+//  1. string — "single", "mono", "turbo", "nx"
+//  2. object — { "mode": "mono", "tasks": { ... } }
+func parseRepoField(raw json.RawMessage) (string, map[string]TaskConfig, error) {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s, nil, nil
+	}
+
+	var obj struct {
+		Mode  string                `json:"mode"`
+		Tasks map[string]TaskConfig `json:"tasks,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return "", nil, fmt.Errorf("repo: expected string or object, got %s", string(raw))
+	}
+
+	if obj.Tasks != nil && obj.Mode != "mono" {
+		return "", nil, fmt.Errorf("repo.tasks is only valid when mode is \"mono\", got %q", obj.Mode)
+	}
+
+	return obj.Mode, obj.Tasks, nil
 }
 
 // parseEnvEntry decodes a single EnvEntry from its raw JSON representation.

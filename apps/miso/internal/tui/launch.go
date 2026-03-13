@@ -95,11 +95,11 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 }
 
 func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiScriptEntry, error) {
-	if cfg.IsMono() && len(cfg.Multi) > 0 {
+	if cfg.IsMonorepo() && len(cfg.Multi) > 0 {
 		fmt.Fprintf(os.Stderr, "warning: 'multi' config is ignored in monorepo mode — workspace auto-discovery is used instead\n")
 	}
 
-	if cfg.IsMono() {
+	if cfg.IsMonorepo() {
 		wsDirs, err := config.LoadWorkspaces(root)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load workspaces: %w", err)

@@ -153,7 +153,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	}
 
 	// check for workspace:script syntax (only in mono mode)
-	if cfg.IsMono() && strings.Contains(cmd, ":") {
+	if cfg.IsMonorepo() && strings.Contains(cmd, ":") {
 		parts := strings.SplitN(cmd, ":", 2)
 		workspaceName := parts[0]
 		scriptName := parts[1]

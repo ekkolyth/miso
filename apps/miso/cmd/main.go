@@ -124,7 +124,7 @@ func main() {
 	// CWD-aware mono scoping: if repo is "mono" and we're inside a workspace,
 	// and the parsed action is a plain script (not already workspace-scoped),
 	// try to resolve the script from the current workspace's scripts folder first.
-	if cfg.IsMono() && originalWorkDir != projectRoot &&
+	if cfg.IsMonorepo() && originalWorkDir != projectRoot &&
 		parsed.Action == cli.ActionScriptPackageJSON {
 		workspaces, wsErr := config.LoadWorkspaces(projectRoot)
 		if wsErr == nil && len(workspaces) > 0 {
@@ -166,7 +166,7 @@ func main() {
 	if cfg.TuiEnabled() {
 		// Only intercept when running from project root (not workspace subdirectory)
 		isRoot := true
-		if cfg.IsMono() {
+		if cfg.IsMonorepo() {
 			workspaces, wsErr := config.LoadWorkspaces(projectRoot)
 			if wsErr == nil && len(workspaces) > 0 {
 				if _, inWs := scripting.WorkspaceFromCWD(originalWorkDir, workspaces); inWs {
