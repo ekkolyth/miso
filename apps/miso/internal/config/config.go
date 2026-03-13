@@ -140,6 +140,24 @@ func (c Config) IsDelegated() bool {
 	return c.Repo == "turbo" || c.Repo == "nx"
 }
 
+// HasDependsOn returns true if the given command has a dependsOn entry with a ^ prefix
+// in the tasks configuration.
+func (c Config) HasDependsOn(command string) bool {
+	if c.Tasks == nil {
+		return false
+	}
+	task, ok := c.Tasks[command]
+	if !ok {
+		return false
+	}
+	for _, dep := range task.DependsOn {
+		if len(dep) > 0 && dep[0] == '^' {
+			return true
+		}
+	}
+	return false
+}
+
 // TuiEnabled returns true when the multi-terminal UI is active (tabbed or merged mode)
 func (c Config) TuiEnabled() bool {
 	return c.Tui == "tabbed" || c.Tui == "merged"
