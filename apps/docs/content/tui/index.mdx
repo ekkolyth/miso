@@ -21,7 +21,8 @@ All logs stream together in one view with color-coded labels per workspace. A fi
 
 - **Monorepo development** — run `dev` scripts across all workspaces simultaneously
 - **Single repo with multiple services** — run your app server and a backend like Convex side by side
-- **Any concurrent scripts** — build, lint, test across packages
+- **Build ordering** — run builds in dependency order across workspaces with `dependsOn`
+- **Turbo/Nx delegation** — use miso's UI while Turbo or Nx handles orchestration
 
 ## Quick Start
 
@@ -42,8 +43,39 @@ miso dev
 
 Miso discovers all matching scripts and launches the TUI.
 
+## Dependency Ordering
+
+For build commands that need to run in order, configure `dependsOn` in the `repo` field:
+
+```json
+{
+  "package-manager": "bun",
+  "tui": "tabbed",
+  "repo": {
+    "mode": "mono",
+    "tasks": {
+      "build": { "dependsOn": ["^build"] }
+    }
+  }
+}
+```
+
+The `^` prefix means "run this task in upstream workspace dependencies first." Miso reads the dependency graph from each workspace's `package.json` and executes in topological order.
+
 ## Working with Turbo / Nx
 
-If you prefer Turborepo or Nx for orchestration, set `"tui": "off"` (the default). Miso stays out of the way and delegates to your existing tools.
+You can delegate orchestration to Turborepo or Nx while still using miso's TUI:
 
-The TUI does not implement dependency graph execution — it starts all scripts simultaneously. If you need build ordering, use Turbo/Nx for that and miso for everything else.
+```json
+{
+  "package-manager": "bun",
+  "tui": "tabbed",
+  "repo": "turbo"
+}
+```
+
+Set `"repo"` to `"turbo"` or `"nx"`. Miso spawns the underlying tool as a single process, parses its output, and displays it in the TUI with per-workspace tabs.
+
+## Auto-Exit
+
+When all processes complete, the TUI waits 2 seconds (so you can see final status) then exits automatically. If any process failed, a summary is printed to stderr.

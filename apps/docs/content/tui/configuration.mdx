@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: Configure the TUI display mode and multi-script mappings
+description: Configure the TUI display mode, repo modes, and dependency ordering
 ---
 
 # Configuration
@@ -20,6 +20,61 @@ Controls how concurrent scripts are displayed.
   "tui": "tabbed"
 }
 ```
+
+## `repo` Option
+
+Controls how miso discovers and orchestrates workspaces.
+
+### String Form
+
+| Value | Description |
+|-------|-------------|
+| `"single"` (default) | Standard project. Uses `multi` config for concurrent scripts. |
+| `"mono"` | Monorepo. Miso discovers workspaces and orchestrates scripts. |
+| `"turbo"` | Monorepo. Delegates orchestration to Turborepo, miso provides the UI. |
+| `"nx"` | Monorepo. Delegates orchestration to Nx, miso provides the UI. |
+
+```json
+{
+  "repo": "mono"
+}
+```
+
+### Object Form (with task configuration)
+
+For dependency-ordered execution, use the object form with `tasks`:
+
+```json
+{
+  "repo": {
+    "mode": "mono",
+    "tasks": {
+      "build": { "dependsOn": ["^build"] },
+      "dev": {}
+    }
+  }
+}
+```
+
+The `tasks` key maps command names to task configuration. Each task supports:
+
+- **`dependsOn`** — array of strings. The `^` prefix (e.g., `"^build"`) means "run this task in upstream workspace dependencies first," reading the dependency graph from each workspace's `package.json`.
+
+Commands not listed in `tasks`, or listed without `dependsOn`, run all workspaces in parallel.
+
+The object form is only valid when `mode` is `"mono"`. Turbo and Nx modes do not support `tasks` — they delegate all orchestration to the underlying tool.
+
+### Turbo/Nx Delegation
+
+When using `"turbo"` or `"nx"` mode:
+
+- Miso spawns the underlying tool as a single process (`turbo run <script>` or `nx run-many --target=<script>`)
+- Output is parsed and displayed in the TUI with per-workspace tabs
+- Workspaces are discovered dynamically as output arrives
+- Individual process restart (`r`) is disabled — only full restart (`R`) is available
+- The underlying tool handles dependency ordering, caching, and parallelism
+
+**Requirements:** The `turbo` or `nx` binary must be available in your PATH.
 
 ## `multi` Option (Single Repos)
 
@@ -41,7 +96,7 @@ Running `miso dev` with this config launches both `dev:app` and `dev:convex` in 
 
 ### Monorepos
 
-When `"repo": "mono"`, miso auto-discovers scripts across all workspaces:
+When `repo` is `"mono"`, `"turbo"`, or `"nx"`, miso auto-discovers scripts across all workspaces:
 
 1. Reads workspace globs from root `package.json`
 2. For each workspace, finds matching scripts in both the scripts folder and `package.json`
