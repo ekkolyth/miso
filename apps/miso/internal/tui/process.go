@@ -38,6 +38,7 @@ type Process struct {
 	Entry    TuiScriptEntry
 	Command  string
 	Args     []string
+	Dir      string // working directory for the process
 	State    ProcessState
 	ExitCode int
 	Buffer   *RingBuffer
@@ -67,11 +68,12 @@ func (pm *ProcessManager) SetProgram(p *tea.Program) {
 }
 
 // Add creates a new Process entry and appends it to the manager.
-func (pm *ProcessManager) Add(entry TuiScriptEntry, command string, args []string) *Process {
+func (pm *ProcessManager) Add(entry TuiScriptEntry, command string, args []string, dir string) *Process {
 	p := &Process{
 		Entry:   entry,
 		Command: command,
 		Args:    args,
+		Dir:     dir,
 		State:   StateStarting,
 		Buffer:  NewRingBuffer(DefaultBufferSize),
 		done:    make(chan struct{}),
@@ -92,6 +94,9 @@ func (pm *ProcessManager) Start(p *Process) error {
 	p.ExitCode = 0
 	p.done = make(chan struct{})
 	p.cmd = exec.Command(p.Command, p.Args...)
+	if p.Dir != "" {
+		p.cmd.Dir = p.Dir
+	}
 	p.mu.Unlock()
 
 	cmd := p.cmd

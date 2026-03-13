@@ -14,7 +14,7 @@ func TestProcessManager_SpawnAndCapture(t *testing.T) {
 		ScriptName: "echo",
 	}
 
-	p := pm.Add(entry, "echo", []string{"hello world"})
+	p := pm.Add(entry, "echo", []string{"hello world"}, "")
 	if p == nil {
 		t.Fatal("expected non-nil process")
 	}
@@ -51,7 +51,7 @@ func TestProcessManager_State(t *testing.T) {
 		ScriptName: "echo",
 	}
 
-	p := pm.Add(entry, "echo", []string{"state test"})
+	p := pm.Add(entry, "echo", []string{"state test"}, "")
 
 	if p.State != StateStarting {
 		t.Errorf("expected StateStarting before Start, got %v", p.State)
@@ -98,7 +98,7 @@ func TestProcessManager_StopAll(t *testing.T) {
 		ScriptName: "sleep",
 	}
 
-	p := pm.Add(entry, "sleep", []string{"60"})
+	p := pm.Add(entry, "sleep", []string{"60"}, "")
 
 	if err := pm.Start(p); err != nil {
 		t.Fatalf("Start failed: %v", err)
