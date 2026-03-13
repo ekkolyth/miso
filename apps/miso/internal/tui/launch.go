@@ -55,6 +55,21 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 		pm.Add(entry, cmd, args, dir)
 	}
 
+	// Pre-compute dependency levels if this command has dependsOn config.
+	var levels [][]TuiScriptEntry
+	if cfg.HasDependsOn(scriptName) {
+		wsInfos := buildWSInfos(entries)
+		graph, err := BuildDependencyGraph(wsInfos)
+		if err != nil {
+			return false, fmt.Errorf("build dependency graph: %w", err)
+		}
+		var sortErr error
+		levels, sortErr = TopoSort(entries, graph)
+		if sortErr != nil {
+			return false, sortErr
+		}
+	}
+
 	var model tea.Model
 	switch cfg.Tui {
 	case "tabbed":
@@ -81,9 +96,31 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	// Start all processes in a goroutine — prog.Send() blocks until the
 	// bubbletea event loop is running, so we can't call Start before p.Run().
 	go func() {
-		for _, proc := range pm.Processes {
-			if err := pm.Start(proc); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
+		if levels != nil {
+			for _, level := range levels {
+				var levelProcs []*Process
+				for _, entry := range level {
+					proc := pm.findProc(entry.Label)
+					if proc == nil {
+						continue
+					}
+					if err := pm.Start(proc); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
+					}
+					levelProcs = append(levelProcs, proc)
+				}
+				pm.WaitAllExited(levelProcs)
+				for _, proc := range levelProcs {
+					if proc.ExitCode != 0 {
+						return
+					}
+				}
+			}
+		} else {
+			for _, proc := range pm.Processes {
+				if err := pm.Start(proc); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
+				}
 			}
 		}
 	}()
@@ -130,4 +167,16 @@ func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiSc
 	}
 
 	return nil, nil
+}
+
+func buildWSInfos(entries []TuiScriptEntry) []WorkspaceInfo {
+	seen := make(map[string]bool)
+	var infos []WorkspaceInfo
+	for _, e := range entries {
+		if !seen[e.Label] {
+			seen[e.Label] = true
+			infos = append(infos, WorkspaceInfo{Name: e.Label, Dir: e.WorkspaceDir})
+		}
+	}
+	return infos
 }

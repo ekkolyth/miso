@@ -294,6 +294,25 @@ func (pm *ProcessManager) FailedCount() int {
 	return count
 }
 
+// WaitAllExited blocks until every process in procs has reached StateExited.
+func (pm *ProcessManager) WaitAllExited(procs []*Process) {
+	for _, p := range procs {
+		<-p.done
+	}
+}
+
+// findProc returns the process with the given label, or nil if not found.
+func (pm *ProcessManager) findProc(label string) *Process {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	for _, p := range pm.Processes {
+		if p.Entry.Label == label {
+			return p
+		}
+	}
+	return nil
+}
+
 // sendState dispatches a ProcessStateMsg to the registered bubbletea program.
 func (pm *ProcessManager) sendState(p *Process, state ProcessState, code int) {
 	pm.mu.Lock()
