@@ -75,6 +75,114 @@ func TestLoadTuiConfigDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadRepoStringValues(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		repo string
+		mono bool
+		dele bool
+	}{
+		{"single", `{"package-manager":"npm","repo":"single"}`, "single", false, false},
+		{"mono", `{"package-manager":"npm","repo":"mono"}`, "mono", true, false},
+		{"turbo", `{"package-manager":"npm","repo":"turbo"}`, "turbo", true, true},
+		{"nx", `{"package-manager":"npm","repo":"nx"}`, "nx", true, true},
+		{"empty", `{"package-manager":"npm"}`, "", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeTempConfig(t, tt.json)
+			cfg, err := Load(dir)
+			if err != nil {
+				t.Fatalf("Load() error: %v", err)
+			}
+			if cfg.Repo != tt.repo {
+				t.Errorf("Repo = %q, want %q", cfg.Repo, tt.repo)
+			}
+			if cfg.IsMonorepo() != tt.mono {
+				t.Errorf("IsMonorepo() = %v, want %v", cfg.IsMonorepo(), tt.mono)
+			}
+			if cfg.IsDelegated() != tt.dele {
+				t.Errorf("IsDelegated() = %v, want %v", cfg.IsDelegated(), tt.dele)
+			}
+		})
+	}
+}
+
+func TestLoadRepoObject(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"package-manager": "npm",
+		"repo": {
+			"mode": "mono",
+			"tasks": {
+				"build": { "dependsOn": ["^build"] },
+				"dev": {}
+			}
+		}
+	}`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Repo != "mono" {
+		t.Errorf("Repo = %q, want %q", cfg.Repo, "mono")
+	}
+	if cfg.Tasks == nil {
+		t.Fatal("Tasks is nil, want populated map")
+	}
+	build, ok := cfg.Tasks["build"]
+	if !ok {
+		t.Fatal("Tasks[\"build\"] missing")
+	}
+	if len(build.DependsOn) != 1 || build.DependsOn[0] != "^build" {
+		t.Errorf("Tasks[\"build\"].DependsOn = %v, want [^build]", build.DependsOn)
+	}
+	dev, ok := cfg.Tasks["dev"]
+	if !ok {
+		t.Fatal("Tasks[\"dev\"] missing")
+	}
+	if len(dev.DependsOn) != 0 {
+		t.Errorf("Tasks[\"dev\"].DependsOn = %v, want []", dev.DependsOn)
+	}
+}
+
+func TestLoadRepoObjectInvalidMode(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"package-manager": "npm",
+		"repo": {
+			"mode": "turbo",
+			"tasks": { "build": { "dependsOn": ["^build"] } }
+		}
+	}`)
+
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("Load() expected error for tasks with non-mono mode, got nil")
+	}
+}
+
+func TestRepoMode(t *testing.T) {
+	tests := []struct {
+		repo string
+		want string
+	}{
+		{"single", "single"},
+		{"mono", "mono"},
+		{"turbo", "turbo"},
+		{"nx", "nx"},
+		{"", "single"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.repo, func(t *testing.T) {
+			cfg := Config{Repo: tt.repo}
+			if got := cfg.RepoMode(); got != tt.want {
+				t.Errorf("RepoMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTuiEnabled(t *testing.T) {
 	tests := []struct {
 		tui  string
