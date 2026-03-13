@@ -1,0 +1,63 @@
+{
+	"$schema": "https://misojs.dev/miso.schema.json",
+	"package-manager": "bun",
+	"scripts": "./scripts",
+	"shell": "bash",
+	"tui": "tabbed",
+	"repo": {
+		"mode": "mono",
+		"tasks": {
+			"build": { "dependsOn": ["^build"] },
+			"dev": {}
+		}
+	},
+	"flags": {
+		"add": ["--dev"],
+		"install": ["--frozen-lockfile"],
+		"dev": ["--env"]
+	},
+	"env": [
+		{
+			"label": "web",
+			"path": "apps/web/.env.local",
+			"variables": {
+				"PORT": "port",
+				"DATABASE_URL": "url",
+				"API_KEY": {
+					"type": "string",
+					"min": 1,
+					"max": 32
+				},
+				"ADMIN_EMAIL": "email",
+				"DEBUG_MODE": "bool",
+				"FEATURE_FLAGS": "json"
+			}
+		},
+		{
+			"label": "api",
+			"path": "apps/api/.env",
+			"required": "all",
+			"variables": {
+				"NODE_ENV": {
+					"type": "enum",
+					"values": ["development", "production", "test"],
+					"optional": true
+				},
+				"REDIS_URL": {
+					"type": "url",
+					"schemes": ["redis", "rediss"]
+				},
+				"RATE_LIMIT": {
+					"type": "int+",
+					"min": 1,
+					"max": 1000
+				},
+				"USER_ID": "uuid",
+				"SLUG": {
+					"type": "pattern",
+					"pattern": "^[a-z0-9-]+$"
+				}
+			}
+		}
+	]
+}

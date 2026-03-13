@@ -2,11 +2,6 @@ BINARY=${BINARY:-miso}
 GOBIN=$(go env GOBIN)
 [ -z "$GOBIN" ] && GOBIN=$(go env GOPATH)/bin
 
-# Install JS deps for all workspaces (apps/docs etc.) from repo root
-echo "→ installing dependencies..."
-bun install
-echo "✓ dependencies installed"
-
 # Build first
 ./scripts/build/miso.sh
 

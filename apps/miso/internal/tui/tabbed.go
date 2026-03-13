@@ -157,8 +157,8 @@ func (m TabbedModel) sidebarWidth() int {
 	if w < 16 {
 		w = 16
 	}
-	if w > 30 {
-		w = 30
+	if w > 40 {
+		w = 40
 	}
 	return w
 }
@@ -223,7 +223,7 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 			statusText = "●"
 		}
 
-		padW := width - 8
+		padW := width - 5
 		if padW < 1 {
 			padW = 1
 		}

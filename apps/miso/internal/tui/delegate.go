@@ -102,62 +102,71 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 	}()
 	defer signal.Stop(sigCh)
 
-	if err := cmd.Start(); err != nil {
-		return false, fmt.Errorf("start %s: %w", mode, err)
-	}
-
-	// Parse output in goroutines
+	// Start the delegated process and output parsing in a goroutine.
+	// prog.Send() blocks until bubbletea's event loop is running, so all
+	// sends must happen after p.Run() begins — otherwise we deadlock.
 	go func() {
-		scanner := bufio.NewScanner(stdout)
-		currentNxLabel := ""
+		if err := cmd.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "miso: failed to start %s: %v\n", mode, err)
+			p.Quit()
+			return
+		}
 
-		for scanner.Scan() {
-			line := stripNonColorANSI(scanner.Text())
-			var label, text string
+		metaProc.State = StateRunning
+		pm.sendState(metaProc, StateRunning, 0)
 
-			switch mode {
-			case "turbo":
-				label, text = parseTurboLine(line)
-			case "nx":
-				if hdrLabel, isHdr := parseNxHeader(line); isHdr {
-					currentNxLabel = hdrLabel
-					continue
+		// Parse stdout
+		go func() {
+			scanner := bufio.NewScanner(stdout)
+			currentNxLabel := ""
+
+			for scanner.Scan() {
+				line := stripNonColorANSI(scanner.Text())
+				var label, text string
+
+				switch mode {
+				case "turbo":
+					label, text = parseTurboLine(line)
+				case "nx":
+					if hdrLabel, isHdr := parseNxHeader(line); isHdr {
+						currentNxLabel = hdrLabel
+						continue
+					}
+					if currentNxLabel != "" {
+						label = currentNxLabel
+						text = line
+					}
 				}
-				if currentNxLabel != "" {
-					label = currentNxLabel
+
+				if label == "" {
+					label = mode
 					text = line
 				}
+
+				// Find or create process for this label
+				proc := pm.findProc(label)
+				if proc == nil {
+					entry := TuiScriptEntry{Label: label, ScriptName: scriptName, WorkspaceDir: root}
+					proc = pm.Add(entry, "", nil, root)
+					proc.State = StateRunning
+					pm.sendState(proc, StateRunning, 0)
+				}
+				proc.Buffer.Write(text)
+				pm.sendOutput(proc, text)
 			}
+		}()
 
-			if label == "" {
-				label = mode
-				text = line
+		// Parse stderr
+		go func() {
+			scanner := bufio.NewScanner(stderr)
+			for scanner.Scan() {
+				line := stripNonColorANSI(scanner.Text())
+				metaProc.Buffer.Write(line)
+				pm.sendOutput(metaProc, line)
 			}
+		}()
 
-			// Find or create process for this label
-			proc := pm.findProc(label)
-			if proc == nil {
-				entry := TuiScriptEntry{Label: label, ScriptName: scriptName, WorkspaceDir: root}
-				proc = pm.Add(entry, "", nil, root)
-				proc.State = StateRunning
-				pm.sendState(proc, StateRunning, 0)
-			}
-			proc.Buffer.Write(text)
-			pm.sendOutput(proc, text)
-		}
-	}()
-
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := stripNonColorANSI(scanner.Text())
-			metaProc.Buffer.Write(line)
-			pm.sendOutput(metaProc, line)
-		}
-	}()
-
-	// Wait for the delegated process in a goroutine
-	go func() {
+		// Wait for the delegated process to exit
 		exitErr := cmd.Wait()
 		code := 0
 		if exitErr != nil {
@@ -167,7 +176,6 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 				code = -1
 			}
 		}
-		// Mark all processes as exited
 		pm.mu.Lock()
 		for _, proc := range pm.Processes {
 			proc.State = StateExited
@@ -178,10 +186,6 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 			pm.sendState(proc, StateExited, code)
 		}
 	}()
-
-	// Mark meta process as running
-	metaProc.State = StateRunning
-	pm.sendState(metaProc, StateRunning, 0)
 
 	_, err = p.Run()
 	// Kill the delegated process group
