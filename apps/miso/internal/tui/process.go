@@ -266,6 +266,34 @@ func (pm *ProcessManager) sendOutput(p *Process, line string) {
 	}
 }
 
+// AllExited returns true if every process has reached StateExited.
+func (pm *ProcessManager) AllExited() bool {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	if len(pm.Processes) == 0 {
+		return false
+	}
+	for _, p := range pm.Processes {
+		if p.State != StateExited {
+			return false
+		}
+	}
+	return true
+}
+
+// FailedCount returns the number of processes that exited with non-zero code.
+func (pm *ProcessManager) FailedCount() int {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	count := 0
+	for _, p := range pm.Processes {
+		if p.State == StateExited && p.ExitCode != 0 {
+			count++
+		}
+	}
+	return count
+}
+
 // sendState dispatches a ProcessStateMsg to the registered bubbletea program.
 func (pm *ProcessManager) sendState(p *Process, state ProcessState, code int) {
 	pm.mu.Lock()

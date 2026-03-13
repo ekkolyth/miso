@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,15 +23,16 @@ var labelColors = []lipgloss.Color{
 }
 
 type MergedModel struct {
-	pm           *ProcessManager
-	keys         MergedKeyMap
-	cursor       int
-	visible      map[int]bool
-	logLines     []mergedLine
-	scrollOffset int // 0 = pinned to bottom, >0 = scrolled up N lines
-	width        int
-	height       int
-	script       string
+	pm              *ProcessManager
+	keys            MergedKeyMap
+	cursor          int
+	visible         map[int]bool
+	logLines        []mergedLine
+	scrollOffset    int // 0 = pinned to bottom, >0 = scrolled up N lines
+	width           int
+	height          int
+	script          string
+	allExitedPending bool
 }
 
 type mergedLine struct {
@@ -80,9 +82,11 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.visible[m.cursor] = !m.visible[m.cursor]
 		case key.Matches(msg, m.keys.Restart):
 			if m.cursor < len(m.pm.Processes) {
+				m.allExitedPending = false
 				go m.pm.Restart(m.pm.Processes[m.cursor])
 			}
 		case key.Matches(msg, m.keys.RestartAll):
+			m.allExitedPending = false
 			go m.pm.RestartAll()
 		}
 
@@ -121,15 +125,24 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ProcessStateMsg:
+		if !m.allExitedPending && m.pm.AllExited() {
+			m.allExitedPending = true
+			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+				return allExitedMsg{}
+			})
+		}
 		return m, nil
+
+	case allExitedMsg:
+		return m, tea.Quit
 	}
 
 	return m, nil
 }
 
 func (m MergedModel) logHeight() int {
-	// filter bar takes 2 lines (labels row + separator), rest is logs
-	h := m.height - 2
+	// header (1) + tab row (1) + selector/divider (1), rest is logs
+	h := m.height - 3
 	if h < 0 {
 		return 0
 	}
@@ -179,7 +192,6 @@ func (m MergedModel) View() string {
 	for _, line := range windowLines {
 		label := lipgloss.NewStyle().
 			Foreground(line.color).
-			Bold(true).
 			Render(padRight(line.label, maxLabel))
 		logOutput = append(logOutput, label+" "+line.text)
 	}
@@ -195,74 +207,87 @@ func (m MergedModel) View() string {
 		Width(m.width).
 		MaxHeight(logHeight).
 		Padding(0, 1).
-		Background(panelBg).
-		Foreground(lipgloss.Color("#cccccc")).
 		Render(logContent)
 
 	return filterBar + "\n" + logPanel
 }
 
 func (m MergedModel) renderFilterBar() string {
-	var items []string
+	// Header bar: "miso [script]" on left, controls on right
+	title := lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("miso") +
+		" " +
+		lipgloss.NewStyle().Foreground(mutedColor).Render(m.script)
 
+	scrollHint := ""
+	if m.scrollOffset > 0 {
+		scrollHint = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Render(fmt.Sprintf("(scrolled +%d) ", m.scrollOffset))
+	}
+
+	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("←→ select · space toggle · r restart · ctrl+c quit")
+
+	titleLen := lipgloss.Width(title)
+	hintsLen := lipgloss.Width(hints) + lipgloss.Width(scrollHint)
+	gap := m.width - titleLen - hintsLen - 2
+	if gap < 1 {
+		gap = 1
+	}
+
+	header := lipgloss.NewStyle().
+		Width(m.width).
+		Padding(0, 1).
+		Render(title + strings.Repeat(" ", gap) + scrollHint + hints)
+
+	// Tabs: single-line colored blocks
+	var items []string
+	var selectorParts []string
 	for i, proc := range m.pm.Processes {
 		color := labelColors[i%len(labelColors)]
 		label := proc.Entry.Label
 
-		style := lipgloss.NewStyle().Padding(0, 1)
-
 		if proc.State == StateExited && proc.ExitCode != 0 {
 			color = exitedColor
 		}
+
+		style := lipgloss.NewStyle().Padding(0, 1).Bold(true)
 
 		if !m.visible[i] {
 			style = style.
 				Background(lipgloss.Color("#444444")).
 				Foreground(lipgloss.Color("#888888")).
 				Strikethrough(true)
-		} else if i == m.cursor {
-			style = style.
-				Background(color).
-				Foreground(lipgloss.Color("#ffffff")).
-				Bold(true)
 		} else {
 			style = style.
 				Background(color).
 				Foreground(lipgloss.Color("#ffffff"))
 		}
 
-		items = append(items, style.Render(label))
+		rendered := style.Render(label)
+		items = append(items, rendered)
+
+		// Build selector line: ▔▔▔ under selected tab, spaces under others
+		tabWidth := lipgloss.Width(rendered)
+		if i == m.cursor {
+			selectorParts = append(selectorParts, lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Render(strings.Repeat("▔", tabWidth)))
+		} else {
+			selectorParts = append(selectorParts, strings.Repeat(" ", tabWidth))
+		}
 	}
 
-	labels := strings.Join(items, " ")
+	tabs := strings.Join(items, " ")
+	// Add single-space gaps to selector to match tab spacing
+	selector := strings.Join(selectorParts, " ")
 
-	scrollHint := ""
-	if m.scrollOffset > 0 {
-		scrollHint = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Render(fmt.Sprintf(" (scrolled +%d)", m.scrollOffset))
-	}
-
-	hints := lipgloss.NewStyle().Foreground(mutedColor).Render("←→ select · space toggle · r restart · ctrl+c quit")
-
-	labelsWidth := lipgloss.Width(labels) + lipgloss.Width(scrollHint)
-	hintsWidth := lipgloss.Width(hints)
-	gap := m.width - labelsWidth - hintsWidth - 4
-	if gap < 1 {
-		gap = 1
-	}
-
-	row1 := lipgloss.NewStyle().
+	tabRow := lipgloss.NewStyle().
 		Width(m.width).
 		Padding(0, 1).
-		Background(headerBg).
-		Render(labels + scrollHint + strings.Repeat(" ", gap) + hints)
+		Render(tabs)
 
-	separator := lipgloss.NewStyle().
+	selectorRow := lipgloss.NewStyle().
 		Width(m.width).
-		Foreground(mutedColor).
-		Background(headerBg).
-		Render(strings.Repeat("─", m.width))
+		Padding(0, 1).
+		Render(selector)
 
-	return row1 + "\n" + separator
+	return header + "\n" + tabRow + "\n" + selectorRow
 }
 
 func (m MergedModel) colorForLabel(label string) lipgloss.Color {

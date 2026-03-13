@@ -91,6 +91,13 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	_, err = p.Run()
 	// Always clean up child processes when the TUI exits, regardless of how.
 	pm.StopAll()
+
+	// Print failure summary if any processes exited non-zero.
+	failed := pm.FailedCount()
+	if failed > 0 {
+		fmt.Fprintf(os.Stderr, "miso: %d of %d tasks failed\n", failed, len(pm.Processes))
+	}
+
 	return true, err
 }
 
