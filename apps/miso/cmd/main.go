@@ -19,6 +19,7 @@ import (
 	"github.com/ekkolyth/miso/internal/manager/npm"
 	"github.com/ekkolyth/miso/internal/manager/pnpm"
 	"github.com/ekkolyth/miso/internal/manager/yarn"
+	"github.com/ekkolyth/miso/internal/tui"
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
@@ -160,6 +161,42 @@ func main() {
 
 	// --env flag: run env validation first, then strip from args before passing to command
 	cfg, parsed = runEnvIfRequested(projectRoot, cfg, parsed, logger)
+
+	// TUI interception — check if we should launch the TUI instead of normal execution
+	if cfg.TuiEnabled() {
+		// Only intercept when running from project root (not workspace subdirectory)
+		isRoot := true
+		if cfg.IsMono() {
+			workspaces, wsErr := config.LoadWorkspaces(projectRoot)
+			if wsErr == nil && len(workspaces) > 0 {
+				if _, inWs := scripting.WorkspaceFromCWD(originalWorkDir, workspaces); inWs {
+					isRoot = false
+				}
+			}
+		}
+
+		if isRoot {
+			switch parsed.Action {
+			case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionScriptFolder:
+				scriptName := parsed.ScriptName
+				if parsed.Action == cli.ActionDev {
+					scriptName = "dev"
+				}
+				mgr, ok := manager.GetManager(managerName)
+				if !ok {
+					cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+				}
+				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr)
+				if err != nil {
+					cli.Fail(logger, err, false)
+				}
+				if ran {
+					return // TUI ran and exited
+				}
+				// TUI was not applicable — fall through to normal execution
+			}
+		}
+	}
 
 	// Route to command handlers
 	switch parsed.Action {
