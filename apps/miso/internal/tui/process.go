@@ -97,6 +97,8 @@ func (pm *ProcessManager) Start(p *Process) error {
 	if p.Dir != "" {
 		p.cmd.Dir = p.Dir
 	}
+	// Create a new process group so we can kill the entire tree on stop.
+	p.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	p.mu.Unlock()
 
 	cmd := p.cmd
@@ -184,14 +186,15 @@ func (pm *ProcessManager) Stop(p *Process) {
 		return
 	}
 
-	// Send SIGTERM and wait with a 5s timeout, then SIGKILL.
-	_ = cmd.Process.Signal(syscall.SIGTERM)
+	// Kill the entire process group (negative PID) so child processes are cleaned up.
+	pgid := cmd.Process.Pid
+	_ = syscall.Kill(-pgid, syscall.SIGTERM)
 
 	select {
 	case <-done:
-		// Process exited cleanly after SIGTERM.
+		// Process group exited cleanly after SIGTERM.
 	case <-time.After(5 * time.Second):
-		_ = cmd.Process.Signal(syscall.SIGKILL)
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		// Wait for the done channel to be closed by the Start() goroutine.
 		<-done
 	}

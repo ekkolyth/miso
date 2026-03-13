@@ -3,7 +3,9 @@ package tui
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -63,6 +65,17 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 		return false, fmt.Errorf("unknown tui mode: %s", cfg.Tui)
 	}
 
+	// Catch OS signals to guarantee process cleanup even if bubbletea doesn't
+	// handle ctrl+c cleanly (e.g. during startup or if the event loop stalls).
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		pm.StopAll()
+		os.Exit(0)
+	}()
+	defer signal.Stop(sigCh)
+
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	pm.SetProgram(p)
 
@@ -77,6 +90,8 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	}()
 
 	_, err = p.Run()
+	// Always clean up child processes when the TUI exits, regardless of how.
+	pm.StopAll()
 	return true, err
 }
 

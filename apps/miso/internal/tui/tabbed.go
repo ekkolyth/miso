@@ -68,7 +68,6 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case ProcessOutputMsg, ProcessStateMsg:
-		// Trigger re-render
 		return m, nil
 	}
 
@@ -86,11 +85,14 @@ func (m TabbedModel) View() string {
 	sidebar := m.renderSidebar(sidebarWidth, m.height)
 	logs := m.renderLogPanel(logWidth, m.height)
 
+	// Single-character vertical border clamped to height
+	borderStr := strings.Repeat("│\n", m.height)
+	if len(borderStr) > 0 {
+		borderStr = borderStr[:len(borderStr)-1] // trim trailing newline
+	}
 	border := lipgloss.NewStyle().
-		Width(1).
-		Height(m.height).
-		Background(lipgloss.Color("#333333")).
-		Render(strings.Repeat(" ", m.height))
+		Foreground(lipgloss.Color("#333333")).
+		Render(borderStr)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, border, logs)
 }
@@ -107,19 +109,41 @@ func (m TabbedModel) sidebarWidth() int {
 }
 
 func (m TabbedModel) renderSidebar(width, height int) string {
-	headerStyle := lipgloss.NewStyle().
+	if height < 1 {
+		return ""
+	}
+
+	// Header takes 1 line
+	header := lipgloss.NewStyle().
 		Width(width).
 		Padding(0, 1).
-		Background(headerBg)
+		Background(headerBg).
+		Render(
+			lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("miso") +
+				" " +
+				lipgloss.NewStyle().Foreground(mutedColor).Render(m.script),
+		)
 
-	header := headerStyle.Render(
-		lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("miso") +
-			" " +
-			lipgloss.NewStyle().Foreground(mutedColor).Render(m.script),
-	)
+	// Available height for the workspace list (below header)
+	listHeight := height - 1
+	if listHeight < 0 {
+		listHeight = 0
+	}
 
-	var items []string
-	for i, proc := range m.pm.Processes {
+	// Build visible items — clamp to listHeight and scroll to keep selected visible
+	procs := m.pm.Processes
+	startIdx := 0
+	if m.selected >= listHeight {
+		startIdx = m.selected - listHeight + 1
+	}
+	endIdx := startIdx + listHeight
+	if endIdx > len(procs) {
+		endIdx = len(procs)
+	}
+
+	var rows []string
+	for i := startIdx; i < endIdx; i++ {
+		proc := procs[i]
 		label := proc.Entry.Label
 		status := lipgloss.NewStyle().Foreground(runningColor).Render("●")
 		labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#aaaaaa"))
@@ -133,55 +157,56 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 			}
 		}
 
+		padW := width - 8
+		if padW < 1 {
+			padW = 1
+		}
+
 		if i == m.selected {
-			item := lipgloss.NewStyle().
-				Width(width - 2).
+			row := lipgloss.NewStyle().
+				Width(width).
 				Padding(0, 1).
 				Background(accentColor).
 				Foreground(lipgloss.Color("#ffffff")).
-				Render(padRight(label, width-8) + status)
-			items = append(items, item)
+				Render(padRight(label, padW) + status)
+			rows = append(rows, row)
 		} else {
-			item := lipgloss.NewStyle().
-				Width(width - 2).
+			row := lipgloss.NewStyle().
+				Width(width).
 				Padding(0, 1).
-				Render(labelStyle.Render(padRight(label, width-8)) + status)
-			items = append(items, item)
+				Render(labelStyle.Render(padRight(label, padW)) + status)
+			rows = append(rows, row)
 		}
 	}
 
-	list := strings.Join(items, "\n")
-
-	// Fill remaining height
-	usedHeight := 1 + len(items) // header + items
-	remaining := height - usedHeight
-	if remaining < 0 {
-		remaining = 0
+	// Pad remaining lines so sidebar is always exactly `height` lines
+	for len(rows) < listHeight {
+		rows = append(rows, lipgloss.NewStyle().Width(width).Background(headerBg).Render(""))
 	}
-	padding := strings.Repeat("\n", remaining)
+
+	content := header + "\n" + strings.Join(rows, "\n")
 
 	return lipgloss.NewStyle().
 		Width(width).
-		Height(height).
+		MaxHeight(height).
 		Background(headerBg).
-		Render(header + "\n" + list + padding)
+		Render(content)
 }
 
 func (m TabbedModel) renderLogPanel(width, height int) string {
-	if len(m.pm.Processes) == 0 {
+	if height < 1 || len(m.pm.Processes) == 0 {
 		return ""
 	}
 
 	proc := m.pm.Processes[m.selected]
 
-	// Header
+	// Header (1 line)
 	name := lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render(proc.Entry.Label)
-	hints := lipgloss.NewStyle().Foreground(mutedColor).Render("↑↓ navigate · r restart · R restart all · q quit")
+	hints := lipgloss.NewStyle().Foreground(mutedColor).Render("↑↓ navigate · r restart · R restart all · ctrl+c quit")
 
-	headerWidth := width
 	nameLen := lipgloss.Width(name)
 	hintsLen := lipgloss.Width(hints)
-	gap := headerWidth - nameLen - hintsLen - 2
+	gap := width - nameLen - hintsLen - 2
 	if gap < 1 {
 		gap = 1
 	}
@@ -192,26 +217,38 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 		Background(headerBg).
 		Render(name + strings.Repeat(" ", gap) + hints)
 
-	// Log lines
-	logHeight := height - 1 // minus header
+	// Log lines — strictly clamped to available height
+	logHeight := height - 1
+	if logHeight < 0 {
+		logHeight = 0
+	}
+
 	lines := proc.Buffer.Lines()
 
-	// Show last N lines that fit
+	// Show only the last logHeight lines (auto-scroll)
 	if len(lines) > logHeight {
 		lines = lines[len(lines)-logHeight:]
 	}
 
-	logContent := strings.Join(lines, "\n")
-
-	// Fill remaining height
-	lineCount := len(lines)
-	if lineCount < logHeight {
-		logContent += strings.Repeat("\n", logHeight-lineCount)
+	// Build exactly logHeight rows
+	var logRows []string
+	for _, line := range lines {
+		// Truncate long lines to prevent wrapping
+		if lipgloss.Width(line) > width-2 {
+			line = line[:width-2]
+		}
+		logRows = append(logRows, line)
 	}
+	// Pad with empty lines to fill the panel
+	for len(logRows) < logHeight {
+		logRows = append(logRows, "")
+	}
+
+	logContent := strings.Join(logRows, "\n")
 
 	logPanel := lipgloss.NewStyle().
 		Width(width).
-		Height(logHeight).
+		MaxHeight(logHeight).
 		Padding(0, 1).
 		Background(panelBg).
 		Foreground(lipgloss.Color("#cccccc")).

@@ -16,7 +16,7 @@ func DefaultTabbedKeyMap() TabbedKeyMap {
 		Down:       key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "down")),
 		Restart:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "restart")),
 		RestartAll: key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "restart all")),
-		Quit:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Quit:       key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 	}
 }
 
@@ -36,6 +36,6 @@ func DefaultMergedKeyMap() MergedKeyMap {
 		Toggle:     key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle")),
 		Restart:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "restart")),
 		RestartAll: key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "restart all")),
-		Quit:       key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Quit:       key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 	}
 }
