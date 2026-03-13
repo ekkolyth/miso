@@ -14,11 +14,14 @@ Tabbed mode shows a narrow sidebar on the left with your workspace/script list a
 | `↑` / `↓` | Navigate workspace list |
 | `r` | Restart selected workspace |
 | `R` | Restart all workspaces |
-| `q` / `Ctrl+C` | Quit (stops all processes) |
+| `Ctrl+C` | Quit (stops all processes) |
+
+In delegated mode (Turbo/Nx), `r` is disabled — only `R` (restart all) is available.
 
 ## Status Indicators
 
 - Green `●` — process is running
+- Green `✓` — process completed successfully (exit 0)
 - Red `✕` with exit code — process crashed
 
 ## Restarting
@@ -26,3 +29,7 @@ Tabbed mode shows a narrow sidebar on the left with your workspace/script list a
 Press `r` to restart only the selected workspace. The log buffer is cleared and the process re-launches. This is a key advantage over Turborepo, where one crash kills everything.
 
 Press `R` to restart all processes.
+
+## Auto-Exit
+
+When all processes exit, the TUI waits 2 seconds then quits automatically. If any process had a non-zero exit code, a summary is printed to stderr after exit.
