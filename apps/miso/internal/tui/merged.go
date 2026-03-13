@@ -154,7 +154,7 @@ func (m MergedModel) View() string {
 
 	logPanel := lipgloss.NewStyle().
 		Width(m.width).
-		Height(logHeight).
+		MaxHeight(logHeight).
 		Padding(0, 1).
 		Background(panelBg).
 		Foreground(lipgloss.Color("#cccccc")).
@@ -196,7 +196,7 @@ func (m MergedModel) renderFilterBar() string {
 	}
 
 	labels := strings.Join(items, " ")
-	hints := lipgloss.NewStyle().Foreground(mutedColor).Render("←→ select · space toggle · r restart · R restart all · q quit")
+	hints := lipgloss.NewStyle().Foreground(mutedColor).Render("←→ select · space toggle · r restart · R restart all · ctrl+c quit")
 
 	gap := m.width - lipgloss.Width(labels) - lipgloss.Width(hints) - 4
 	if gap < 1 {
