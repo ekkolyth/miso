@@ -30,14 +30,16 @@ type TabbedModel struct {
 	width           int
 	height          int
 	script          string
+	delegated       bool
 	allExitedPending bool
 }
 
-func NewTabbedModel(pm *ProcessManager, script string) TabbedModel {
+func NewTabbedModel(pm *ProcessManager, script string, delegated bool) TabbedModel {
 	return TabbedModel{
-		pm:     pm,
-		keys:   DefaultTabbedKeyMap(),
-		script: script,
+		pm:        pm,
+		keys:      DefaultTabbedKeyMap(),
+		script:    script,
+		delegated: delegated,
 	}
 }
 
@@ -67,7 +69,7 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.scrollOffset = 0
 			}
 		case key.Matches(msg, m.keys.Restart):
-			if m.selected < len(m.pm.Processes) {
+			if !m.delegated && m.selected < len(m.pm.Processes) {
 				m.allExitedPending = false
 				go m.pm.Restart(m.pm.Processes[m.selected])
 			}
@@ -277,7 +279,11 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 		scrollHint = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Render(fmt.Sprintf(" (scrolled +%d)", m.scrollOffset))
 	}
 
-	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("↑↓ navigate · r restart · R restart all · ctrl+c quit")
+	hintText := "↑↓ navigate · r restart · R restart all · ctrl+c quit"
+	if m.delegated {
+		hintText = "↑↓ navigate · R restart · ctrl+c quit"
+	}
+	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
 	nameLen := lipgloss.Width(name) + lipgloss.Width(scrollHint)
 	hintsLen := lipgloss.Width(hints)
