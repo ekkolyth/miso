@@ -22,14 +22,15 @@ var labelColors = []lipgloss.Color{
 }
 
 type MergedModel struct {
-	pm       *ProcessManager
-	keys     MergedKeyMap
-	cursor   int
-	visible  map[int]bool
-	logLines []mergedLine
-	width    int
-	height   int
-	script   string
+	pm           *ProcessManager
+	keys         MergedKeyMap
+	cursor       int
+	visible      map[int]bool
+	logLines     []mergedLine
+	scrollOffset int // 0 = pinned to bottom, >0 = scrolled up N lines
+	width        int
+	height       int
+	script       string
 }
 
 type mergedLine struct {
@@ -85,6 +86,26 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go m.pm.RestartAll()
 		}
 
+	case tea.MouseMsg:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			maxScroll := len(m.logLines) - m.logHeight()
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			m.scrollOffset += 3
+			if m.scrollOffset > maxScroll {
+				m.scrollOffset = maxScroll
+			}
+			return m, nil
+		case tea.MouseButtonWheelDown:
+			m.scrollOffset -= 3
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+			return m, nil
+		}
+
 	case ProcessOutputMsg:
 		color := m.colorForLabel(msg.Label)
 		m.logLines = append(m.logLines, mergedLine{
@@ -106,15 +127,24 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m MergedModel) logHeight() int {
+	// filter bar takes 2 lines (labels row + separator), rest is logs
+	h := m.height - 2
+	if h < 0 {
+		return 0
+	}
+	return h
+}
+
 func (m MergedModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Loading..."
 	}
 
 	filterBar := m.renderFilterBar()
-	logHeight := m.height - 1 // minus filter bar
+	logHeight := m.logHeight()
 
-	// Build visible log lines
+	// Build visible log lines (only from visible workspaces)
 	var visibleLines []mergedLine
 	visibleLabels := m.visibleLabels()
 	for _, line := range m.logLines {
@@ -123,10 +153,19 @@ func (m MergedModel) View() string {
 		}
 	}
 
-	// Show last N lines
-	if len(visibleLines) > logHeight {
-		visibleLines = visibleLines[len(visibleLines)-logHeight:]
+	totalVisible := len(visibleLines)
+
+	// Calculate visible window based on scroll offset
+	endIdx := totalVisible - m.scrollOffset
+	if endIdx < 0 {
+		endIdx = 0
 	}
+	startIdx := endIdx - logHeight
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	windowLines := visibleLines[startIdx:endIdx]
 
 	// Find max label width for padding
 	maxLabel := 0
@@ -137,7 +176,7 @@ func (m MergedModel) View() string {
 	}
 
 	var logOutput []string
-	for _, line := range visibleLines {
+	for _, line := range windowLines {
 		label := lipgloss.NewStyle().
 			Foreground(line.color).
 			Bold(true).
@@ -145,11 +184,12 @@ func (m MergedModel) View() string {
 		logOutput = append(logOutput, label+" "+line.text)
 	}
 
-	logContent := strings.Join(logOutput, "\n")
-	lineCount := len(logOutput)
-	if lineCount < logHeight {
-		logContent += strings.Repeat("\n", logHeight-lineCount)
+	// Pad to fill available height
+	for len(logOutput) < logHeight {
+		logOutput = append(logOutput, "")
 	}
+
+	logContent := strings.Join(logOutput, "\n")
 
 	logPanel := lipgloss.NewStyle().
 		Width(m.width).
@@ -195,18 +235,34 @@ func (m MergedModel) renderFilterBar() string {
 	}
 
 	labels := strings.Join(items, " ")
-	hints := lipgloss.NewStyle().Foreground(mutedColor).Render("←→ select · space toggle · r restart · R restart all · ctrl+c quit")
 
-	gap := m.width - lipgloss.Width(labels) - lipgloss.Width(hints) - 4
+	scrollHint := ""
+	if m.scrollOffset > 0 {
+		scrollHint = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Render(fmt.Sprintf(" (scrolled +%d)", m.scrollOffset))
+	}
+
+	hints := lipgloss.NewStyle().Foreground(mutedColor).Render("←→ select · space toggle · r restart · ctrl+c quit")
+
+	labelsWidth := lipgloss.Width(labels) + lipgloss.Width(scrollHint)
+	hintsWidth := lipgloss.Width(hints)
+	gap := m.width - labelsWidth - hintsWidth - 4
 	if gap < 1 {
 		gap = 1
 	}
 
-	return lipgloss.NewStyle().
+	row1 := lipgloss.NewStyle().
 		Width(m.width).
 		Padding(0, 1).
 		Background(headerBg).
-		Render(fmt.Sprintf("%s%s%s", labels, strings.Repeat(" ", gap), hints))
+		Render(labels + scrollHint + strings.Repeat(" ", gap) + hints)
+
+	separator := lipgloss.NewStyle().
+		Width(m.width).
+		Foreground(mutedColor).
+		Background(headerBg).
+		Render(strings.Repeat("─", m.width))
+
+	return row1 + "\n" + separator
 }
 
 func (m MergedModel) colorForLabel(label string) lipgloss.Color {

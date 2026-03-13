@@ -19,12 +19,13 @@ var (
 )
 
 type TabbedModel struct {
-	pm       *ProcessManager
-	keys     TabbedKeyMap
-	selected int
-	width    int
-	height   int
-	script   string
+	pm           *ProcessManager
+	keys         TabbedKeyMap
+	selected     int
+	scrollOffset int // 0 = pinned to bottom (auto-scroll), >0 = scrolled up N lines
+	width        int
+	height       int
+	script       string
 }
 
 func NewTabbedModel(pm *ProcessManager, script string) TabbedModel {
@@ -49,15 +50,16 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
-			// Don't block here — StopAll runs after p.Run() returns in launch.go
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Up):
 			if m.selected > 0 {
 				m.selected--
+				m.scrollOffset = 0 // reset scroll when switching tabs
 			}
 		case key.Matches(msg, m.keys.Down):
 			if m.selected < len(m.pm.Processes)-1 {
 				m.selected++
+				m.scrollOffset = 0
 			}
 		case key.Matches(msg, m.keys.Restart):
 			if m.selected < len(m.pm.Processes) {
@@ -67,11 +69,47 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go m.pm.RestartAll()
 		}
 
-	case ProcessOutputMsg, ProcessStateMsg:
+	case tea.MouseMsg:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			// Scroll log up (increase offset)
+			if m.selected < len(m.pm.Processes) {
+				maxScroll := m.pm.Processes[m.selected].Buffer.Len() - m.logHeight()
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				m.scrollOffset += 3
+				if m.scrollOffset > maxScroll {
+					m.scrollOffset = maxScroll
+				}
+			}
+			return m, nil
+		case tea.MouseButtonWheelDown:
+			// Scroll log down (decrease offset, 0 = bottom)
+			m.scrollOffset -= 3
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+			return m, nil
+		}
+
+	case ProcessOutputMsg:
+		// If pinned to bottom (offset 0), stay there. Otherwise hold position.
+		return m, nil
+
+	case ProcessStateMsg:
 		return m, nil
 	}
 
 	return m, nil
+}
+
+func (m TabbedModel) logHeight() int {
+	h := m.height - 1 // minus log header
+	if h < 0 {
+		return 0
+	}
+	return h
 }
 
 func (m TabbedModel) View() string {
@@ -80,15 +118,14 @@ func (m TabbedModel) View() string {
 	}
 
 	sidebarWidth := m.sidebarWidth()
-	logWidth := m.width - sidebarWidth - 1 // -1 for border
+	logWidth := m.width - sidebarWidth - 1
 
 	sidebar := m.renderSidebar(sidebarWidth, m.height)
 	logs := m.renderLogPanel(logWidth, m.height)
 
-	// Single-character vertical border clamped to height
 	borderStr := strings.Repeat("│\n", m.height)
 	if len(borderStr) > 0 {
-		borderStr = borderStr[:len(borderStr)-1] // trim trailing newline
+		borderStr = borderStr[:len(borderStr)-1]
 	}
 	border := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#333333")).
@@ -113,24 +150,29 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 		return ""
 	}
 
-	// Header takes 1 line
 	header := lipgloss.NewStyle().
 		Width(width).
 		Padding(0, 1).
 		Background(headerBg).
 		Render(
 			lipgloss.NewStyle().Foreground(accentColor).Background(headerBg).Bold(true).Render("miso") +
-				" " +
+				lipgloss.NewStyle().Background(headerBg).Render(" ") +
 				lipgloss.NewStyle().Foreground(mutedColor).Background(headerBg).Render(m.script),
 		)
 
-	// Available height for the workspace list (below header)
-	listHeight := height - 1
+	divider := lipgloss.NewStyle().
+		Width(width).
+		Foreground(mutedColor).
+		Background(headerBg).
+		Render(strings.Repeat("─", width))
+
+	// Available height for the workspace list (below header + divider)
+	listHeight := height - 2
 	if listHeight < 0 {
 		listHeight = 0
 	}
 
-	// Build visible items — clamp to listHeight and scroll to keep selected visible
+	// Scroll the tab list to keep selected visible
 	procs := m.pm.Processes
 	startIdx := 0
 	if m.selected >= listHeight {
@@ -191,16 +233,16 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 		}
 	}
 
-	// Pad remaining lines so sidebar is always exactly `height` lines
 	for len(rows) < listHeight {
 		rows = append(rows, lipgloss.NewStyle().Width(width).Background(headerBg).Render(""))
 	}
 
-	content := header + "\n" + strings.Join(rows, "\n")
+	content := header + "\n" + divider + "\n" + strings.Join(rows, "\n")
 
 	return lipgloss.NewStyle().
 		Width(width).
 		MaxHeight(height).
+		Background(headerBg).
 		Render(content)
 }
 
@@ -213,9 +255,15 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 
 	// Header (1 line)
 	name := lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render(proc.Entry.Label)
-	hints := lipgloss.NewStyle().Foreground(mutedColor).Render("↑↓ navigate · r restart · R restart all · ctrl+c quit")
 
-	nameLen := lipgloss.Width(name)
+	scrollHint := ""
+	if m.scrollOffset > 0 {
+		scrollHint = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Render(fmt.Sprintf(" (scrolled +%d)", m.scrollOffset))
+	}
+
+	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("↑↓ navigate · r restart · R restart all · ctrl+c quit")
+
+	nameLen := lipgloss.Width(name) + lipgloss.Width(scrollHint)
 	hintsLen := lipgloss.Width(hints)
 	gap := width - nameLen - hintsLen - 2
 	if gap < 1 {
@@ -225,31 +273,37 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	header := lipgloss.NewStyle().
 		Width(width).
 		Padding(0, 1).
-		Render(name + strings.Repeat(" ", gap) + hints)
+		Render(name + scrollHint + strings.Repeat(" ", gap) + hints)
 
-	// Log lines — strictly clamped to available height
+	// Log lines with scroll support
 	logHeight := height - 1
 	if logHeight < 0 {
 		logHeight = 0
 	}
 
 	lines := proc.Buffer.Lines()
+	totalLines := len(lines)
 
-	// Show only the last logHeight lines (auto-scroll)
-	if len(lines) > logHeight {
-		lines = lines[len(lines)-logHeight:]
+	// Calculate visible window based on scroll offset
+	endIdx := totalLines - m.scrollOffset
+	if endIdx < 0 {
+		endIdx = 0
 	}
+	startIdx := endIdx - logHeight
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	visible := lines[startIdx:endIdx]
 
 	// Build exactly logHeight rows
 	var logRows []string
-	for _, line := range lines {
-		// Truncate long lines to prevent wrapping
+	for _, line := range visible {
 		if lipgloss.Width(line) > width-2 {
 			line = line[:width-2]
 		}
 		logRows = append(logRows, line)
 	}
-	// Pad with empty lines to fill the panel
 	for len(logRows) < logHeight {
 		logRows = append(logRows, "")
 	}

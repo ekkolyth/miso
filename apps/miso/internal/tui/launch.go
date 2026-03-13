@@ -65,7 +65,7 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 		return false, fmt.Errorf("unknown tui mode: %s", cfg.Tui)
 	}
 
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	pm.SetProgram(p)
 
 	// Catch OS signals — tell bubbletea to quit cleanly so it restores
