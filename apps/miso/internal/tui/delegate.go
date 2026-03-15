@@ -15,7 +15,9 @@ import (
 )
 
 // turboLineRe matches "workspace:task: output text"
-var turboLineRe = regexp.MustCompile(`^([a-zA-Z0-9@/_.-]+:[a-zA-Z0-9_.-]+): (.*)$`)
+// turboLineRe matches "workspace:task: output text" where task may contain
+// colons (e.g. "db:studio"), so the label is everything up to the last ": ".
+var turboLineRe = regexp.MustCompile(`^([a-zA-Z0-9@/_.-]+:[a-zA-Z0-9:_.-]+): (.*)$`)
 
 // nxHeaderRe matches "> nx run workspace:task"
 var nxHeaderRe = regexp.MustCompile(`^> nx run ([a-zA-Z0-9@/_.-]+:[a-zA-Z0-9_.-]+)$`)
@@ -76,10 +78,9 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 		return false, fmt.Errorf("pipe stderr: %w", err)
 	}
 
-	// Create process manager with a meta-entry for unmatched output
+	// Create process manager — no pre-created meta-tab; tabs are discovered
+	// dynamically as workspace-prefixed output arrives from turbo/nx.
 	pm := NewProcessManager()
-	metaEntry := TuiScriptEntry{Label: mode, ScriptName: scriptName, WorkspaceDir: root}
-	metaProc := pm.Add(metaEntry, binary, delegateArgs, root)
 
 	var model tea.Model
 	switch cfg.Tui {
@@ -102,6 +103,49 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 	}()
 	defer signal.Stop(sigCh)
 
+	// parseDelegatedLine extracts a workspace label and text from a line of
+	// turbo/nx output. Returns the label and text if matched, or empty label
+	// if the line is unmatched boilerplate (which should be discarded).
+	parseLine := func(line string, currentNxLabel *string) (label, text string, skip bool) {
+		switch mode {
+		case "turbo":
+			// Try to parse as a workspace-prefixed line first
+			label, text = parseTurboLine(line)
+			if label != "" {
+				return label, text, false
+			}
+			// Unmatched line — skip turbo's own boilerplate (• prefix lines)
+			return "", "", true
+		case "nx":
+			if hdrLabel, isHdr := parseNxHeader(line); isHdr {
+				*currentNxLabel = hdrLabel
+				return "", "", true
+			}
+			if *currentNxLabel != "" {
+				label = *currentNxLabel
+				text = line
+			}
+		}
+		return label, text, false
+	}
+
+	// routeLine sends a parsed line to the correct process tab, creating it on
+	// the fly if this is a new workspace label.
+	routeLine := func(label, text string) {
+		if label == "" {
+			return // discard unmatched lines (turbo/nx boilerplate)
+		}
+		proc := pm.findProc(label)
+		if proc == nil {
+			entry := TuiScriptEntry{Label: label, ScriptName: scriptName, WorkspaceDir: root}
+			proc = pm.Add(entry, "", nil, root)
+			proc.State = StateRunning
+			pm.sendState(proc, StateRunning, 0)
+		}
+		proc.Buffer.Write(text)
+		pm.sendOutput(proc, text)
+	}
+
 	// Start the delegated process and output parsing in a goroutine.
 	// prog.Send() blocks until bubbletea's event loop is running, so all
 	// sends must happen after p.Run() begins — otherwise we deadlock.
@@ -112,57 +156,31 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 			return
 		}
 
-		metaProc.State = StateRunning
-		pm.sendState(metaProc, StateRunning, 0)
-
-		// Parse stdout
+		// Parse stdout — workspace-prefixed lines become tabs
 		go func() {
 			scanner := bufio.NewScanner(stdout)
 			currentNxLabel := ""
-
 			for scanner.Scan() {
 				line := stripNonColorANSI(scanner.Text())
-				var label, text string
-
-				switch mode {
-				case "turbo":
-					label, text = parseTurboLine(line)
-				case "nx":
-					if hdrLabel, isHdr := parseNxHeader(line); isHdr {
-						currentNxLabel = hdrLabel
-						continue
-					}
-					if currentNxLabel != "" {
-						label = currentNxLabel
-						text = line
-					}
+				label, text, skip := parseLine(line, &currentNxLabel)
+				if skip {
+					continue
 				}
-
-				if label == "" {
-					label = mode
-					text = line
-				}
-
-				// Find or create process for this label
-				proc := pm.findProc(label)
-				if proc == nil {
-					entry := TuiScriptEntry{Label: label, ScriptName: scriptName, WorkspaceDir: root}
-					proc = pm.Add(entry, "", nil, root)
-					proc.State = StateRunning
-					pm.sendState(proc, StateRunning, 0)
-				}
-				proc.Buffer.Write(text)
-				pm.sendOutput(proc, text)
+				routeLine(label, text)
 			}
 		}()
 
-		// Parse stderr
+		// Parse stderr — same logic so workspace errors go to the right tab
 		go func() {
 			scanner := bufio.NewScanner(stderr)
+			currentNxLabel := ""
 			for scanner.Scan() {
 				line := stripNonColorANSI(scanner.Text())
-				metaProc.Buffer.Write(line)
-				pm.sendOutput(metaProc, line)
+				label, text, skip := parseLine(line, &currentNxLabel)
+				if skip {
+					continue
+				}
+				routeLine(label, text)
 			}
 		}()
 

@@ -68,15 +68,9 @@ func RunVersion(root string, cfg config.Config) error {
 	fmt.Fprintf(os.Stdout, "miso %s\n", misoVersion)
 
 	// get manager version if available
-	var managerName string
-	if cfg.PackageManager != "" {
-		managerName = cfg.PackageManager
-	} else {
-		// detect manager from lockfile
-		detected, err := manager.DetectManager(root)
-		if err == nil {
-			managerName = detected
-		}
+	managerName, err := manager.DetectManager(root)
+	if err != nil {
+		managerName = ""
 	}
 
 	// run manager version if available

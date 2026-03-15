@@ -1,7 +1,5 @@
 {
 	"$schema": "../../apps/miso/miso.schema.json",
-	"package-manager": "bun",
-	"name": "env-test",
 	"scripts": "./scripts",
 	"env": [
 		{

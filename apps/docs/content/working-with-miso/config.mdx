@@ -1,6 +1,6 @@
 # Configuring Miso
 
-You can edit `miso.json` directly to change it's settings:
+You can edit `miso.json` directly to change its settings:
 
 ### JSON Schema (IDE Support)
 
@@ -9,82 +9,11 @@ Add a `$schema` property to get autocomplete and validation in VS Code, Cursor, 
 ```json
 {
   "$schema": "https://misojs.dev/miso.schema.json",
-  "package-manager": "bun",
-  "name": "my-project",
   "scripts": "./scripts"
 }
 ```
 
 The schema is available at [https://misojs.dev/miso.schema.json](https://misojs.dev/miso.schema.json) — use this URL in your `miso.json` for type-safe editing.
-
-### Package Manager
-
-Set or update your project's package manager:
-
-<Terminal
-    copy={false}
-    className="mt-4 border border-neutral-700 rounded-sm"
-    title="miso.json"
-    command='packageManager: "bun"'
-/>
-
-<DocProp prop="bun" />
-
-Sets "package manager" to "bun"
-
-<DocProp prop="pnpm" />
-
-Sets "package manager" to "pnpm"
-
-<DocProp prop="yarn" />
-
-Sets "package manager" to "yarn"
-
-<DocProp prop="npm" />
-
-Sets "package manager" to "npm"
-
-### Package Manager
-
-Set or update your project's package manager:
-
-<Terminal
-    copy={false}
-    className="mt-4 border border-neutral-700 rounded-sm"
-    title="miso.json"
-    command='name: "my-cool-react-app"'
-/>
-
-<DocProp prop="string" />
-
-Set's the name of your project. To be honest, I don't know why. I think I had a reason at first, but it's already in `package.json` so this will probably be deprecated at some point.
-
-### Package Manager
-
-Set or update your project's package manager:
-
-<Terminal
-    copy={false}
-    className="mt-4 border border-neutral-700 rounded-sm"
-    title="miso.json"
-    command='packageManager: "bun"'
-/>
-
-<DocProp prop="bun" />
-
-Sets "package manager" to "bun"
-
-<DocProp prop="pnpm" />
-
-Sets "package manager" to "pnpm"
-
-<DocProp prop="yarn" />
-
-Sets "package manager" to "yarn"
-
-<DocProp prop="npm" />
-
-Sets "package manager" to "npm"
 
 ### Scripts
 
@@ -135,6 +64,30 @@ Default. Treats the project as a single repository. All scripts resolve from the
 
 Enables monorepo mode. Unlocks workspace-scoped script execution using the `workspace:script` syntax and automatic CWD-based scoping. Requires a `workspaces` field in your root `package.json`.
 
+<DocProp prop='"turbo"' />
+
+Delegates orchestration to [Turborepo](https://turbo.build). Miso spawns `turbo run <script>` as a single process and parses its workspace-prefixed output into TUI tabs. Turbo must be installed and available in your PATH.
+
+<DocProp prop='"nx"' />
+
+Delegates orchestration to [Nx](https://nx.dev). Miso spawns `nx run-many --target=<script>` and parses its output into TUI tabs. Nx must be installed and available in your PATH.
+
+You can also use the object form for dependency ordering in `"mono"` mode:
+
+```json
+{
+  "repo": {
+    "mode": "mono",
+    "tasks": {
+      "build": { "dependsOn": ["^build"] },
+      "dev": {}
+    }
+  }
+}
+```
+
+The `^` prefix in `dependsOn` means "run this task in upstream dependencies first." See [TUI Configuration](/tui/configuration) for details.
+
 When set to `"mono"`, miso reads workspace paths from your root `package.json`:
 
 ```json
@@ -145,28 +98,84 @@ When set to `"mono"`, miso reads workspace paths from your root `package.json`:
 
 See [Monorepo Scripts](/scripting/scripts-folder#monorepo) for full details on workspace script execution.
 
+### TUI
+
+Configure the multi-terminal UI mode for running scripts across workspaces:
+
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    command='tui: "tabbed"'
+/>
+
+<DocProp prop='"off"' />
+
+Default. TUI is disabled — output goes to the terminal as normal.
+
+<DocProp prop='"tabbed"' />
+
+Shows a sidebar with your workspace list and a log panel for the selected workspace. See [Tabbed Mode](/tui/tabbed-mode).
+
+<DocProp prop='"merged"' />
+
+Interleaves all workspace output in a single stream with color-coded labels. See [Merged Mode](/tui/merged-mode).
+
+### Flags
+
+Add default flags to package manager commands:
+
+```json
+{
+  "flags": {
+    "install": ["--frozen-lockfile"],
+    "add": ["--dev"],
+    "dev": ["--env"]
+  }
+}
+```
+
+See [Flags](/working-with-miso/flags) for the full reference.
+
+### Multi
+
+Named groups of scripts to run together in the TUI:
+
+```json
+{
+  "multi": {
+    "web": ["dev", "test"],
+    "api": ["start"]
+  }
+}
+```
+
 ### Env
 
 Configure environment variable validation for `miso env`:
 
 ```json
 {
-  "env": {
-    "path": [".env.local", ".env"],
-    "required": "all",
-    "variables": {
-      "PORT": "port",
-      "DATABASE_URL": "url",
-      "NODE_ENV": {
-        "type": "enum",
-        "values": ["development", "production", "test"],
-        "optional": true
+  "env": [
+    {
+      "label": "web",
+      "path": ".env.local",
+      "required": "all",
+      "variables": {
+        "PORT": "port",
+        "DATABASE_URL": "url",
+        "NODE_ENV": {
+          "type": "enum",
+          "values": ["development", "production", "test"],
+          "optional": true
+        }
       }
     }
-  }
+  ]
 }
 ```
 
-- **path**: Array of .env file paths (relative to project root). Loaded in order; later files override earlier. If omitted, miso discovers `.env.local`, `.env.production`, `.env.development`, or `.env`.
+- **label**: Human-readable name for this env entry (used in log output).
+- **path**: Path to the `.env` file, relative to project root.
 - **required**: `"all"` (every variable unless optional), `"none"`, or an array of specific keys.
 - **variables**: Either an object (type validation) or array (presence only). See [Env validation](/env-validation) for the full spec.

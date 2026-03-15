@@ -84,24 +84,15 @@ func LoadConfig(projectRoot string) (config.Config, error) {
 		return config.Config{}, err
 	}
 	cfg.EnsureDefaults()
-	if cfg.ProjectName == "" {
-		cfg.ProjectName = filepath.Base(projectRoot)
-	}
 	return cfg, nil
 }
 
 // ensure package manager is configured, return manager name and config.
 // Resolution order:
-//  1. miso.json package-manager field (legacy / explicit override)
-//  2. package.json packageManager field
-//  3. lockfile detection
+//  1. package.json packageManager field
+//  2. lockfile detection
 func EnsureManager(root string, cfg config.Config) (string, config.Config, error) {
-	// 1. explicit value in miso.json
-	if cfg.PackageManager != "" {
-		return cfg.PackageManager, cfg, nil
-	}
-
-	// 2. package.json packageManager field
+	// 1. package.json packageManager field
 	pkgJSONPath := filepath.Join(root, "package.json")
 	data, readErr := os.ReadFile(pkgJSONPath)
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
@@ -124,15 +115,13 @@ func EnsureManager(root string, cfg config.Config) (string, config.Config, error
 						strings.Join(manager.GetRegisteredManagers(), ", "),
 					)
 				}
-				cfg.PackageManager = name
 				return name, cfg, nil
 			}
 		}
 	}
 
-	// 3. lockfile detection
+	// 2. lockfile detection
 	if detected, err := manager.DetectManager(root); err == nil {
-		cfg.PackageManager = detected
 		return detected, cfg, nil
 	}
 

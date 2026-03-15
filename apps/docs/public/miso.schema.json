@@ -9,15 +9,6 @@
 			"type": "string",
 			"description": "Path or URL to this JSON schema for IDE support"
 		},
-		"package-manager": {
-			"type": "string",
-			"enum": ["bun", "npm", "pnpm", "yarn"],
-			"description": "The package manager to use"
-		},
-		"name": {
-			"type": "string",
-			"description": "Project name"
-		},
 		"scripts": {
 			"type": "string",
 			"default": "./scripts",
@@ -37,10 +28,42 @@
 			"description": "Default flags for package manager commands (add, remove, install, dev)"
 		},
 		"repo": {
-			"type": "string",
-			"enum": ["single", "mono"],
+			"oneOf": [
+				{
+					"type": "string",
+					"enum": ["single", "mono", "turbo", "nx"],
+					"description": "Repository type. 'single' for standard projects, 'mono' for miso-orchestrated monorepo, 'turbo' to delegate to Turborepo, 'nx' to delegate to Nx."
+				},
+				{
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": ["single", "mono", "turbo", "nx"],
+							"description": "Repository mode"
+						},
+						"tasks": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "object",
+								"properties": {
+									"dependsOn": {
+										"type": "array",
+										"items": { "type": "string" },
+										"description": "Task dependencies. Use '^taskName' prefix to run upstream workspace dependencies first."
+									}
+								},
+								"additionalProperties": false
+							},
+							"description": "Per-task configuration for dependency ordering (only valid with mode 'mono')"
+						}
+					},
+					"required": ["mode"],
+					"additionalProperties": false
+				}
+			],
 			"default": "single",
-			"description": "Repository type. 'single' (default) for a standard project, 'mono' to enable monorepo workspace script execution. Requires a 'workspaces' field in your root package.json when set to 'mono'."
+			"description": "Repository type and optional task configuration. String shorthand or object with mode and tasks."
 		},
 		"tui": {
 			"type": "string",
@@ -75,7 +98,6 @@
 			"description": "Environment file path(s) and variable validation rules"
 		}
 	},
-	"required": ["package-manager"],
 	"additionalProperties": false,
 	"$defs": {
 		"envEntry": {
