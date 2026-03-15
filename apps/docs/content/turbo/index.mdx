@@ -1,0 +1,50 @@
+---
+title: Turborepo Integration
+description: Using miso with Turborepo for monorepo orchestration
+---
+
+# Turborepo Integration
+
+Miso integrates with Turborepo by delegating orchestration while providing an enhanced terminal UI.
+
+## Setup
+
+Set `repo` to `"turbo"` in your `miso.json`:
+
+```json
+{
+  "repo": "turbo",
+  "tui": "tabbed"
+}
+```
+
+**Requirements:** The `turbo` binary must be available in your PATH.
+
+## How It Works
+
+When you run `miso dev` or `miso build` with turbo mode:
+
+1. Miso spawns `turbo run <task>` as a single process
+2. Turbo handles dependency ordering, caching, and parallelism
+3. Miso parses the streamed output and displays it in the TUI with per-workspace tabs
+4. Each workspace gets its own tab with independent scroll, exit code, and cache status
+
+### With TUI enabled
+
+Miso wraps turbo's output in the tabbed or merged view. Workspaces are discovered dynamically as turbo's output arrives. Per-workspace exit codes are parsed from turbo's output — if workspace A succeeds and workspace B fails, each tab shows the correct status.
+
+### With TUI disabled
+
+Miso stays invisible. Your command falls through to the package manager, which runs the root `package.json` script (e.g., `"dev": "turbo dev"`). There is no difference from running without miso.
+
+## What Miso Delegates vs Handles
+
+| Concern | Owner |
+|---------|-------|
+| Task dependency ordering | Turbo |
+| Caching | Turbo |
+| Parallelism | Turbo |
+| Output display (TUI) | Miso |
+| Per-workspace exit codes | Miso (parsed from turbo output) |
+| Flag passthrough | Miso (transparent) |
+| Task discovery (`miso scripts`) | Miso (reads turbo.json) |
