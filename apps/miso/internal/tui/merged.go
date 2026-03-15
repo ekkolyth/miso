@@ -113,6 +113,8 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case ProcessOutputMsg:
+		// Default new dynamically-added processes to visible (turbo/nx mode).
+		m.ensureVisible()
 		color := m.colorForLabel(msg.Label)
 		m.logLines = append(m.logLines, mergedLine{
 			label: msg.Label,
@@ -127,6 +129,7 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ProcessStateMsg:
+		m.ensureVisible()
 		if !m.allExitedPending && m.pm.AllExited() {
 			m.allExitedPending = true
 			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
@@ -294,6 +297,16 @@ func (m MergedModel) renderFilterBar() string {
 		Render(selector)
 
 	return header + "\n" + tabRow + "\n" + selectorRow
+}
+
+// ensureVisible sets any newly-added processes (from delegated mode dynamic
+// discovery) to visible by default.
+func (m MergedModel) ensureVisible() {
+	for i := range m.pm.Processes {
+		if _, ok := m.visible[i]; !ok {
+			m.visible[i] = true
+		}
+	}
 }
 
 func (m MergedModel) colorForLabel(label string) lipgloss.Color {
