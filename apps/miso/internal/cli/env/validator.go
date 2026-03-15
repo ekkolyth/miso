@@ -248,14 +248,14 @@ func buildValidatorTag(cfg config.VarConfig) string {
 
 	switch cfg.Type {
 	case "string":
-		min, max := 1, 255
+		min := 1
 		if cfg.Min != nil {
 			min = int(*cfg.Min)
 		}
+		parts = append(parts, fmt.Sprintf("min=%d", min))
 		if cfg.Max != nil {
-			max = int(*cfg.Max)
+			parts = append(parts, fmt.Sprintf("max=%d", int(*cfg.Max)))
 		}
-		parts = append(parts, fmt.Sprintf("min=%d", min), fmt.Sprintf("max=%d", max))
 		// Pattern for string is validated directly in validateVar (avoids comma-in-pattern breakage)
 	case "email":
 		parts = append(parts, "email")
