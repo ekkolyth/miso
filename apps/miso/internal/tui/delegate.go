@@ -7,28 +7,17 @@ import (
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"sync"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/turbo"
 )
-
-// turboLineRe matches "workspace:task: output text"
-// turboLineRe matches "workspace:task: output text" where task may contain
-// colons (e.g. "db:studio"), so the label is everything up to the last ": ".
-var turboLineRe = regexp.MustCompile(`^([a-zA-Z0-9@/_.-]+:[a-zA-Z0-9:_.-]+): (.*)$`)
 
 // nxHeaderRe matches "> nx run workspace:task"
 var nxHeaderRe = regexp.MustCompile(`^> nx run ([a-zA-Z0-9@/_.-]+:[a-zA-Z0-9_.-]+)$`)
-
-func parseTurboLine(line string) (label, text string) {
-	m := turboLineRe.FindStringSubmatch(line)
-	if m == nil {
-		return "", line
-	}
-	return m[1], m[2]
-}
 
 func parseNxHeader(line string) (label string, isHeader bool) {
 	m := nxHeaderRe.FindStringSubmatch(line)
@@ -40,7 +29,7 @@ func parseNxHeader(line string) (label string, isHeader bool) {
 
 // DelegateLaunch spawns turbo or nx as a single process and renders its output
 // in the miso TUI. Returns (true, nil) if the TUI ran successfully.
-func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, error) {
+func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs []string) (bool, error) {
 	if !cfg.TuiEnabled() {
 		return false, nil
 	}
@@ -57,7 +46,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 	var delegateArgs []string
 	switch mode {
 	case "turbo":
-		delegateArgs = []string{"run", scriptName, "--log-order=stream"}
+		delegateArgs = append([]string{"run", scriptName, "--log-order=stream"}, extraArgs...)
 	case "nx":
 		delegateArgs = []string{"run-many", "--target=" + scriptName}
 	default:
@@ -83,13 +72,13 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 	pm := NewProcessManager()
 
 	var model tea.Model
-	switch cfg.Tui {
+	switch cfg.TuiMode {
 	case "tabbed":
 		model = NewTabbedModel(pm, scriptName, true)
 	case "merged":
 		model = NewMergedModel(pm, scriptName, true)
 	default:
-		return false, fmt.Errorf("unknown tui mode: %s", cfg.Tui)
+		return false, fmt.Errorf("unknown tui mode: %s", cfg.TuiMode)
 	}
 
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
@@ -103,37 +92,10 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 	}()
 	defer signal.Stop(sigCh)
 
-	// parseDelegatedLine extracts a workspace label and text from a line of
-	// turbo/nx output. Returns the label and text if matched, or empty label
-	// if the line is unmatched boilerplate (which should be discarded).
-	parseLine := func(line string, currentNxLabel *string) (label, text string, skip bool) {
-		switch mode {
-		case "turbo":
-			// Try to parse as a workspace-prefixed line first
-			label, text = parseTurboLine(line)
-			if label != "" {
-				return label, text, false
-			}
-			// Unmatched line — skip turbo's own boilerplate (• prefix lines)
-			return "", "", true
-		case "nx":
-			if hdrLabel, isHdr := parseNxHeader(line); isHdr {
-				*currentNxLabel = hdrLabel
-				return "", "", true
-			}
-			if *currentNxLabel != "" {
-				label = *currentNxLabel
-				text = line
-			}
-		}
-		return label, text, false
-	}
-
-	// routeLine sends a parsed line to the correct process tab, creating it on
-	// the fly if this is a new workspace label.
-	routeLine := func(label, text string) {
+	// routeBasic handles the simple (label, text) routing used by nx and as a fallback.
+	routeBasic := func(label, text string) {
 		if label == "" {
-			return // discard unmatched lines (turbo/nx boilerplate)
+			return
 		}
 		proc := pm.findProc(label)
 		if proc == nil {
@@ -146,6 +108,30 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 		pm.sendOutput(proc, text)
 	}
 
+	// routeTurbo handles turbo output with per-task exit codes and cache metadata.
+	routeTurbo := func(meta turbo.LineMeta) {
+		if meta.Skip || meta.Label == "" {
+			return
+		}
+		proc := pm.findProc(meta.Label)
+		if proc == nil {
+			entry := TuiScriptEntry{Label: meta.Label, ScriptName: scriptName, WorkspaceDir: root}
+			proc = pm.Add(entry, "", nil, root)
+			proc.State = StateRunning
+			pm.sendState(proc, StateRunning, 0)
+		}
+		if meta.IsExit {
+			proc.mu.Lock()
+			proc.State = StateExited
+			proc.ExitCode = meta.ExitCode
+			proc.mu.Unlock()
+			pm.sendState(proc, StateExited, meta.ExitCode)
+			return
+		}
+		proc.Buffer.Write(meta.Text)
+		pm.sendOutput(proc, meta.Text)
+	}
+
 	// Start the delegated process and output parsing in a goroutine.
 	// prog.Send() blocks until bubbletea's event loop is running, so all
 	// sends must happen after p.Run() begins — otherwise we deadlock.
@@ -156,35 +142,36 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 			return
 		}
 
-		// Parse stdout — workspace-prefixed lines become tabs
-		go func() {
-			scanner := bufio.NewScanner(stdout)
+		var scanWg sync.WaitGroup
+		scanWg.Add(2)
+
+		scanPipe := func(r interface{ Read([]byte) (int, error) }) {
+			defer scanWg.Done()
+			scanner := bufio.NewScanner(r)
 			currentNxLabel := ""
 			for scanner.Scan() {
 				line := stripNonColorANSI(scanner.Text())
-				label, text, skip := parseLine(line, &currentNxLabel)
-				if skip {
-					continue
+				switch mode {
+				case "turbo":
+					routeTurbo(turbo.ParseLine(line))
+				case "nx":
+					if hdrLabel, isHdr := parseNxHeader(line); isHdr {
+						currentNxLabel = hdrLabel
+						continue
+					}
+					if currentNxLabel != "" {
+						routeBasic(currentNxLabel, line)
+					}
 				}
-				routeLine(label, text)
 			}
-		}()
+		}
 
-		// Parse stderr — same logic so workspace errors go to the right tab
-		go func() {
-			scanner := bufio.NewScanner(stderr)
-			currentNxLabel := ""
-			for scanner.Scan() {
-				line := stripNonColorANSI(scanner.Text())
-				label, text, skip := parseLine(line, &currentNxLabel)
-				if skip {
-					continue
-				}
-				routeLine(label, text)
-			}
-		}()
+		go scanPipe(stdout)
+		go scanPipe(stderr)
 
-		// Wait for the delegated process to exit
+		// Drain scanners before waiting for process exit
+		scanWg.Wait()
+
 		exitErr := cmd.Wait()
 		code := 0
 		if exitErr != nil {
@@ -194,18 +181,28 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string) (bool, er
 				code = -1
 			}
 		}
+
+		// Fallback: assign exit code only to processes that didn't get individual codes
 		pm.mu.Lock()
 		for _, proc := range pm.Processes {
-			proc.State = StateExited
-			proc.ExitCode = code
+			if proc.State != StateExited {
+				proc.State = StateExited
+				proc.ExitCode = code
+			}
 		}
 		pm.mu.Unlock()
 		for _, proc := range pm.Processes {
-			pm.sendState(proc, StateExited, code)
+			pm.sendState(proc, StateExited, proc.ExitCode)
 		}
 	}()
 
 	_, err = p.Run()
+
+	// Dump buffered logs to stdout so they survive the alt-screen restore.
+	if !cfg.TuiCleanExit {
+		DumpLogs(pm)
+	}
+
 	// Kill the delegated process group
 	if cmd.Process != nil {
 		pgid := cmd.Process.Pid

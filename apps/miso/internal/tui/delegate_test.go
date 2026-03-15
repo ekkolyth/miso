@@ -2,30 +2,6 @@ package tui
 
 import "testing"
 
-func TestParseTurboLine(t *testing.T) {
-	tests := []struct {
-		line  string
-		label string
-		text  string
-	}{
-		{"web:build: compiling...", "web:build", "compiling..."},
-		{"shared:build: done in 1.2s", "shared:build", "done in 1.2s"},
-		{"no prefix here", "", "no prefix here"},
-		{" cache hit", "", " cache hit"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.line, func(t *testing.T) {
-			label, text := parseTurboLine(tt.line)
-			if label != tt.label {
-				t.Errorf("label = %q, want %q", label, tt.label)
-			}
-			if text != tt.text {
-				t.Errorf("text = %q, want %q", text, tt.text)
-			}
-		})
-	}
-}
-
 func TestParseNxHeader(t *testing.T) {
 	tests := []struct {
 		line  string
