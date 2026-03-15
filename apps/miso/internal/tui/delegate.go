@@ -184,6 +184,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 
 		// Fallback: assign exit code only to processes that didn't get individual codes
 		pm.mu.Lock()
+		nProcs := len(pm.Processes)
 		for _, proc := range pm.Processes {
 			if proc.State != StateExited {
 				proc.State = StateExited
@@ -193,6 +194,12 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		pm.mu.Unlock()
 		for _, proc := range pm.Processes {
 			pm.sendState(proc, StateExited, proc.ExitCode)
+		}
+
+		// If turbo exited before producing any workspace output (e.g. config error),
+		// no processes were created so the TUI will hang. Quit immediately.
+		if nProcs == 0 {
+			p.Quit()
 		}
 	}()
 
