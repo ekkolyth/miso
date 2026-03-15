@@ -65,7 +65,11 @@ func validateVariables(envMap map[string]string, vars map[string]config.VarConfi
 			}
 			continue
 		}
-		// Present: validate (empty string fails for port, etc.)
+
+		// Optional variables with empty values are allowed — skip validation.
+		if cfg.Optional && val == "" {
+			continue
+		}
 
 		// Validate type (fail fast)
 		if err := validateVar(validate, name, val, cfg); err != nil {
