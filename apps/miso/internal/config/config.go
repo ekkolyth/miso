@@ -31,7 +31,8 @@ type Config struct {
 	Env            []*EnvEntry           `json:"env,omitempty"`
 	Repo           string                `json:"repo,omitempty"` // "single" (default), "mono", "turbo", or "nx"
 	Tasks          map[string]TaskConfig `json:"-"`              // populated from repo object form; not serialized directly
-	Tui            string                `json:"tui,omitempty"`  // "off" (default), "tabbed", or "merged"
+	TuiMode        string                `json:"tui,omitempty"`  // "off" (default), "tabbed", or "merged"
+	TuiCleanExit   bool                  `json:"-"`              // populated from tui object form; not serialized directly
 	Multi          map[string][]string   `json:"multi,omitempty"`
 }
 
@@ -158,7 +159,7 @@ func (c Config) HasDependsOn(command string) bool {
 
 // TuiEnabled returns true when the multi-terminal UI is active (tabbed or merged mode)
 func (c Config) TuiEnabled() bool {
-	return c.Tui == "tabbed" || c.Tui == "merged"
+	return c.TuiMode == "tabbed" || c.TuiMode == "merged"
 }
 
 // resolve config file path for project root
@@ -174,7 +175,7 @@ type configLoad struct {
 	Flags          map[string][]string `json:"flags,omitempty"`
 	EnvRaw         json.RawMessage     `json:"env,omitempty"`
 	RepoRaw        json.RawMessage     `json:"repo,omitempty"`
-	Tui            string              `json:"tui,omitempty"`
+	TuiRaw         json.RawMessage     `json:"tui,omitempty"`
 	Multi          map[string][]string `json:"multi,omitempty"`
 }
 
@@ -194,9 +195,14 @@ func Load(root string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
 
-	tui := load.Tui
-	if tui == "" {
-		tui = "off"
+	tuiMode := "off"
+	tuiCleanExit := false
+	if len(load.TuiRaw) > 0 {
+		var err error
+		tuiMode, tuiCleanExit, err = parseTuiField(load.TuiRaw)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse tui config: %w", err)
+		}
 	}
 
 	cfg := Config{
@@ -204,7 +210,8 @@ func Load(root string) (Config, error) {
 		Scripts: load.Scripts,
 		Shell:          load.Shell,
 		Flags:          load.Flags,
-		Tui:            tui,
+		TuiMode:        tuiMode,
+		TuiCleanExit:   tuiCleanExit,
 		Multi:          load.Multi,
 	}
 
@@ -280,11 +287,39 @@ func parseRepoField(raw json.RawMessage) (string, map[string]TaskConfig, error) 
 		return "", nil, fmt.Errorf("repo: expected string or object, got %s", string(raw))
 	}
 
-	if obj.Tasks != nil && obj.Mode != "mono" {
-		return "", nil, fmt.Errorf("repo.tasks is only valid when mode is \"mono\", got %q", obj.Mode)
+	if obj.Tasks != nil && obj.Mode != "mono" && obj.Mode != "turbo" {
+		return "", nil, fmt.Errorf("repo.tasks is only valid when mode is \"mono\" or \"turbo\", got %q", obj.Mode)
 	}
 
 	return obj.Mode, obj.Tasks, nil
+}
+
+// parseTuiField handles the two accepted shapes for the "tui" field:
+//  1. string — "off", "tabbed", "merged"
+//  2. object — { "mode": "tabbed", "cleanExit": true }
+func parseTuiField(raw json.RawMessage) (string, bool, error) {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if s == "" {
+			s = "off"
+		}
+		return s, false, nil
+	}
+
+	var obj struct {
+		Mode      string `json:"mode"`
+		CleanExit bool   `json:"cleanExit"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return "", false, fmt.Errorf("tui: expected string or object, got %s", string(raw))
+	}
+
+	mode := obj.Mode
+	if mode == "" {
+		mode = "off"
+	}
+
+	return mode, obj.CleanExit, nil
 }
 
 // parseEnvEntry decodes a single EnvEntry from its raw JSON representation.
