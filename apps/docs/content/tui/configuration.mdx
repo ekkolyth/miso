@@ -21,6 +21,24 @@ Controls how concurrent scripts are displayed.
 }
 ```
 
+### Object Form
+
+For additional options, use the object form:
+
+```json
+{
+  "tui": {
+    "mode": "tabbed",
+    "cleanExit": true
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `mode` | string | `"off"` | TUI display mode: `"off"`, `"tabbed"`, or `"merged"` |
+| `cleanExit` | boolean | `false` | When `true`, suppress log dump on TUI exit. By default, all buffered output is printed to stdout when the TUI exits. |
+
 ## `repo` Option
 
 Controls how miso discovers and orchestrates workspaces.
