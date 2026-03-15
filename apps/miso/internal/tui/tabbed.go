@@ -223,7 +223,10 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 			statusText = "●"
 		}
 
-		padW := width - 5
+		// Content width = width minus 2 for Padding(0,1)
+		// Label gets all space except status + 1 space gap
+		statusW := lipgloss.Width(statusText)
+		padW := width - 2 - statusW - 1
 		if padW < 1 {
 			padW = 1
 		}
@@ -236,7 +239,7 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 				Padding(0, 1).
 				Background(bg).
 				Foreground(lipgloss.Color("#ffffff")).
-				Render(padRight(label, padW) + status)
+				Render(padRight(label, padW) + " " + status)
 			rows = append(rows, row)
 		} else {
 			bg := headerBg
@@ -246,7 +249,7 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 				Width(width).
 				Padding(0, 1).
 				Background(bg).
-				Render(labelRendered + status)
+				Render(labelRendered + lipgloss.NewStyle().Background(bg).Render(" ") + status)
 			rows = append(rows, row)
 		}
 	}

@@ -9,15 +9,6 @@
 			"type": "string",
 			"description": "Path or URL to this JSON schema for IDE support"
 		},
-		"package-manager": {
-			"type": "string",
-			"enum": ["bun", "npm", "pnpm", "yarn"],
-			"description": "The package manager to use"
-		},
-		"name": {
-			"type": "string",
-			"description": "Project name"
-		},
 		"scripts": {
 			"type": "string",
 			"default": "./scripts",
@@ -107,7 +98,6 @@
 			"description": "Environment file path(s) and variable validation rules"
 		}
 	},
-	"required": ["package-manager"],
 	"additionalProperties": false,
 	"$defs": {
 		"envEntry": {

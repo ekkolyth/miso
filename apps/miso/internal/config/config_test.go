@@ -18,7 +18,6 @@ func writeTempConfig(t *testing.T, content string) string {
 
 func TestLoadTuiConfig(t *testing.T) {
 	dir := writeTempConfig(t, `{
-		"package-manager": "npm",
 		"tui": "tabbed",
 		"multi": {
 			"web": ["dev", "test"],
@@ -58,8 +57,7 @@ func TestLoadTuiConfig(t *testing.T) {
 
 func TestLoadTuiConfigDefaults(t *testing.T) {
 	dir := writeTempConfig(t, `{
-		"package-manager": "npm"
-	}`)
+		}`)
 
 	cfg, err := Load(dir)
 	if err != nil {
@@ -83,11 +81,11 @@ func TestLoadRepoStringValues(t *testing.T) {
 		mono bool
 		dele bool
 	}{
-		{"single", `{"package-manager":"npm","repo":"single"}`, "single", false, false},
-		{"mono", `{"package-manager":"npm","repo":"mono"}`, "mono", true, false},
-		{"turbo", `{"package-manager":"npm","repo":"turbo"}`, "turbo", true, true},
-		{"nx", `{"package-manager":"npm","repo":"nx"}`, "nx", true, true},
-		{"empty", `{"package-manager":"npm"}`, "", false, false},
+		{"single", `{"repo":"single"}`, "single", false, false},
+		{"mono", `{"repo":"mono"}`, "mono", true, false},
+		{"turbo", `{"repo":"turbo"}`, "turbo", true, true},
+		{"nx", `{"repo":"nx"}`, "nx", true, true},
+		{"empty", `{}`, "", false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -111,7 +109,6 @@ func TestLoadRepoStringValues(t *testing.T) {
 
 func TestLoadRepoObject(t *testing.T) {
 	dir := writeTempConfig(t, `{
-		"package-manager": "npm",
 		"repo": {
 			"mode": "mono",
 			"tasks": {
@@ -149,7 +146,6 @@ func TestLoadRepoObject(t *testing.T) {
 
 func TestLoadRepoObjectInvalidMode(t *testing.T) {
 	dir := writeTempConfig(t, `{
-		"package-manager": "npm",
 		"repo": {
 			"mode": "turbo",
 			"tasks": { "build": { "dependsOn": ["^build"] } }
