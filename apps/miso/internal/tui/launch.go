@@ -71,13 +71,13 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	}
 
 	var model tea.Model
-	switch cfg.Tui {
+	switch cfg.TuiMode {
 	case "tabbed":
 		model = NewTabbedModel(pm, scriptName, false)
 	case "merged":
 		model = NewMergedModel(pm, scriptName, false)
 	default:
-		return false, fmt.Errorf("unknown tui mode: %s", cfg.Tui)
+		return false, fmt.Errorf("unknown tui mode: %s", cfg.TuiMode)
 	}
 
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
@@ -126,6 +126,12 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	}()
 
 	_, err = p.Run()
+
+	// Dump buffered logs to stdout so they survive the alt-screen restore.
+	if !cfg.TuiCleanExit {
+		DumpLogs(pm)
+	}
+
 	// Always clean up child processes when the TUI exits, regardless of how.
 	pm.StopAll()
 
