@@ -20,6 +20,7 @@ import (
 	"github.com/ekkolyth/miso/internal/manager/pnpm"
 	"github.com/ekkolyth/miso/internal/manager/yarn"
 	"github.com/ekkolyth/miso/internal/tui"
+	"github.com/ekkolyth/miso/internal/turbo"
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
@@ -177,14 +178,15 @@ func main() {
 
 		if isRoot {
 			switch parsed.Action {
-			case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionScriptFolder:
+			case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON:
 				scriptName := parsed.ScriptName
 				if parsed.Action == cli.ActionDev {
 					scriptName = "dev"
 				}
 
 				if cfg.IsDelegated() {
-					ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot)
+					_, turboFlags := turbo.SplitFlags(parsed.ScriptArgs, cfg.TuiEnabled())
+					ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags)
 					if err != nil {
 						cli.Fail(logger, err, false)
 					}
