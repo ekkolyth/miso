@@ -30,8 +30,8 @@ func TestLoadTuiConfig(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if cfg.Tui != "tabbed" {
-		t.Errorf("Tui = %q, want %q", cfg.Tui, "tabbed")
+	if cfg.TuiMode != "tabbed" {
+		t.Errorf("Tui = %q, want %q", cfg.TuiMode, "tabbed")
 	}
 
 	if cfg.Multi == nil {
@@ -64,12 +64,48 @@ func TestLoadTuiConfigDefaults(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if cfg.Tui != "off" {
-		t.Errorf("Tui = %q, want %q (default)", cfg.Tui, "off")
+	if cfg.TuiMode != "off" {
+		t.Errorf("Tui = %q, want %q (default)", cfg.TuiMode, "off")
 	}
 
 	if cfg.Multi != nil {
 		t.Errorf("Multi = %v, want nil", cfg.Multi)
+	}
+}
+
+func TestLoadTuiConfigObject(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"tui": { "mode": "tabbed", "cleanExit": true }
+	}`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.TuiMode != "tabbed" {
+		t.Errorf("TuiMode = %q, want %q", cfg.TuiMode, "tabbed")
+	}
+	if !cfg.TuiCleanExit {
+		t.Error("TuiCleanExit = false, want true")
+	}
+}
+
+func TestLoadTuiConfigObjectNoCleanExit(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"tui": { "mode": "merged" }
+	}`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.TuiMode != "merged" {
+		t.Errorf("TuiMode = %q, want %q", cfg.TuiMode, "merged")
+	}
+	if cfg.TuiCleanExit {
+		t.Error("TuiCleanExit = true, want false")
 	}
 }
 
@@ -144,17 +180,43 @@ func TestLoadRepoObject(t *testing.T) {
 	}
 }
 
-func TestLoadRepoObjectInvalidMode(t *testing.T) {
+func TestLoadRepoObjectTurboWithTasks(t *testing.T) {
 	dir := writeTempConfig(t, `{
 		"repo": {
 			"mode": "turbo",
+			"tasks": { "dev": {}, "dev:db": { "dependsOn": ["^dev"] } }
+		}
+	}`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Repo != "turbo" {
+		t.Errorf("Repo = %q, want %q", cfg.Repo, "turbo")
+	}
+	if cfg.Tasks == nil {
+		t.Fatal("Tasks is nil, want populated map")
+	}
+	if len(cfg.Tasks) != 2 {
+		t.Errorf("len(Tasks) = %d, want 2", len(cfg.Tasks))
+	}
+	if _, ok := cfg.Tasks["dev"]; !ok {
+		t.Error("Tasks[\"dev\"] missing")
+	}
+}
+
+func TestLoadRepoObjectInvalidMode(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"repo": {
+			"mode": "single",
 			"tasks": { "build": { "dependsOn": ["^build"] } }
 		}
 	}`)
 
 	_, err := Load(dir)
 	if err == nil {
-		t.Fatal("Load() expected error for tasks with non-mono mode, got nil")
+		t.Fatal("Load() expected error for tasks with single mode, got nil")
 	}
 }
 
@@ -192,10 +254,10 @@ func TestTuiEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.tui, func(t *testing.T) {
-			cfg := Config{Tui: tt.tui}
+			cfg := Config{TuiMode: tt.tui}
 			got := cfg.TuiEnabled()
 			if got != tt.want {
-				t.Errorf("TuiEnabled() with Tui=%q = %v, want %v", tt.tui, got, tt.want)
+				t.Errorf("TuiEnabled() with TuiMode=%q = %v, want %v", tt.tui, got, tt.want)
 			}
 		})
 	}
