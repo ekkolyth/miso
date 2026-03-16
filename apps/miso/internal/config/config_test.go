@@ -241,6 +241,33 @@ func TestRepoMode(t *testing.T) {
 	}
 }
 
+func TestTaskConcurrent(t *testing.T) {
+	cfg := Config{
+		Tasks: map[string]TaskConfig{
+			"dev": {Concurrent: []string{"services", "db:studio"}},
+			"build": {},
+		},
+	}
+
+	got := cfg.TaskConcurrent("dev")
+	if len(got) != 2 || got[0] != "services" || got[1] != "db:studio" {
+		t.Errorf("TaskConcurrent(\"dev\") = %v, want [services db:studio]", got)
+	}
+
+	if got := cfg.TaskConcurrent("build"); got != nil {
+		t.Errorf("TaskConcurrent(\"build\") = %v, want nil", got)
+	}
+
+	if got := cfg.TaskConcurrent("unknown"); got != nil {
+		t.Errorf("TaskConcurrent(\"unknown\") = %v, want nil", got)
+	}
+
+	nilCfg := Config{}
+	if got := nilCfg.TaskConcurrent("dev"); got != nil {
+		t.Errorf("TaskConcurrent on nil Tasks = %v, want nil", got)
+	}
+}
+
 func TestTuiEnabled(t *testing.T) {
 	tests := []struct {
 		tui  string

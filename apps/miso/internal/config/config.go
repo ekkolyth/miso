@@ -17,9 +17,10 @@ const FileName = "miso.json"
 // SchemaURL is the canonical URL for the miso.json JSON schema (IDE autocomplete/validation)
 const SchemaURL = "https://misojs.dev/miso.schema.json"
 
-// TaskConfig holds per-task configuration for monorepo dependency ordering.
+// TaskConfig holds per-task configuration for dependency ordering and concurrent companions.
 type TaskConfig struct {
-	DependsOn []string `json:"dependsOn,omitempty"`
+	DependsOn  []string `json:"dependsOn,omitempty"`
+	Concurrent []string `json:"concurrent,omitempty"`
 }
 
 // persisted project metadata
@@ -155,6 +156,21 @@ func (c Config) HasDependsOn(command string) bool {
 		}
 	}
 	return false
+}
+
+// TaskConcurrent returns the concurrent task names for the given command, or nil.
+func (c Config) TaskConcurrent(command string) []string {
+	if c.Tasks == nil {
+		return nil
+	}
+	task, ok := c.Tasks[command]
+	if !ok {
+		return nil
+	}
+	if len(task.Concurrent) == 0 {
+		return nil
+	}
+	return task.Concurrent
 }
 
 // TuiEnabled returns true when the multi-terminal UI is active (tabbed or merged mode)
