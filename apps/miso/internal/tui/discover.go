@@ -141,16 +141,38 @@ func matchesPrefix(command, scriptName string) bool {
 	return strings.HasPrefix(scriptName, command+":") || strings.HasPrefix(scriptName, command+"/")
 }
 
-// DiscoverMultiScripts resolves each script name from the multi array against
-// root using the provided config. It is used in single-repo mode with "multi"
-// config. Labels are the script names from the scripts slice.
-func DiscoverMultiScripts(scripts []string, root string, cfg config.Config) ([]TuiScriptEntry, error) {
+// DeduplicateLabels ensures all labels in the merged entry list are unique.
+// For any label that appears more than once, it rewrites to "label:scriptName".
+func DeduplicateLabels(entries []TuiScriptEntry) []TuiScriptEntry {
+	// Count label occurrences
+	counts := make(map[string]int)
+	for _, e := range entries {
+		counts[e.Label]++
+	}
+
+	// Rewrite duplicates
+	for i := range entries {
+		if counts[entries[i].Label] > 1 {
+			entries[i].Label = entries[i].Label + ":" + entries[i].ScriptName
+		}
+	}
+
+	return entries
+}
+
+// ResolveSingleRepoScripts resolves a list of script names against the project
+// root for single-repo concurrent discovery. Scripts that cannot be found are
+// silently skipped. Labels are the script names.
+func ResolveSingleRepoScripts(scripts []string, root string, cfg config.Config) ([]TuiScriptEntry, error) {
 	var entries []TuiScriptEntry
 
 	for _, name := range scripts {
 		resolved, err := scripting.ResolveScript(name, root, cfg)
 		if err != nil {
 			return nil, err
+		}
+		if resolved.Source == scripting.ScriptSourceNone {
+			continue // silently skip unresolvable scripts
 		}
 
 		source := ""
