@@ -70,8 +70,8 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 	}
 
 	for _, entry := range cfg.Env {
-		if err := runEntry(projectRoot, entry, logger); err != nil {
-			return err
+		if errs := runEntry(projectRoot, entry, logger); len(errs) > 0 {
+			return errs[0]
 		}
 	}
 
@@ -79,19 +79,20 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 }
 
 // runEntry resolves, loads, and validates a single EnvEntry.
-func runEntry(projectRoot string, entry *config.EnvEntry, logger *log.Logger) error {
+// Returns a slice of validation errors (nil if all passed).
+func runEntry(projectRoot string, entry *config.EnvEntry, logger *log.Logger) []error {
 	label := entryLabel(entry)
 
 	// Resolve path
 	absPath, err := resolveEntryPath(projectRoot, entry)
 	if err != nil {
-		return fmt.Errorf("%s: %w", label, err)
+		return []error{err}
 	}
 
 	// Load env file
 	envMap, err := loadEnvFile(absPath)
 	if err != nil {
-		return fmt.Errorf("%s: %w", label, err)
+		return []error{err}
 	}
 
 	// No variables defined: just report the load
@@ -102,10 +103,14 @@ func runEntry(projectRoot string, entry *config.EnvEntry, logger *log.Logger) er
 
 	// Presence-only (array) mode
 	if len(entry.Variables.Array) > 0 {
+		var errs []error
 		for _, key := range entry.Variables.Array {
 			if _, ok := envMap[key]; !ok {
-				return fmt.Errorf("%s: missing required variable: %s", label, key)
+				errs = append(errs, fmt.Errorf("missing required variable: %s", key))
 			}
+		}
+		if len(errs) > 0 {
+			return errs
 		}
 		logger.Info("env validation passed", "label", label, "variables", len(entry.Variables.Array))
 		return nil
@@ -113,7 +118,7 @@ func runEntry(projectRoot string, entry *config.EnvEntry, logger *log.Logger) er
 
 	// Object mode — full type validation
 	if errs := validateVariables(envMap, entry.Variables.Object, entry.Required); len(errs) > 0 {
-		return fmt.Errorf("%s: %s", label, errs[0])
+		return errs
 	}
 	logger.Info("env validation passed", "label", label, "variables", len(entry.Variables.Object))
 	return nil
