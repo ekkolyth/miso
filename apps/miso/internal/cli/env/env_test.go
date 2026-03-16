@@ -74,5 +74,123 @@ func TestRunEntry_FileNotFound_SingleError(t *testing.T) {
 	}
 }
 
-// Suppress unused import warning — strings used in later tests added to this file.
-var _ = strings.Contains
+func TestRun_GroupedErrors_MultipleEntries(t *testing.T) {
+	dir := writeTempEnv(t, "a.env", "")
+	// write a second env file
+	if err := os.WriteFile(filepath.Join(dir, "b.env"), []byte("BAD_PORT=abc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{
+				Label: "alpha",
+				Path:  "a.env",
+				Variables: config.EnvVariables{
+					Array: []string{"MISSING_ONE", "MISSING_TWO"},
+				},
+			},
+			{
+				Label: "beta",
+				Path:  "b.env",
+				Variables: config.EnvVariables{
+					Object: map[string]config.VarConfigOrString{
+						"BAD_PORT": {IsShorthand: true, Type: "port"},
+					},
+				},
+				Required: config.EnvRequired{Mode: "none"},
+			},
+		},
+	}
+	logger := log.New(os.Stderr)
+
+	err := Run(dir, cfg, logger)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	msg := err.Error()
+	if !strings.Contains(msg, "alpha") {
+		t.Errorf("error should mention alpha: %s", msg)
+	}
+	if !strings.Contains(msg, "beta") {
+		t.Errorf("error should mention beta: %s", msg)
+	}
+	if !strings.Contains(msg, "MISSING_ONE") {
+		t.Errorf("error should mention MISSING_ONE: %s", msg)
+	}
+	if !strings.Contains(msg, "MISSING_TWO") {
+		t.Errorf("error should mention MISSING_TWO: %s", msg)
+	}
+	if !strings.Contains(msg, "BAD_PORT") {
+		t.Errorf("error should mention BAD_PORT: %s", msg)
+	}
+}
+
+func TestRun_SuccessfulEntries_StillPass(t *testing.T) {
+	dir := writeTempEnv(t, "good.env", "PORT=8080\n")
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{
+				Label: "good",
+				Path:  "good.env",
+				Variables: config.EnvVariables{
+					Object: map[string]config.VarConfigOrString{
+						"PORT": {IsShorthand: true, Type: "port"},
+					},
+				},
+				Required: config.EnvRequired{Mode: "all"},
+			},
+		},
+	}
+	logger := log.New(os.Stderr)
+
+	err := Run(dir, cfg, logger)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+}
+
+func TestRun_PassingEntryLogsInfo_WhenSiblingFails(t *testing.T) {
+	dir := writeTempEnv(t, "good.env", "PORT=8080\n")
+	if err := os.WriteFile(filepath.Join(dir, "bad.env"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{
+				Label: "good",
+				Path:  "good.env",
+				Variables: config.EnvVariables{
+					Object: map[string]config.VarConfigOrString{
+						"PORT": {IsShorthand: true, Type: "port"},
+					},
+				},
+				Required: config.EnvRequired{Mode: "all"},
+			},
+			{
+				Label: "bad",
+				Path:  "bad.env",
+				Variables: config.EnvVariables{
+					Array: []string{"MISSING_VAR"},
+				},
+			},
+		},
+	}
+
+	// Capture log output to a buffer
+	var buf strings.Builder
+	logger := log.NewWithOptions(&buf, log.Options{})
+
+	err := Run(dir, cfg, logger)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// The good entry should have logged its INFO line despite bad entry failing
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "good") {
+		t.Errorf("expected INFO log for passing entry 'good', got: %s", logOutput)
+	}
+}
