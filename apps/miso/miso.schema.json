@@ -51,11 +51,16 @@
 										"type": "array",
 										"items": { "type": "string" },
 										"description": "Task dependencies. Use '^taskName' prefix to run upstream workspace dependencies first."
+									},
+									"concurrent": {
+										"type": "array",
+										"items": { "type": "string" },
+										"description": "Additional tasks to discover and run in parallel alongside the main task."
 									}
 								},
 								"additionalProperties": false
 							},
-							"description": "Per-task configuration. In mono mode, defines dependency ordering. In turbo mode, tasks listed here use miso's direct orchestration instead of turbo delegation."
+							"description": "Per-task configuration. Available in all repo modes. Defines dependency ordering (dependsOn) and companion tasks (concurrent). In turbo/nx mode, tasks listed here use miso's direct orchestration instead of delegation."
 						}
 					},
 					"required": ["mode"],
@@ -92,14 +97,6 @@
 			],
 			"default": "off",
 			"description": "Multi-terminal UI mode. String shorthand or object with mode and cleanExit option."
-		},
-		"multi": {
-			"type": "object",
-			"additionalProperties": {
-				"type": "array",
-				"items": { "type": "string" }
-			},
-			"description": "Named groups of scripts to run together in the TUI. Each key is a group name; the value is an array of script names to run in that group."
 		},
 		"env": {
 			"oneOf": [
