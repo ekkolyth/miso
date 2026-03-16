@@ -209,14 +209,6 @@ func Load(root string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
 
-	// Warn if deprecated 'multi' key is present in the raw JSON.
-	var rawKeys map[string]json.RawMessage
-	if err := json.Unmarshal(data, &rawKeys); err == nil {
-		if _, hasMulti := rawKeys["multi"]; hasMulti {
-			fmt.Fprintf(os.Stderr, "warning: 'multi' config is no longer supported — use repo.tasks with 'concurrent' instead\n")
-		}
-	}
-
 	tuiMode := "off"
 	tuiCleanExit := false
 	if len(load.TuiRaw) > 0 {
