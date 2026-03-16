@@ -34,7 +34,6 @@ type Config struct {
 	Tasks          map[string]TaskConfig `json:"-"`              // populated from repo object form; not serialized directly
 	TuiMode        string                `json:"tui,omitempty"`  // "off" (default), "tabbed", or "merged"
 	TuiCleanExit   bool                  `json:"-"`              // populated from tui object form; not serialized directly
-	Multi          map[string][]string   `json:"multi,omitempty"`
 }
 
 // EnvEntry holds a single env file path and its variable validation rules.
@@ -192,7 +191,6 @@ type configLoad struct {
 	EnvRaw         json.RawMessage     `json:"env,omitempty"`
 	RepoRaw        json.RawMessage     `json:"repo,omitempty"`
 	TuiRaw         json.RawMessage     `json:"tui,omitempty"`
-	Multi          map[string][]string `json:"multi,omitempty"`
 }
 
 // read miso.json from disk
@@ -209,6 +207,14 @@ func Load(root string) (Config, error) {
 	var load configLoad
 	if err := json.Unmarshal(data, &load); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
+	}
+
+	// Warn if deprecated 'multi' key is present in the raw JSON.
+	var rawKeys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawKeys); err == nil {
+		if _, hasMulti := rawKeys["multi"]; hasMulti {
+			fmt.Fprintf(os.Stderr, "warning: 'multi' config is no longer supported — use repo.tasks with 'concurrent' instead\n")
+		}
 	}
 
 	tuiMode := "off"
@@ -228,7 +234,6 @@ func Load(root string) (Config, error) {
 		Flags:          load.Flags,
 		TuiMode:        tuiMode,
 		TuiCleanExit:   tuiCleanExit,
-		Multi:          load.Multi,
 	}
 
 	if len(load.RepoRaw) > 0 {
@@ -301,10 +306,6 @@ func parseRepoField(raw json.RawMessage) (string, map[string]TaskConfig, error) 
 	}
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return "", nil, fmt.Errorf("repo: expected string or object, got %s", string(raw))
-	}
-
-	if obj.Tasks != nil && obj.Mode != "mono" && obj.Mode != "turbo" {
-		return "", nil, fmt.Errorf("repo.tasks is only valid when mode is \"mono\" or \"turbo\", got %q", obj.Mode)
 	}
 
 	return obj.Mode, obj.Tasks, nil

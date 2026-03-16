@@ -18,11 +18,7 @@ func writeTempConfig(t *testing.T, content string) string {
 
 func TestLoadTuiConfig(t *testing.T) {
 	dir := writeTempConfig(t, `{
-		"tui": "tabbed",
-		"multi": {
-			"web": ["dev", "test"],
-			"api": ["start"]
-		}
+		"tui": "tabbed"
 	}`)
 
 	cfg, err := Load(dir)
@@ -32,26 +28,6 @@ func TestLoadTuiConfig(t *testing.T) {
 
 	if cfg.TuiMode != "tabbed" {
 		t.Errorf("Tui = %q, want %q", cfg.TuiMode, "tabbed")
-	}
-
-	if cfg.Multi == nil {
-		t.Fatal("Multi is nil, want populated map")
-	}
-
-	web, ok := cfg.Multi["web"]
-	if !ok {
-		t.Fatal("Multi[\"web\"] missing")
-	}
-	if len(web) != 2 || web[0] != "dev" || web[1] != "test" {
-		t.Errorf("Multi[\"web\"] = %v, want [dev test]", web)
-	}
-
-	api, ok := cfg.Multi["api"]
-	if !ok {
-		t.Fatal("Multi[\"api\"] missing")
-	}
-	if len(api) != 1 || api[0] != "start" {
-		t.Errorf("Multi[\"api\"] = %v, want [start]", api)
 	}
 }
 
@@ -66,10 +42,6 @@ func TestLoadTuiConfigDefaults(t *testing.T) {
 
 	if cfg.TuiMode != "off" {
 		t.Errorf("Tui = %q, want %q (default)", cfg.TuiMode, "off")
-	}
-
-	if cfg.Multi != nil {
-		t.Errorf("Multi = %v, want nil", cfg.Multi)
 	}
 }
 
@@ -206,7 +178,7 @@ func TestLoadRepoObjectTurboWithTasks(t *testing.T) {
 	}
 }
 
-func TestLoadRepoObjectInvalidMode(t *testing.T) {
+func TestLoadRepoObjectSingleWithDependsOn(t *testing.T) {
 	dir := writeTempConfig(t, `{
 		"repo": {
 			"mode": "single",
@@ -214,9 +186,12 @@ func TestLoadRepoObjectInvalidMode(t *testing.T) {
 		}
 	}`)
 
-	_, err := Load(dir)
-	if err == nil {
-		t.Fatal("Load() expected error for tasks with single mode, got nil")
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v, want success (tasks valid in all modes)", err)
+	}
+	if cfg.Tasks == nil {
+		t.Fatal("Tasks is nil")
 	}
 }
 
@@ -238,6 +213,71 @@ func TestRepoMode(t *testing.T) {
 				t.Errorf("RepoMode() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadRepoObjectWithConcurrent(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"repo": {
+			"mode": "turbo",
+			"tasks": {
+				"dev": { "concurrent": ["services", "db:studio"] }
+			}
+		}
+	}`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Tasks == nil {
+		t.Fatal("Tasks is nil, want populated map")
+	}
+	dev, ok := cfg.Tasks["dev"]
+	if !ok {
+		t.Fatal("Tasks[\"dev\"] missing")
+	}
+	if len(dev.Concurrent) != 2 || dev.Concurrent[0] != "services" || dev.Concurrent[1] != "db:studio" {
+		t.Errorf("Tasks[\"dev\"].Concurrent = %v, want [services db:studio]", dev.Concurrent)
+	}
+}
+
+func TestLoadRepoObjectSingleWithTasks(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"repo": {
+			"mode": "single",
+			"tasks": {
+				"dev": { "concurrent": ["frontend", "backend"] }
+			}
+		}
+	}`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v, want success (tasks valid in all modes)", err)
+	}
+	if cfg.Repo != "single" {
+		t.Errorf("Repo = %q, want %q", cfg.Repo, "single")
+	}
+	if cfg.Tasks == nil {
+		t.Fatal("Tasks is nil, want populated map")
+	}
+}
+
+func TestLoadRepoObjectNxWithTasks(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"repo": {
+			"mode": "nx",
+			"tasks": { "dev": { "concurrent": ["api:serve"] } }
+		}
+	}`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v, want success (tasks valid in nx mode)", err)
+	}
+	if cfg.Repo != "nx" {
+		t.Errorf("Repo = %q, want %q", cfg.Repo, "nx")
 	}
 }
 
