@@ -1,6 +1,7 @@
 package env
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/config"
@@ -52,5 +53,48 @@ func TestValidateVariables_MixedMissingAndInvalid(t *testing.T) {
 	errs := validateVariables(envMap, vars, required)
 	if len(errs) != 2 {
 		t.Fatalf("got %d errors, want 2: %v", len(errs), errs)
+	}
+}
+
+func TestValidateVariables_VarErrorType(t *testing.T) {
+	vars := map[string]config.VarConfigOrString{
+		"MY_VAR": {IsShorthand: true, Type: "port"},
+	}
+	required := config.EnvRequired{Mode: "all"}
+	envMap := map[string]string{"MY_VAR": "abc"}
+
+	errs := validateVariables(envMap, vars, required)
+	if len(errs) != 1 {
+		t.Fatalf("got %d errors, want 1: %v", len(errs), errs)
+	}
+	ve, ok := errs[0].(*varError)
+	if !ok {
+		t.Fatalf("expected *varError, got %T", errs[0])
+	}
+	if ve.name != "MY_VAR" {
+		t.Errorf("varError.name = %q, want %q", ve.name, "MY_VAR")
+	}
+	if !strings.Contains(ve.msg, "expected port") {
+		t.Errorf("varError.msg = %q, want to contain 'expected port'", ve.msg)
+	}
+}
+
+func TestFriendlyValidationMsg_String(t *testing.T) {
+	vars := map[string]config.VarConfigOrString{
+		"MY_STRING": {IsShorthand: true, Type: "string"},
+	}
+	required := config.EnvRequired{Mode: "all"}
+	envMap := map[string]string{"MY_STRING": ""}
+
+	errs := validateVariables(envMap, vars, required)
+	if len(errs) != 1 {
+		t.Fatalf("got %d errors, want 1: %v", len(errs), errs)
+	}
+	ve, ok := errs[0].(*varError)
+	if !ok {
+		t.Fatalf("expected *varError, got %T", errs[0])
+	}
+	if !strings.Contains(ve.msg, "expected string") {
+		t.Errorf("expected friendly message with 'expected string', got: %q", ve.msg)
 	}
 }

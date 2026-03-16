@@ -145,7 +145,7 @@ func main() {
 	// env does not need package manager
 	if parsed.Action == cli.ActionEnv {
 		if err := env.Run(projectRoot, cfg, logger); err != nil {
-			cli.Fail(logger, err, false)
+			os.Exit(1)
 		}
 		return
 	}
@@ -337,7 +337,7 @@ func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedC
 	}
 
 	if err := env.Run(projectRoot, cfg, logger); err != nil {
-		cli.Fail(logger, err, false)
+		os.Exit(1)
 	}
 
 	// Strip --env from cfg flags and parsed args
