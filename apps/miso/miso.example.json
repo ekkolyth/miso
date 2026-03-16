@@ -1,6 +1,12 @@
 {
 	"$schema": "https://misojs.dev/miso.schema.json",
 	"scripts": "./scripts",
+	"tui": "tabbed",
+	"repo": {
+		"tasks": {
+			"dev": { "concurrent": ["services"] }
+		}
+	},
 	"flags": {
 		"install": ["--frozen-lockfile"],
 		"dev": ["--env"]
