@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/joho/godotenv"
@@ -55,6 +56,12 @@ var discoveryOrder = []string{
 	".env",
 }
 
+// entryErrors holds errors for a single entry, preserving order.
+type entryErrors struct {
+	label string
+	errs  []error
+}
+
 // Run executes the miso env command: for each EnvEntry, resolve its path, load the file,
 // validate variables, and report results. When no env config is present, falls back to
 // discovery mode and reports which file was found.
@@ -69,13 +76,36 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 		return nil
 	}
 
+	var failures []entryErrors
+
 	for _, entry := range cfg.Env {
-		if errs := runEntry(projectRoot, entry, logger); len(errs) > 0 {
-			return errs[0]
+		errs := runEntry(projectRoot, entry, logger)
+		if len(errs) > 0 {
+			failures = append(failures, entryErrors{
+				label: entryLabel(entry),
+				errs:  errs,
+			})
 		}
 	}
 
-	return nil
+	if len(failures) == 0 {
+		return nil
+	}
+
+	return formatGroupedErrors(failures)
+}
+
+// formatGroupedErrors builds a single error with all failures grouped by label.
+func formatGroupedErrors(failures []entryErrors) error {
+	var b strings.Builder
+	b.WriteString("env validation failed:")
+	for _, f := range failures {
+		fmt.Fprintf(&b, "\n  %s:", f.label)
+		for _, e := range f.errs {
+			fmt.Fprintf(&b, "\n    - %s", e.Error())
+		}
+	}
+	return fmt.Errorf("%s", b.String())
 }
 
 // runEntry resolves, loads, and validates a single EnvEntry.
