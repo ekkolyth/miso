@@ -200,13 +200,19 @@ func main() {
 							return
 						}
 					} else {
-						_, turboFlags := turbo.SplitFlags(parsed.ScriptArgs, cfg.TuiEnabled())
-						ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags)
-						if err != nil {
-							cli.Fail(logger, err, false)
-						}
-						if ran {
-							return
+						// Only delegate to turbo/nx if the script is actually a pipeline task
+						turboCfg, turboErr := turbo.LoadConfig(projectRoot)
+						if turboErr == nil {
+							if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
+								_, turboFlags := turbo.SplitFlags(parsed.ScriptArgs, cfg.TuiEnabled())
+								ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags)
+								if err != nil {
+									cli.Fail(logger, err, false)
+								}
+								if ran {
+									return
+								}
+							}
 						}
 					}
 				} else {

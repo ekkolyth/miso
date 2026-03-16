@@ -71,10 +71,32 @@
 			"description": "Repository type and optional task configuration. String shorthand or object with mode and tasks."
 		},
 		"tui": {
-			"type": "string",
-			"enum": ["off", "tabbed", "merged"],
+			"oneOf": [
+				{
+					"type": "string",
+					"enum": ["off", "tabbed", "merged"],
+					"description": "TUI mode shorthand. 'off' disables TUI (default), 'tabbed' shows panes in separate tabs, 'merged' shows all output in a single stream."
+				},
+				{
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": ["off", "tabbed", "merged"],
+							"description": "TUI display mode"
+						},
+						"cleanExit": {
+							"type": "boolean",
+							"default": false,
+							"description": "When true, suppress log dump on TUI exit. By default, all buffered output is printed to stdout when the TUI exits."
+						}
+					},
+					"required": ["mode"],
+					"additionalProperties": false
+				}
+			],
 			"default": "off",
-			"description": "Multi-terminal UI mode. 'off' disables TUI (default), 'tabbed' shows panes in separate tabs, 'merged' shows all panes in a single split view."
+			"description": "Multi-terminal UI mode. String shorthand or object with mode and cleanExit option."
 		},
 		"env": {
 			"oneOf": [
