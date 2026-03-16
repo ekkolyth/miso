@@ -96,9 +96,7 @@ func TestDiscoverTuiScripts_PrefixMatching(t *testing.T) {
 	}
 }
 
-// TestDiscoverTuiScripts_MultiConfig verifies DiscoverMultiScripts returns
-// entries labelled with the script names from the multi array.
-func TestDiscoverTuiScripts_MultiConfig(t *testing.T) {
+func TestResolveSingleRepoScripts(t *testing.T) {
 	root := t.TempDir()
 	writePackageJSON(t, root, map[string]string{
 		"dev":   "vite",
@@ -109,16 +107,15 @@ func TestDiscoverTuiScripts_MultiConfig(t *testing.T) {
 		Scripts: "./scripts",
 	}
 
-	entries, err := DiscoverMultiScripts([]string{"dev", "build"}, root, cfg)
+	entries, err := ResolveSingleRepoScripts([]string{"dev", "build"}, root, cfg)
 	if err != nil {
-		t.Fatalf("DiscoverMultiScripts: %v", err)
+		t.Fatalf("ResolveSingleRepoScripts: %v", err)
 	}
 
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
 
-	// labels should match script names exactly
 	for _, e := range entries {
 		if e.Label != e.ScriptName {
 			t.Errorf("label %q != script name %q", e.Label, e.ScriptName)
@@ -126,17 +123,29 @@ func TestDiscoverTuiScripts_MultiConfig(t *testing.T) {
 		if e.ScriptSource != "packagejson" {
 			t.Errorf("%q: expected source 'packagejson', got %q", e.Label, e.ScriptSource)
 		}
-		if e.WorkspaceDir != root {
-			t.Errorf("%q: expected WorkspaceDir %q, got %q", e.Label, root, e.WorkspaceDir)
-		}
+	}
+}
+
+func TestResolveSingleRepoScripts_SkipsMissing(t *testing.T) {
+	root := t.TempDir()
+	writePackageJSON(t, root, map[string]string{
+		"dev": "vite",
+	})
+
+	cfg := config.Config{
+		Scripts: "./scripts",
 	}
 
-	labels := labelsOf(entries)
-	if labels[0] != "dev" {
-		t.Errorf("entries[0].Label = %q, want 'dev'", labels[0])
+	entries, err := ResolveSingleRepoScripts([]string{"dev", "nonexistent"}, root, cfg)
+	if err != nil {
+		t.Fatalf("ResolveSingleRepoScripts: %v", err)
 	}
-	if labels[1] != "build" {
-		t.Errorf("entries[1].Label = %q, want 'build'", labels[1])
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry (missing script skipped), got %d", len(entries))
+	}
+	if entries[0].ScriptName != "dev" {
+		t.Errorf("expected 'dev', got %q", entries[0].ScriptName)
 	}
 }
 
@@ -177,6 +186,44 @@ func TestDiscoverTuiScripts_ScriptsFolder(t *testing.T) {
 	}
 	if e.ScriptName != "dev" {
 		t.Errorf("ScriptName = %q, want 'dev'", e.ScriptName)
+	}
+}
+
+func TestDeduplicateLabels(t *testing.T) {
+	entries := []TuiScriptEntry{
+		{Label: "app", ScriptName: "dev", WorkspaceDir: "/ws/app"},
+		{Label: "app", ScriptName: "services", WorkspaceDir: "/ws/app"},
+		{Label: "docker", ScriptName: "services", WorkspaceDir: "/ws/docker"},
+	}
+
+	result := DeduplicateLabels(entries)
+
+	labels := labelsOf(result)
+	expected := map[string]bool{
+		"app:dev":      true,
+		"app:services": true,
+		"docker":       true,
+	}
+	if len(labels) != 3 {
+		t.Fatalf("expected 3 entries, got %d: %v", len(labels), labels)
+	}
+	for _, l := range labels {
+		if !expected[l] {
+			t.Errorf("unexpected label %q, expected one of %v", l, expected)
+		}
+	}
+}
+
+func TestDeduplicateLabels_NoDuplicates(t *testing.T) {
+	entries := []TuiScriptEntry{
+		{Label: "app", ScriptName: "dev", WorkspaceDir: "/ws/app"},
+		{Label: "api", ScriptName: "dev", WorkspaceDir: "/ws/api"},
+	}
+
+	result := DeduplicateLabels(entries)
+	labels := labelsOf(result)
+	if labels[0] != "app" || labels[1] != "api" {
+		t.Errorf("labels changed unexpectedly: %v", labels)
 	}
 }
 
