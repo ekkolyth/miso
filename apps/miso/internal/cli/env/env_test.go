@@ -74,9 +74,32 @@ func TestRunEntry_FileNotFound_SingleError(t *testing.T) {
 	}
 }
 
+func TestRunEntry_ArrayMode_VarErrorType(t *testing.T) {
+	dir := writeTempEnv(t, ".env", "")
+	entry := &config.EnvEntry{
+		Label: "test",
+		Path:  ".env",
+		Variables: config.EnvVariables{
+			Array: []string{"MISSING"},
+		},
+	}
+	logger := log.New(os.Stderr)
+
+	errs := runEntry(dir, entry, logger)
+	if len(errs) != 1 {
+		t.Fatalf("got %d errors, want 1: %v", len(errs), errs)
+	}
+	ve, ok := errs[0].(*varError)
+	if !ok {
+		t.Fatalf("expected *varError, got %T", errs[0])
+	}
+	if ve.name != "MISSING" {
+		t.Errorf("varError.name = %q, want %q", ve.name, "MISSING")
+	}
+}
+
 func TestRun_GroupedErrors_MultipleEntries(t *testing.T) {
 	dir := writeTempEnv(t, "a.env", "")
-	// write a second env file
 	if err := os.WriteFile(filepath.Join(dir, "b.env"), []byte("BAD_PORT=abc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -109,21 +132,9 @@ func TestRun_GroupedErrors_MultipleEntries(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	msg := err.Error()
-	if !strings.Contains(msg, "alpha") {
-		t.Errorf("error should mention alpha: %s", msg)
-	}
-	if !strings.Contains(msg, "beta") {
-		t.Errorf("error should mention beta: %s", msg)
-	}
-	if !strings.Contains(msg, "MISSING_ONE") {
-		t.Errorf("error should mention MISSING_ONE: %s", msg)
-	}
-	if !strings.Contains(msg, "MISSING_TWO") {
-		t.Errorf("error should mention MISSING_TWO: %s", msg)
-	}
-	if !strings.Contains(msg, "BAD_PORT") {
-		t.Errorf("error should mention BAD_PORT: %s", msg)
+	// Run now returns a simple error; detailed output is printed to stderr
+	if !strings.Contains(err.Error(), "env validation failed") {
+		t.Errorf("expected 'env validation failed' error, got: %s", err.Error())
 	}
 }
 

@@ -1,15 +1,17 @@
 package env
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/joho/godotenv"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/ui"
 )
 
 const EnvFlag = "--env"
@@ -92,20 +94,31 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 		return nil
 	}
 
-	return formatGroupedErrors(failures)
+	// Print styled error block to stderr (blank line separates from INFO lines)
+	fmt.Fprintln(os.Stderr)
+	logger.Error("env validation failed")
+	printGroupedErrors(os.Stderr, failures)
+
+	return errors.New("env validation failed")
 }
 
-// formatGroupedErrors builds a single error with all failures grouped by label.
-func formatGroupedErrors(failures []entryErrors) error {
-	var b strings.Builder
-	b.WriteString("env validation failed:")
-	for _, f := range failures {
-		fmt.Fprintf(&b, "\n  %s:", f.label)
+// printGroupedErrors writes styled, grouped errors to the given writer.
+func printGroupedErrors(w *os.File, failures []entryErrors) {
+	warnStyle := lipgloss.NewStyle().Foreground(ui.WarningColor)
+
+	for i, f := range failures {
+		labelColor := ui.LabelColors[i%len(ui.LabelColors)]
+		labelStyle := lipgloss.NewStyle().Bold(true).Foreground(labelColor)
+
+		fmt.Fprintf(w, "  %s\n", labelStyle.Render(f.label))
 		for _, e := range f.errs {
-			fmt.Fprintf(&b, "\n    - %s", e.Error())
+			if ve, ok := e.(*varError); ok {
+				fmt.Fprintf(w, "    %s %s\n", warnStyle.Render(ve.name+":"), ve.msg)
+			} else {
+				fmt.Fprintf(w, "    %s\n", e.Error())
+			}
 		}
 	}
-	return fmt.Errorf("%s", b.String())
 }
 
 // runEntry resolves, loads, and validates a single EnvEntry.
@@ -136,7 +149,7 @@ func runEntry(projectRoot string, entry *config.EnvEntry, logger *log.Logger) []
 		var errs []error
 		for _, key := range entry.Variables.Array {
 			if _, ok := envMap[key]; !ok {
-				errs = append(errs, fmt.Errorf("missing required variable: %s", key))
+				errs = append(errs, &varError{name: key, msg: "missing required variable"})
 			}
 		}
 		if len(errs) > 0 {
