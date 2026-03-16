@@ -72,7 +72,7 @@ Delegates orchestration to [Turborepo](https://turbo.build). Miso spawns `turbo 
 
 Delegates orchestration to [Nx](https://nx.dev). Miso spawns `nx run-many --target=<script>` and parses its output into TUI tabs. Nx must be installed and available in your PATH.
 
-You can also use the object form for dependency ordering in `"mono"` mode:
+You can also use the object form for task configuration in any mode:
 
 ```json
 {
@@ -80,13 +80,17 @@ You can also use the object form for dependency ordering in `"mono"` mode:
     "mode": "mono",
     "tasks": {
       "build": { "dependsOn": ["^build"] },
-      "dev": {}
+      "dev": { "concurrent": ["services", "db:studio"] }
     }
   }
 }
 ```
 
-The `^` prefix in `dependsOn` means "run this task in upstream dependencies first." See [TUI Configuration](/tui/configuration) for details.
+- `dependsOn` with the `^` prefix means "run this task in upstream dependencies first."
+- `concurrent` lists additional tasks to discover and run in parallel alongside the main task.
+- In turbo/nx mode, tasks listed here use miso's direct orchestration instead of delegation.
+
+See [TUI Configuration](/tui/configuration) for details.
 
 When set to `"mono"`, miso reads workspace paths from your root `package.json`:
 
@@ -136,19 +140,6 @@ Add default flags to package manager commands:
 ```
 
 See [Flags](/working-with-miso/flags) for the full reference.
-
-### Multi
-
-Named groups of scripts to run together in the TUI:
-
-```json
-{
-  "multi": {
-    "web": ["dev", "test"],
-    "api": ["start"]
-  }
-}
-```
 
 ### Env
 

@@ -47,7 +47,7 @@ Controls how miso discovers and orchestrates workspaces.
 
 | Value | Description |
 |-------|-------------|
-| `"single"` (default) | Standard project. Uses `multi` config for concurrent scripts. |
+| `"single"` (default) | Standard project. Uses `concurrent` in task config for companion scripts. |
 | `"mono"` | Monorepo. Miso discovers workspaces and orchestrates scripts. |
 | `"turbo"` | Monorepo. Delegates orchestration to Turborepo, miso provides the UI. |
 | `"nx"` | Monorepo. Delegates orchestration to Nx, miso provides the UI. |
@@ -60,7 +60,7 @@ Controls how miso discovers and orchestrates workspaces.
 
 ### Object Form (with task configuration)
 
-For dependency-ordered execution, use the object form with `tasks`:
+For concurrent tasks, dependency ordering, or turbo/nx task overrides, use the object form with `tasks`:
 
 ```json
 {
@@ -68,7 +68,7 @@ For dependency-ordered execution, use the object form with `tasks`:
     "mode": "mono",
     "tasks": {
       "build": { "dependsOn": ["^build"] },
-      "dev": {}
+      "dev": { "concurrent": ["services", "db:studio"] }
     }
   }
 }
@@ -77,10 +77,11 @@ For dependency-ordered execution, use the object form with `tasks`:
 The `tasks` key maps command names to task configuration. Each task supports:
 
 - **`dependsOn`** — array of strings. The `^` prefix (e.g., `"^build"`) means "run this task in upstream workspace dependencies first," reading the dependency graph from each workspace's `package.json`.
+- **`concurrent`** — array of strings. Additional task names to discover and run in parallel alongside the main task. Each name is discovered across all workspaces (monorepo) or resolved from the project root (single repo).
+
+The object form works in all repo modes. In turbo/nx mode, tasks listed in `tasks` use miso's direct orchestration instead of delegation to the underlying tool.
 
 Commands not listed in `tasks`, or listed without `dependsOn`, run all workspaces in parallel.
-
-The object form is only valid when `mode` is `"mono"`. Turbo and Nx modes do not support `tasks` — they delegate all orchestration to the underlying tool.
 
 ### Turbo/Nx Delegation
 
@@ -94,22 +95,6 @@ When using `"turbo"` or `"nx"` mode:
 
 **Requirements:** The `turbo` or `nx` binary must be available in your PATH.
 
-## `multi` Option (Single Repos)
-
-Maps a command name to multiple scripts for concurrent execution. Only used in single repos — ignored in monorepos where workspace auto-discovery provides the script list.
-
-```json
-{
-  "tui": "tabbed",
-  "multi": {
-    "dev": ["dev:app", "dev:convex"],
-    "build": ["build:client", "build:server"]
-  }
-}
-```
-
-Running `miso dev` with this config launches both `dev:app` and `dev:convex` in the TUI.
-
 ## Script Discovery
 
 ### Monorepos
@@ -122,6 +107,6 @@ When `repo` is `"mono"`, `"turbo"`, or `"nx"`, miso auto-discovers scripts acros
 
 ### Single Repos
 
-Uses the `multi` config to determine which scripts to run concurrently. Scripts are resolved through the scripts folder first, then `package.json`.
+Uses the `concurrent` config in `repo.tasks` to determine which companion scripts to run alongside the main task. Scripts are resolved through the scripts folder first, then `package.json`.
 
-If no `multi` entry exists for the command, the script runs normally without the TUI.
+If no `concurrent` entry exists for the command, the script runs normally without the TUI.
