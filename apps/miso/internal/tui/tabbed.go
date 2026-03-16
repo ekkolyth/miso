@@ -31,6 +31,7 @@ type TabbedModel struct {
 	height          int
 	script          string
 	delegated       bool
+	selectMode       bool
 	allExitedPending bool
 }
 
@@ -55,9 +56,20 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Exit select mode on Escape
+		if m.selectMode && msg.String() == "esc" {
+			m.selectMode = false
+			return m, tea.EnableMouseCellMotion
+		}
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
+		case key.Matches(msg, m.keys.Select):
+			m.selectMode = !m.selectMode
+			if m.selectMode {
+				return m, tea.DisableMouse
+			}
+			return m, tea.EnableMouseCellMotion
 		case key.Matches(msg, m.keys.Up):
 			if m.selected > 0 {
 				m.selected--
@@ -282,9 +294,13 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 		scrollHint = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Render(fmt.Sprintf(" (scrolled +%d)", m.scrollOffset))
 	}
 
-	hintText := "↑↓ navigate · r restart · R restart all · ctrl+c quit"
-	if m.delegated {
-		hintText = "↑↓ navigate · R restart · ctrl+c quit"
+	var hintText string
+	if m.selectMode {
+		hintText = "SELECT MODE — highlight text to copy · s or esc to exit"
+	} else if m.delegated {
+		hintText = "↑↓ navigate · s select · R restart · ctrl+c quit"
+	} else {
+		hintText = "↑↓ navigate · s select · r restart · R restart all · ctrl+c quit"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
