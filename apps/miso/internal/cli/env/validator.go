@@ -20,7 +20,7 @@ var shorthandTypes = map[string]bool{
 	"json": true, "uuid": true,
 }
 
-func validateVariables(envMap map[string]string, vars map[string]config.VarConfigOrString, required config.EnvRequired) error {
+func validateVariables(envMap map[string]string, vars map[string]config.VarConfigOrString, required config.EnvRequired) []error {
 	validate := validator.New()
 
 	// Register custom pattern validator for dynamic regex
@@ -42,16 +42,19 @@ func validateVariables(envMap map[string]string, vars map[string]config.VarConfi
 	}
 	sort.Strings(names)
 
+	var errs []error
+
 	for _, name := range names {
 		v := vars[name]
 		var cfg config.VarConfig
 		if v.IsShorthand {
-			// Shorthand: pattern and enum not allowed
 			if v.Type == "pattern" || v.Type == "enum" {
-				return fmt.Errorf("variable %s: type %s cannot use shorthand (requires pattern/values)", name, v.Type)
+				errs = append(errs, fmt.Errorf("variable %s: type %s cannot use shorthand (requires pattern/values)", name, v.Type))
+				continue
 			}
 			if !shorthandTypes[v.Type] {
-				return fmt.Errorf("variable %s: unknown type %s", name, v.Type)
+				errs = append(errs, fmt.Errorf("variable %s: unknown type %s", name, v.Type))
+				continue
 			}
 			cfg = config.VarConfig{Type: v.Type, Optional: false}
 		} else {
@@ -61,7 +64,7 @@ func validateVariables(envMap map[string]string, vars map[string]config.VarConfi
 		val, ok := envMap[name]
 		if !ok {
 			if isRequired(name, required, vars) {
-				return fmt.Errorf("missing required variable: %s", name)
+				errs = append(errs, fmt.Errorf("missing required variable: %s", name))
 			}
 			continue
 		}
@@ -71,13 +74,12 @@ func validateVariables(envMap map[string]string, vars map[string]config.VarConfi
 			continue
 		}
 
-		// Validate type (fail fast)
 		if err := validateVar(validate, name, val, cfg); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 
-	return nil
+	return errs
 }
 
 // isRequired returns true if this variable must be present (required config says so AND var is not optional)

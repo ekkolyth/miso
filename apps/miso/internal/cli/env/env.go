@@ -112,8 +112,8 @@ func runEntry(projectRoot string, entry *config.EnvEntry, logger *log.Logger) er
 	}
 
 	// Object mode — full type validation
-	if err := validateVariables(envMap, entry.Variables.Object, entry.Required); err != nil {
-		return fmt.Errorf("%s: %w", label, err)
+	if errs := validateVariables(envMap, entry.Variables.Object, entry.Required); len(errs) > 0 {
+		return fmt.Errorf("%s: %s", label, errs[0])
 	}
 	logger.Info("env validation passed", "label", label, "variables", len(entry.Variables.Object))
 	return nil
