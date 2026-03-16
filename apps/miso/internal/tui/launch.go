@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,15 +57,42 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	}
 
 	// Pre-compute dependency levels if this command has dependsOn config.
+	// Only main task entries participate in dependency ordering — concurrent
+	// entries are started immediately.
 	var levels [][]TuiScriptEntry
+	var concurrentProcs []*Process
 	if cfg.HasDependsOn(scriptName) {
-		wsInfos := buildWSInfos(entries)
+		// Split entries: main task entries vs concurrent entries.
+		// Use prefix matching (same as DiscoverTuiScripts) to identify
+		// concurrent entries — e.g., concurrent: ["services"] should match
+		// entries with ScriptName "services" AND "services:worker".
+		var mainEntries []TuiScriptEntry
+		concurrentPrefixes := cfg.TaskConcurrent(scriptName)
+		for _, e := range entries {
+			isConcurrent := false
+			for _, prefix := range concurrentPrefixes {
+				if e.ScriptName == prefix || strings.HasPrefix(e.ScriptName, prefix+":") || strings.HasPrefix(e.ScriptName, prefix+"/") {
+					isConcurrent = true
+					break
+				}
+			}
+			if isConcurrent {
+				proc := pm.findProc(e.Label)
+				if proc != nil {
+					concurrentProcs = append(concurrentProcs, proc)
+				}
+			} else {
+				mainEntries = append(mainEntries, e)
+			}
+		}
+
+		wsInfos := buildWSInfos(mainEntries)
 		graph, err := BuildDependencyGraph(wsInfos)
 		if err != nil {
 			return false, fmt.Errorf("build dependency graph: %w", err)
 		}
 		var sortErr error
-		levels, sortErr = TopoSort(entries, graph)
+		levels, sortErr = TopoSort(mainEntries, graph)
 		if sortErr != nil {
 			return false, sortErr
 		}
@@ -96,6 +124,13 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	// Start all processes in a goroutine — prog.Send() blocks until the
 	// bubbletea event loop is running, so we can't call Start before p.Run().
 	go func() {
+		// Start concurrent companions immediately
+		for _, proc := range concurrentProcs {
+			if err := pm.Start(proc); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
+			}
+		}
+
 		if levels != nil {
 			for _, level := range levels {
 				var levelProcs []*Process
@@ -145,10 +180,6 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 }
 
 func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiScriptEntry, error) {
-	if cfg.IsMonorepo() && len(cfg.Multi) > 0 {
-		fmt.Fprintf(os.Stderr, "warning: 'multi' config is ignored in monorepo mode — workspace auto-discovery is used instead\n")
-	}
-
 	if cfg.IsMonorepo() {
 		wsDirs, err := config.LoadWorkspaces(root)
 		if err != nil {
@@ -164,12 +195,39 @@ func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiSc
 			})
 		}
 
-		return DiscoverTuiScripts(scriptName, wsInfos, cfg.Scripts)
+		entries, err := DiscoverTuiScripts(scriptName, wsInfos, cfg.Scripts)
+		if err != nil {
+			return nil, err
+		}
+
+		// Discover concurrent companion tasks
+		for _, concName := range cfg.TaskConcurrent(scriptName) {
+			concEntries, err := DiscoverTuiScripts(concName, wsInfos, cfg.Scripts)
+			if err != nil {
+				return nil, fmt.Errorf("discover concurrent %q: %w", concName, err)
+			}
+			entries = append(entries, concEntries...)
+		}
+
+		return DeduplicateLabels(entries), nil
 	}
 
-	// Single repo with multi config
-	if scripts, ok := cfg.Multi[scriptName]; ok {
-		return DiscoverMultiScripts(scripts, root, cfg)
+	// Single repo with concurrent config
+	concurrent := cfg.TaskConcurrent(scriptName)
+	if len(concurrent) > 0 {
+		// Resolve the main task itself
+		mainEntries, err := ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+		if err != nil {
+			return nil, err
+		}
+
+		// Resolve each concurrent task
+		concEntries, err := ResolveSingleRepoScripts(concurrent, root, cfg)
+		if err != nil {
+			return nil, err
+		}
+
+		return DeduplicateLabels(append(mainEntries, concEntries...)), nil
 	}
 
 	return nil, nil
