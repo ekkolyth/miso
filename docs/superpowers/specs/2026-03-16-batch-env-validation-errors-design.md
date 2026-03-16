@@ -33,6 +33,7 @@ ERROR miso: env validation failed:
 
 - Change return type from `error` to `[]error`.
 - Replace all early `return err` / `return fmt.Errorf(...)` with `errs = append(errs, ...)`.
+- `validateVar()` signature is unchanged (returns a single `error` for one variable). The accumulation happens by capturing its return value in `validateVariables()` instead of returning it.
 - Continue iterating through all variables.
 - Return accumulated `[]error` (nil if empty).
 
@@ -42,14 +43,16 @@ ERROR miso: env validation failed:
 - Path resolution and file loading errors remain fatal for that entry — returned as a single-element `[]error` (can't validate variables if the file can't be loaded).
 - Array (presence-only) mode: collect all missing keys into a slice instead of returning on the first one.
 - Object mode: pass through the `[]error` from `validateVariables()`.
+- Error messages must NOT include the label prefix — the label is provided by the grouping header in the formatted output. Remove the `fmt.Errorf("%s: %w", label, err)` wrapping for validation errors.
 
 ### `env.go` — `Run()`
 
-- Collect errors per label: `map[string][]error` (use ordered tracking to preserve entry order).
+- Collect errors per label using a slice of structs (label + errors) to preserve entry order.
 - For entries that pass validation, log INFO as before.
 - After all entries are processed, if any errors exist:
   - Format grouped error output (label headers with indented bullet errors).
   - Return a single combined error.
+- Discovery mode (no env config) is unchanged.
 - Exit behavior unchanged — caller still exits on error.
 
 ### Tests
@@ -57,3 +60,4 @@ ERROR miso: env validation failed:
 - Update existing tests to verify multiple errors are returned per entry.
 - Add test for grouped output across multiple entries.
 - Test that successful entries still log INFO even when other entries fail.
+- Test that an entry can have both missing required variables and type validation failures in the same run.
