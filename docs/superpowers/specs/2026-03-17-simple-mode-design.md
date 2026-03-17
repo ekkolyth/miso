@@ -141,6 +141,7 @@ miso init
 - **`package.json` exists in simple mode:** Ignored for script resolution. The `package.json` `scripts` field is not searched. This prevents unexpected behavior in projects that have a `package.json` for unrelated reasons.
 - **Bare `miso` with no arguments:** In simple mode, behaves the same as normal mode (shows usage/error). Consider tailoring the help text to omit PM commands.
 - **Multi-script runs not supported:** Since `run` is not a keyword in simple mode, there is no multi-script invocation syntax. Use TUI with `repo.tasks` for concurrent execution.
+- **`--env` flag works in simple mode:** Running `miso build --env` triggers env validation before script execution, then strips `--env` from the args passed to the script. Same behavior as normal mode.
 
 ## Approach
 
