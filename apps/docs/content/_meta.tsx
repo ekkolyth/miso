@@ -7,4 +7,5 @@ export default {
     tui: 'Terminal UI (TUI)',
     turbo: 'Turborepo Integration',
     contributing: 'Contributing to Miso',
+    examples: 'Examples',
 }
