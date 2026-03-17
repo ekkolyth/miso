@@ -509,10 +509,14 @@ git commit -m "feat: add simple mode routing bypass in main.go"
 
 ---
 
-### Task 5: TUI nil-safe manager guard
+### Task 5: TUI simple mode support
 
 **Files:**
 - Modify: `apps/miso/internal/tui/launch.go:49-53` (mgr.BuildRun branch)
+- Modify: `apps/miso/internal/tui/discover.go:163-196` (ResolveSingleRepoScripts)
+- Modify: `apps/miso/internal/tui/discover.go:57-133` (discoverWorkspaceScripts)
+
+The TUI discovery path uses `ResolveScript` and `ReadPackageJSONScripts`, which include `package.json` fallback. In simple mode, these must use folder-only resolution to prevent discovering `package.json` scripts that can't be executed without a manager.
 
 - [ ] **Step 1: Add nil guard before mgr.BuildRun()**
 
@@ -530,22 +534,101 @@ In `apps/miso/internal/tui/launch.go`, replace the package manager branch (lines
 		}
 ```
 
-- [ ] **Step 2: Verify compilation**
+- [ ] **Step 2: Add ResolveSingleRepoScriptsFolderOnly**
+
+In `apps/miso/internal/tui/discover.go`, add after `ResolveSingleRepoScripts`:
+
+```go
+// ResolveSingleRepoScriptsFolderOnly is like ResolveSingleRepoScripts but only
+// checks the scripts folder, ignoring package.json. Used in simple mode.
+func ResolveSingleRepoScriptsFolderOnly(scripts []string, root string, cfg config.Config) ([]TuiScriptEntry, error) {
+	var entries []TuiScriptEntry
+
+	for _, name := range scripts {
+		resolved, err := scripting.ResolveScriptFolderOnly(name, root, cfg)
+		if err != nil {
+			return nil, err
+		}
+		if resolved.Source == scripting.ScriptSourceNone {
+			continue
+		}
+
+		entries = append(entries, TuiScriptEntry{
+			Label:        name,
+			ScriptName:   name,
+			WorkspaceDir: root,
+			ScriptSource: "folder",
+			ScriptPath:   resolved.Path,
+		})
+	}
+
+	return entries, nil
+}
+```
+
+- [ ] **Step 3: Update discoverEntries to use folder-only resolution in simple mode**
+
+In `apps/miso/internal/tui/launch.go`, the `discoverEntries` function (line 182) handles single-repo concurrent discovery. Update it to use the folder-only variant when `cfg.SimpleMode()`:
+
+Replace the single-repo concurrent block in `discoverEntries` (lines 216-231):
+
+```go
+	// Single repo with concurrent config
+	concurrent := cfg.TaskConcurrent(scriptName)
+	if len(concurrent) > 0 {
+		var mainEntries, concEntries []TuiScriptEntry
+		var err error
+
+		if cfg.SimpleMode() {
+			mainEntries, err = ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
+			if err != nil {
+				return nil, err
+			}
+			concEntries, err = ResolveSingleRepoScriptsFolderOnly(concurrent, root, cfg)
+		} else {
+			mainEntries, err = ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+			if err != nil {
+				return nil, err
+			}
+			concEntries, err = ResolveSingleRepoScripts(concurrent, root, cfg)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		return DeduplicateLabels(append(mainEntries, concEntries...)), nil
+	}
+```
+
+Also update the monorepo path in `discoverEntries` (line 183). In simple mode, monorepo workspaces are not supported (spec says no workspace discovery from `package.json`). Add a guard at the top of `discoverEntries`:
+
+```go
+func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiScriptEntry, error) {
+	// Simple mode does not support monorepo workspace discovery
+	if cfg.IsMonorepo() && cfg.SimpleMode() {
+		return nil, nil
+	}
+
+	if cfg.IsMonorepo() {
+		// ... existing monorepo code unchanged
+```
+
+- [ ] **Step 4: Verify compilation**
 
 Run: `cd /Users/mikekenway/Development/miso/apps/miso && go build ./cmd/`
 Expected: Build succeeds.
 
-- [ ] **Step 3: Run existing TUI tests**
+- [ ] **Step 5: Run existing TUI tests**
 
 Run: `cd /Users/mikekenway/Development/miso/apps/miso && go test ./internal/tui/ -v`
 Expected: ALL PASS — no regressions.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 cd /Users/mikekenway/Development/miso
-git add apps/miso/internal/tui/launch.go
-git commit -m "feat: add nil-safe manager guard in TUI Launch"
+git add apps/miso/internal/tui/launch.go apps/miso/internal/tui/discover.go
+git commit -m "feat: TUI simple mode support with folder-only script resolution"
 ```
 
 ---
@@ -561,12 +644,71 @@ In `apps/miso/internal/cli/commands/init.go`, the current `default:` case (line 
 
 **Important restructuring:** The current code asks `askRepoType` and `askWorkspacePatterns` (lines 127-138) **before** the switch statement. These must be moved **into** each case that needs them (cases 1, 2, and the "new project" sub-branch of case 3). The simple mode branch must not ask about repo type — it's irrelevant without a package manager.
 
-Move the `askRepoType`/`askWorkspacePatterns` block from lines 127-138 into:
-- Case 1 (existing package.json with packageManager): add at the start of the case
-- Case 2 (existing package.json, no packageManager): add at the start of the case
-- Case 3 "new" sub-branch: add after the user selects "Create new project" (shown below)
+**Step-by-step:**
 
-Then replace the `default:` case starting at line 222 with:
+1. **Delete lines 126-138** (the `askRepoType` block and `askWorkspacePatterns` block before the `switch`):
+```go
+// DELETE THIS BLOCK:
+repoType, err := askRepoType(styles)
+if err != nil {
+    return err
+}
+
+var workspacePatterns []string
+if repoType == "mono" {
+    workspacePatterns, err = askWorkspacePatterns(styles)
+    if err != nil {
+        return err
+    }
+}
+```
+
+2. **In Case 1** (line 141, `case pkg != nil && packageManagerFromPackageJSON(pkg) != ""`), add the repo type prompt at the start of the case, right after the `managerName` assignment and logger line:
+```go
+	case pkg != nil && packageManagerFromPackageJSON(pkg) != "":
+		managerName := packageManagerFromPackageJSON(pkg)
+		// ... existing validation ...
+		logger.Info("using package manager from package.json", "manager", managerName)
+
+		// Ask repo type (moved here from before switch)
+		repoType, err := askRepoType(styles)
+		if err != nil {
+			return err
+		}
+		var workspacePatterns []string
+		if repoType == "mono" {
+			workspacePatterns, err = askWorkspacePatterns(styles)
+			if err != nil {
+				return err
+			}
+		}
+
+		// ... rest of case 1 unchanged (uses repoType and workspacePatterns)
+```
+
+3. **In Case 2** (line 180, `case pkg != nil:`), add the same block right after `detected, _ := manager.DetectManager(root)`:
+```go
+	case pkg != nil:
+		detected, _ := manager.DetectManager(root)
+
+		// Ask repo type (moved here from before switch)
+		repoType, err := askRepoType(styles)
+		if err != nil {
+			return err
+		}
+		var workspacePatterns []string
+		if repoType == "mono" {
+			workspacePatterns, err = askWorkspacePatterns(styles)
+			if err != nil {
+				return err
+			}
+		}
+
+		managerName, err := selectManager(managerList, detected, styles)
+		// ... rest of case 2 unchanged
+```
+
+4. **Replace the `default:` case** starting at line 222 with:
 
 ```go
 	// ── Case 3: no package.json — offer new project or simple mode ───────
