@@ -9,6 +9,11 @@
 			"type": "string",
 			"description": "Path or URL to this JSON schema for IDE support"
 		},
+		"packageManager": {
+			"type": "boolean",
+			"default": true,
+			"description": "Enable or disable package manager features. When false, miso operates as a pure script runner — no install/add/remove commands, no package.json script discovery. Default: true."
+		},
 		"scripts": {
 			"type": "string",
 			"default": "./scripts",
