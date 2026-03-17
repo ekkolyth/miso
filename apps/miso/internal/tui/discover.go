@@ -160,6 +160,32 @@ func DeduplicateLabels(entries []TuiScriptEntry) []TuiScriptEntry {
 	return entries
 }
 
+// ResolveSingleRepoScriptsFolderOnly is like ResolveSingleRepoScripts but only
+// checks the scripts folder, ignoring package.json. Used in simple mode.
+func ResolveSingleRepoScriptsFolderOnly(scripts []string, root string, cfg config.Config) ([]TuiScriptEntry, error) {
+	var entries []TuiScriptEntry
+
+	for _, name := range scripts {
+		resolved, err := scripting.ResolveScriptFolderOnly(name, root, cfg)
+		if err != nil {
+			return nil, err
+		}
+		if resolved.Source == scripting.ScriptSourceNone {
+			continue
+		}
+
+		entries = append(entries, TuiScriptEntry{
+			Label:        name,
+			ScriptName:   name,
+			WorkspaceDir: root,
+			ScriptSource: "folder",
+			ScriptPath:   resolved.Path,
+		})
+	}
+
+	return entries, nil
+}
+
 // ResolveSingleRepoScripts resolves a list of script names against the project
 // root for single-repo concurrent discovery. Scripts that cannot be found are
 // silently skipped. Labels are the script names.
