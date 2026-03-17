@@ -104,6 +104,68 @@ func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript,
 	return ResolvedScript{Source: ScriptSourceNone}, nil
 }
 
+// ResolveScriptFolderOnly resolves a script by name from the folder only.
+// Unlike ResolveScript, it does NOT fall back to package.json.
+// Used in simple mode where package.json scripts are ignored.
+func ResolveScriptFolderOnly(name string, root string, cfg config.Config) (ResolvedScript, error) {
+	scriptsPath := cfg.Scripts
+	if scriptsPath == "" {
+		scriptsPath = "./scripts"
+	}
+
+	if !filepath.IsAbs(scriptsPath) {
+		scriptsPath = filepath.Join(root, scriptsPath)
+	}
+
+	discovered, err := DiscoverScripts(scriptsPath)
+	if err != nil {
+		return ResolvedScript{}, fmt.Errorf("discover scripts: %w", err)
+	}
+
+	name = filepath.ToSlash(name)
+
+	ext := filepath.Ext(name)
+	if ext != "" {
+		key := strings.TrimSuffix(name, ext)
+		if scripts, ok := discovered[key]; ok {
+			for _, script := range scripts {
+				if script.Extension == ext {
+					if len(scripts) > 1 {
+						var paths []string
+						for _, s := range scripts {
+							paths = append(paths, s.RelativePath)
+						}
+						return ResolvedScript{}, fmt.Errorf("multiple scripts for %q exist, exiting: %s",
+							key, strings.Join(paths, ", "))
+					}
+					return ResolvedScript{
+						Source: ScriptSourceFolder,
+						Path:   script.Path,
+					}, nil
+				}
+			}
+		}
+	}
+
+	key := strings.TrimSuffix(name, ext)
+	if scripts, ok := discovered[key]; ok {
+		if len(scripts) > 1 {
+			var paths []string
+			for _, script := range scripts {
+				paths = append(paths, script.RelativePath)
+			}
+			return ResolvedScript{}, fmt.Errorf("multiple scripts for %q exist, exiting: %s",
+				key, strings.Join(paths, ", "))
+		}
+		return ResolvedScript{
+			Source: ScriptSourceFolder,
+			Path:   scripts[0].Path,
+		}, nil
+	}
+
+	return ResolvedScript{Source: ScriptSourceNone}, nil
+}
+
 // check if script exists in any source
 func HasScript(name string, root string, cfg config.Config) (bool, error) {
 	resolved, err := ResolveScript(name, root, cfg)
