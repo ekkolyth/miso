@@ -1,0 +1,40 @@
+---
+title: Single Repo
+---
+
+# Single Repo Example
+
+A standard single-project `miso.json` with TUI, env validation, concurrent tasks, and flags.
+
+```json
+{
+  "$schema": "https://misojs.dev/miso.schema.json",
+  "scripts": "./scripts",
+  "tui": "tabbed",
+  "repo": {
+    "tasks": {
+      "dev": { "concurrent": ["services"] }
+    }
+  },
+  "flags": {
+    "install": ["--frozen-lockfile"],
+    "dev": ["--env"]
+  },
+  "env": {
+    "path": ".env.local",
+    "variables": {
+      "PORT": "port",
+      "DATABASE_URL": "url",
+      "API_KEY": "string"
+    }
+  }
+}
+```
+
+## What This Configures
+
+- **scripts** — Custom scripts live in `./scripts` relative to the project root
+- **tui** — [Tabbed mode](/tui/tabbed-mode) shows each concurrent task in its own tab
+- **repo.tasks** — Running `miso dev` also starts the `services` script concurrently
+- **flags** — `miso install` always runs with `--frozen-lockfile`; `miso dev` triggers [env validation](/env-validation) via `--env`
+- **env** — Validates `PORT` (must be a valid port number), `DATABASE_URL` (must be a URL), and `API_KEY` (must be a string) from `.env.local`
