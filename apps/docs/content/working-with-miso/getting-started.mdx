@@ -58,6 +58,20 @@ And your `miso.json`:
 }
 ```
 
+### Simple Mode (No Package Manager)
+
+If `miso init` doesn't detect an existing JavaScript project (no `package.json` or lockfile), it offers an additional option:
+
+```
+? miso could not detect an existing javascript project.
+  ❯ Create new project
+    Run in simple mode (scripts only, no package manager)
+```
+
+Selecting **simple mode** creates a `miso.json` with `"packageManager": false` and a `scripts/` directory. This lets you use miso's script runner, TUI, env validation, and task orchestration in any project — Go, Python, Rust, or anything else.
+
+See [Simple Mode](/working-with-miso/simple-mode) for the full guide.
+
 ## Running Commands from Anywhere
 
 You can run Miso commands from any subdirectory within your project. Miso walks up the directory tree to find your `miso.json` at the root.

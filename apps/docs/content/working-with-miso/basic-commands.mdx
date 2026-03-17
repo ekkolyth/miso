@@ -10,6 +10,10 @@ When you execute commands via miso, it first checks to see if the argument provi
 
 To learn more about this, check out [Resolution Order](/scripting/script-resolution#resolution-order)
 
+<Callout type="info">
+In [simple mode](/working-with-miso/simple-mode) (`"packageManager": false`), there are no built-in commands — everything resolves as a script. The commands below (install, add, remove, dev, misox) are only available when a package manager is configured.
+</Callout>
+
 ## Workspace Scripts (Monorepo)
 
 If your project is configured as a monorepo (`"repo": "mono"` in `miso.json`), you can run scripts scoped to a specific workspace using the `workspace:script` syntax:

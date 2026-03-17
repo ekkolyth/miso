@@ -10,6 +10,18 @@ Miso is a tiny cli tool that let's you stop worrying about which package manager
 
 Miso doesn't care where you work or what tools you use. It sits as a light wrapper on top of bun, pnpm, and more, that let's you remember one set of commands.
 
+## Simple Mode
+
+Don't use JavaScript? Miso also works as a standalone script runner. Set `"packageManager": false` in your `miso.json` and use miso for script execution, TUI, env validation, and task orchestration in any project.
+
+```json
+{
+    "$schema": "https://misojs.dev/miso.schema.json",
+    "packageManager": false,
+    "scripts": "./scripts"
+}
+```
+
 ## Get Started
 
 ### Installation

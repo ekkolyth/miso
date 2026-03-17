@@ -1,0 +1,69 @@
+---
+title: Simple Mode
+---
+
+# Simple Mode
+
+Miso can run without a JavaScript package manager. If you like miso's script execution, TUI, env validation, and task orchestration but your project isn't JavaScript — simple mode is for you.
+
+## Setup
+
+Run `miso init` from any directory. If no JavaScript project is detected, miso will offer two options:
+
+```
+? miso could not detect an existing javascript project.
+  ❯ Create new project
+    Run in simple mode (scripts only, no package manager)
+```
+
+Select **"Run in simple mode"** and miso will create a `miso.json` with package management disabled, plus a `scripts/` directory:
+
+```json
+{
+  "$schema": "https://misojs.dev/miso.schema.json",
+  "packageManager": false,
+  "scripts": "./scripts"
+}
+```
+
+You can also create this file manually. The key is `"packageManager": false`.
+
+## How It Works
+
+In simple mode, there are no built-in commands. Every argument you pass to miso is resolved as a script name from the `scripts/` folder:
+
+```bash
+miso build       # runs scripts/build.sh
+miso deploy      # runs scripts/deploy.sh
+miso test        # runs scripts/test.sh
+```
+
+If a script isn't found, miso tells you:
+
+```
+ERROR miso: script 'build' not found in ./scripts
+```
+
+## What's Available
+
+Everything except package management:
+
+- **Script execution** — folder scripts with shebang detection and extension-based interpreters
+- **TUI** — tabbed and merged modes for concurrent task display
+- **Task orchestration** — `dependsOn` and `concurrent` in `repo.tasks`
+- **Env validation** — `miso env` works the same as always
+- **Meta-commands** — `miso env`, `miso scripts`, `miso init`, `miso version`, `miso upgrade`, `miso completion`
+
+## What's Not Available
+
+- `install`, `add`, `remove`, and all other package manager commands
+- `package.json` script discovery (even if a `package.json` exists, its `scripts` are ignored)
+- Workspace discovery from `package.json`
+- `flags` config (no package manager to pass flags to)
+- `misox`
+
+## Switching to Full Mode
+
+Run `miso init` again from your project root. If you choose to create a new project, miso will set up a package manager and remove the `"packageManager": false` setting.
+
+Or just edit `miso.json` manually — remove the `"packageManager": false` line and miso will default back to normal package manager mode.
