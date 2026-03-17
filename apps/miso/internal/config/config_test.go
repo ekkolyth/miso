@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -327,5 +328,108 @@ func TestTuiEnabled(t *testing.T) {
 				t.Errorf("TuiEnabled() with TuiMode=%q = %v, want %v", tt.tui, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadPackageManagerFalse(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"packageManager": false
+	}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.PackageManager == nil {
+		t.Fatal("PackageManager is nil, want *false")
+	}
+	if *cfg.PackageManager != false {
+		t.Errorf("PackageManager = %v, want false", *cfg.PackageManager)
+	}
+}
+
+func TestLoadPackageManagerTrue(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"packageManager": true
+	}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.PackageManager == nil {
+		t.Fatal("PackageManager is nil, want *true")
+	}
+	if *cfg.PackageManager != true {
+		t.Errorf("PackageManager = %v, want true", *cfg.PackageManager)
+	}
+}
+
+func TestLoadPackageManagerAbsent(t *testing.T) {
+	dir := writeTempConfig(t, `{}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.PackageManager != nil {
+		t.Errorf("PackageManager = %v, want nil (absent)", *cfg.PackageManager)
+	}
+}
+
+func TestSimpleMode(t *testing.T) {
+	f := false
+	cfg := Config{PackageManager: &f}
+	if !cfg.SimpleMode() {
+		t.Error("SimpleMode() = false, want true")
+	}
+
+	tr := true
+	cfg2 := Config{PackageManager: &tr}
+	if cfg2.SimpleMode() {
+		t.Error("SimpleMode() = true, want false (explicit true)")
+	}
+
+	cfg3 := Config{}
+	if cfg3.SimpleMode() {
+		t.Error("SimpleMode() = true, want false (nil/absent)")
+	}
+}
+
+func TestSaveRoundTripsPackageManagerFalse(t *testing.T) {
+	dir := t.TempDir()
+	f := false
+	cfg := Config{
+		Schema:         SchemaURL,
+		PackageManager: &f,
+		Scripts:        "./scripts",
+	}
+	if err := Save(dir, cfg); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() after Save() error: %v", err)
+	}
+	if loaded.PackageManager == nil {
+		t.Fatal("PackageManager is nil after round-trip, want *false")
+	}
+	if *loaded.PackageManager != false {
+		t.Errorf("PackageManager = %v after round-trip, want false", *loaded.PackageManager)
+	}
+}
+
+func TestSaveOmitsPackageManagerWhenNil(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		Schema:  SchemaURL,
+		Scripts: "./scripts",
+	}
+	if err := Save(dir, cfg); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, FileName))
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if strings.Contains(string(data), "packageManager") {
+		t.Error("saved config contains packageManager, want it omitted when nil")
 	}
 }
