@@ -123,20 +123,6 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 
 	managerList := manager.GetRegisteredManagers()
 
-	// ask repo type upfront — applies to all cases
-	repoType, err := askRepoType(styles)
-	if err != nil {
-		return err
-	}
-
-	var workspacePatterns []string
-	if repoType == "mono" {
-		workspacePatterns, err = askWorkspacePatterns(styles)
-		if err != nil {
-			return err
-		}
-	}
-
 	switch {
 	// ── Case 1: existing package.json with packageManager field ─────────────
 	case pkg != nil && packageManagerFromPackageJSON(pkg) != "":
@@ -152,6 +138,19 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		}
 
 		logger.Info("using package manager from package.json", "manager", managerName)
+
+		// Ask repo type (moved here from before switch)
+		repoType, err := askRepoType(styles)
+		if err != nil {
+			return err
+		}
+		var workspacePatterns []string
+		if repoType == "mono" {
+			workspacePatterns, err = askWorkspacePatterns(styles)
+			if err != nil {
+				return err
+			}
+		}
 
 		if repoType == "mono" {
 			merged := mergeWorkspaces(pkg, workspacePatterns)
@@ -179,6 +178,19 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 	// ── Case 2: existing package.json, no packageManager; check lockfiles ───
 	case pkg != nil:
 		detected, _ := manager.DetectManager(root)
+
+		// Ask repo type (moved here from before switch)
+		repoType, err := askRepoType(styles)
+		if err != nil {
+			return err
+		}
+		var workspacePatterns []string
+		if repoType == "mono" {
+			workspacePatterns, err = askWorkspacePatterns(styles)
+			if err != nil {
+				return err
+			}
+		}
 
 		managerName, err := selectManager(managerList, detected, styles)
 		if err != nil {
@@ -218,8 +230,62 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		}
 		logger.Info("created miso.json")
 
-	// ── Case 3: no package.json — new project ───────────────────────────────
+	// ── Case 3: no package.json — offer new project or simple mode ───────
 	default:
+		var initChoice string
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title(styles.Heading.Render("miso could not detect an existing javascript project.")).
+					Description(styles.Muted.Render("Press ↑/↓ to move, Enter to confirm • ctrl+c to bail")).
+					Options(
+						huh.NewOption("Create new project", "new"),
+						huh.NewOption("Run in simple mode (scripts only, no package manager)", "simple"),
+					).
+					Value(&initChoice),
+			),
+		).WithTheme(huh.ThemeCharm())
+
+		if err := form.Run(); err != nil {
+			return err
+		}
+
+		if initChoice == "simple" {
+			// Simple mode: scaffold miso.json with packageManager: false and create scripts dir
+			f := false
+			cfg := config.Config{
+				Schema:         config.SchemaURL,
+				PackageManager: &f,
+				Scripts:        "./scripts",
+			}
+			if err := config.Save(root, cfg); err != nil {
+				return err
+			}
+			logger.Info("created miso.json (simple mode)")
+
+			scriptsDir := filepath.Join(root, "scripts")
+			if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+				return fmt.Errorf("create scripts directory: %w", err)
+			}
+			logger.Info("created scripts directory")
+			return nil
+		}
+
+		// "new" — create a new JS project
+		// Now ask repo type (only relevant for JS projects)
+		repoType, err := askRepoType(styles)
+		if err != nil {
+			return err
+		}
+
+		var workspacePatterns []string
+		if repoType == "mono" {
+			workspacePatterns, err = askWorkspacePatterns(styles)
+			if err != nil {
+				return err
+			}
+		}
+
 		projectName, err := askProjectName(filepath.Base(root), styles)
 		if err != nil {
 			return err
@@ -232,13 +298,10 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 
 		logger.Info("scaffolding new project", "name", projectName, "manager", managerName)
 
-		// validate manager is supported
 		if _, ok := manager.GetManager(managerName); !ok {
 			return fmt.Errorf("unsupported manager: %s", managerName)
 		}
 
-		// run <manager> init to scaffold package.json (and whatever else the
-		// manager sets up, e.g. tsconfig for bun)
 		spec := manager.ExecSpec{
 			Command: managerName,
 			Args:    []string{"init"},
@@ -247,14 +310,11 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			return err
 		}
 
-		// read the package.json the manager just created and inject name +
-		// packageManager so they live in one place
 		freshPkg, err := readPackageJSON(root)
 		if err != nil {
 			return err
 		}
 		if freshPkg == nil {
-			// manager init didn't produce a package.json; create a minimal one
 			freshPkg = map[string]interface{}{
 				"name":    projectName,
 				"version": "0.0.1",
