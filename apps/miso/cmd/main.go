@@ -117,6 +117,67 @@ func main() {
 		cli.Fail(logger, err, false)
 	}
 
+	// Simple mode: bypass ParseCLI and EnsureManager entirely.
+	// Only meta-commands are handled; everything else is folder script resolution.
+	if cfg.SimpleMode() {
+		if len(args) == 0 {
+			cli.Fail(logger, fmt.Errorf("missing command"), true)
+		}
+
+		cmd := args[0]
+
+		// Meta-commands that remain in simple mode
+		// (init, version, upgrade, completion already handled above)
+		switch cmd {
+		case "env":
+			if err := env.Run(projectRoot, cfg, logger); err != nil {
+				os.Exit(1)
+			}
+			return
+		case "scripts":
+			if err := scripting.List(cfg, projectRoot, styles, logger); err != nil {
+				cli.Fail(logger, err, false)
+			}
+			return
+		}
+
+		// Resolve as folder script only (no package.json fallback)
+		resolved, err := scripting.ResolveScriptFolderOnly(cmd, projectRoot, cfg)
+		if err != nil {
+			cli.Fail(logger, err, false)
+		}
+
+		if resolved.Source == scripting.ScriptSourceNone {
+			cli.Fail(logger, fmt.Errorf("script '%s' not found in %s", cmd, cfg.Scripts), false)
+		}
+
+		scriptArgs := args[1:]
+
+		// Handle --env flag: run env validation before script execution
+		if env.HasEnvFlag(scriptArgs) {
+			if err := env.Run(projectRoot, cfg, logger); err != nil {
+				os.Exit(1)
+			}
+			scriptArgs = env.StripEnvFlag(scriptArgs)
+		}
+
+		// TUI interception for simple mode
+		if cfg.TuiEnabled() {
+			ran, err := tui.Launch(cfg, cmd, projectRoot, nil)
+			if err != nil {
+				cli.Fail(logger, err, false)
+			}
+			if ran {
+				return
+			}
+		}
+
+		if err := scripting.ExecScriptFile(resolved.Path, scriptArgs, originalWorkDir, cfg.Shell); err != nil {
+			cli.Fail(logger, err, false)
+		}
+		return
+	}
+
 	parsed, err := cli.ParseCLI(args, cfg, projectRoot)
 	if err != nil {
 		cli.Fail(logger, err, true)
