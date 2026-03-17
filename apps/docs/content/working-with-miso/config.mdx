@@ -15,6 +15,23 @@ Add a `$schema` property to get autocomplete and validation in VS Code, Cursor, 
 
 The schema is available at [https://misojs.dev/miso.schema.json](https://misojs.dev/miso.schema.json) — use this URL in your `miso.json` for type-safe editing.
 
+### Package Manager
+
+Controls whether miso operates as a package manager wrapper or a standalone script runner:
+
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    command='"packageManager": false'
+/>
+
+<DocProp prop="boolean (default: true)" />
+
+When set to `false`, miso runs in **simple mode** — all package manager features are disabled. Every command resolves as a folder script. See [Simple Mode](/working-with-miso/simple-mode) for details.
+
+When `true` (or omitted), miso operates normally as a package manager wrapper.
+
 ### Scripts
 
 Sets the path to the folder you want miso to use when you run custom scripts:
