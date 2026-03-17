@@ -25,8 +25,9 @@ type TaskConfig struct {
 
 // persisted project metadata
 type Config struct {
-	Schema  string `json:"$schema,omitempty"`
-	Scripts string `json:"scripts"`
+	Schema         string `json:"$schema,omitempty"`
+	PackageManager *bool  `json:"packageManager,omitempty"`
+	Scripts        string `json:"scripts"`
 	Shell          string                `json:"shell,omitempty"`
 	Flags          map[string][]string   `json:"flags,omitempty"`
 	Env            []*EnvEntry           `json:"env,omitempty"`
@@ -177,6 +178,11 @@ func (c Config) TuiEnabled() bool {
 	return c.TuiMode == "tabbed" || c.TuiMode == "merged"
 }
 
+// SimpleMode returns true when package manager features are disabled.
+func (c Config) SimpleMode() bool {
+	return c.PackageManager != nil && !*c.PackageManager
+}
+
 // resolve config file path for project root
 func Path(root string) string {
 	return filepath.Join(root, FileName)
@@ -184,8 +190,9 @@ func Path(root string) string {
 
 // configLoad is used for two-phase unmarshaling (env can be string, object, or array)
 type configLoad struct {
-	Schema  string `json:"$schema,omitempty"`
-	Scripts string `json:"scripts"`
+	Schema         string `json:"$schema,omitempty"`
+	PackageManager *bool  `json:"packageManager,omitempty"`
+	Scripts        string `json:"scripts"`
 	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`
 	EnvRaw         json.RawMessage     `json:"env,omitempty"`
@@ -220,8 +227,9 @@ func Load(root string) (Config, error) {
 	}
 
 	cfg := Config{
-		Schema:  load.Schema,
-		Scripts: load.Scripts,
+		Schema:         load.Schema,
+		PackageManager: load.PackageManager,
+		Scripts:        load.Scripts,
 		Shell:          load.Shell,
 		Flags:          load.Flags,
 		TuiMode:        tuiMode,
