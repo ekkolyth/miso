@@ -48,6 +48,9 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 			args = []string{"-e", entry.ScriptPath}
 		} else {
 			// Run via package manager
+			if mgr == nil {
+				return false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
+			}
 			spec := mgr.BuildRun(entry.ScriptName, nil)
 			cmd = spec.Command
 			args = spec.Args
@@ -180,6 +183,11 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 }
 
 func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiScriptEntry, error) {
+	// Simple mode does not support monorepo workspace discovery
+	if cfg.IsMonorepo() && cfg.SimpleMode() {
+		return nil, nil
+	}
+
 	if cfg.IsMonorepo() {
 		wsDirs, err := config.LoadWorkspaces(root)
 		if err != nil {
@@ -215,14 +223,22 @@ func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiSc
 	// Single repo with concurrent config
 	concurrent := cfg.TaskConcurrent(scriptName)
 	if len(concurrent) > 0 {
-		// Resolve the main task itself
-		mainEntries, err := ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
-		if err != nil {
-			return nil, err
-		}
+		var mainEntries, concEntries []TuiScriptEntry
+		var err error
 
-		// Resolve each concurrent task
-		concEntries, err := ResolveSingleRepoScripts(concurrent, root, cfg)
+		if cfg.SimpleMode() {
+			mainEntries, err = ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
+			if err != nil {
+				return nil, err
+			}
+			concEntries, err = ResolveSingleRepoScriptsFolderOnly(concurrent, root, cfg)
+		} else {
+			mainEntries, err = ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+			if err != nil {
+				return nil, err
+			}
+			concEntries, err = ResolveSingleRepoScripts(concurrent, root, cfg)
+		}
 		if err != nil {
 			return nil, err
 		}
