@@ -38,7 +38,8 @@ type Process struct {
 	Entry    TuiScriptEntry
 	Command  string
 	Args     []string
-	Dir      string // working directory for the process
+	Dir      string   // working directory for the process
+	Environ  []string // environment variables for the process (nil = inherit)
 	State    ProcessState
 	ExitCode int
 	Buffer   *RingBuffer
@@ -68,12 +69,13 @@ func (pm *ProcessManager) SetProgram(p *tea.Program) {
 }
 
 // Add creates a new Process entry and appends it to the manager.
-func (pm *ProcessManager) Add(entry TuiScriptEntry, command string, args []string, dir string) *Process {
+func (pm *ProcessManager) Add(entry TuiScriptEntry, command string, args []string, dir string, environ []string) *Process {
 	p := &Process{
 		Entry:   entry,
 		Command: command,
 		Args:    args,
 		Dir:     dir,
+		Environ: environ,
 		State:   StateStarting,
 		Buffer:  NewRingBuffer(DefaultBufferSize),
 		done:    make(chan struct{}),
@@ -96,6 +98,9 @@ func (pm *ProcessManager) Start(p *Process) error {
 	p.cmd = exec.Command(p.Command, p.Args...)
 	if p.Dir != "" {
 		p.cmd.Dir = p.Dir
+	}
+	if p.Environ != nil {
+		p.cmd.Env = p.Environ
 	}
 	// Create a new process group so we can kill the entire tree on stop.
 	p.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

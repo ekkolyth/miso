@@ -100,7 +100,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		proc := pm.findProc(label)
 		if proc == nil {
 			entry := TuiScriptEntry{Label: label, ScriptName: scriptName, WorkspaceDir: root}
-			proc = pm.Add(entry, "", nil, root)
+			proc = pm.Add(entry, "", nil, root, nil)
 			proc.State = StateRunning
 			pm.sendState(proc, StateRunning, 0)
 		}
@@ -116,7 +116,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		proc := pm.findProc(meta.Label)
 		if proc == nil {
 			entry := TuiScriptEntry{Label: meta.Label, ScriptName: scriptName, WorkspaceDir: root}
-			proc = pm.Add(entry, "", nil, root)
+			proc = pm.Add(entry, "", nil, root, nil)
 			proc.State = StateRunning
 			pm.sendState(proc, StateRunning, 0)
 		}
