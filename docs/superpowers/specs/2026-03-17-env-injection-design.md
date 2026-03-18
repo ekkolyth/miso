@@ -116,17 +116,15 @@ my-project/
 }
 ```
 
-**Before this change:** `miso migrate/up` spawns the script. The script inherits the shell environment — but the shell doesn't have `DATABASE_URL` (it's only in `.env.local`). The script fails with an empty connection string.
-
-**After this change:** Same command. Before spawning:
+Running `miso migrate/up`:
 
 1. Miso reads `.env.local` → gets `{DATABASE_URL: "postgres://...", PORT: "3000"}`
 2. Checks the shell env → neither variable is set
-3. Merges both into the environment
-4. Spawns the script with the merged environment
-5. Script sees `DATABASE_URL=postgres://...` and works
+3. Merges both into the script's environment
+4. Spawns `scripts/migrate/up.sh` with the merged environment
+5. Script sees `DATABASE_URL=postgres://...` and connects successfully
 
-If the user had `PORT=5000` in their shell, miso keeps `5000` — the file's `3000` is ignored for that variable.
+If `PORT=5000` is already set in the shell, miso keeps `5000` — the file's `3000` is ignored for that variable. The shell always wins.
 
 ### Monorepo scoping
 
