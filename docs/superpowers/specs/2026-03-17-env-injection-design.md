@@ -24,8 +24,9 @@ func BuildProcessEnv(projectRoot string, cfg config.Config, workspaceDir string)
 
 1. Start with `os.Environ()` as the base (current shell environment)
 2. Determine which env entries to load:
-   - **Single repo / simple mode:** All configured entries. If none configured, discover using standard order (`.env.local` → `.env.production` → `.env.development` → `.env`)
-   - **Monorepo:** Only entries whose resolved `path` falls under `workspaceDir`. If `workspaceDir` is the project root (root-level script), load all entries.
+   - **Single repo / simple mode:** All configured entries. If none configured, discover using standard order (`.env.local` → `.env.production` → `.env.development` → `.env`) from the project root.
+   - **Monorepo with env config:** Only entries whose resolved `path` falls under `workspaceDir`. If `workspaceDir` is the project root (root-level script), load all entries.
+   - **Monorepo without env config:** Discover per-workspace using the standard discovery order, searching within `workspaceDir`. Each workspace gets only its own `.env` file. Uses workspace paths already resolved from `package.json`.
 3. For each matching entry, read the file via `godotenv.Read(path)` → `map[string]string`
 4. Merge into the base: **process env wins** — only set vars that aren't already present in the shell environment
 5. Return the merged `[]string` in `KEY=VALUE` format (ready for `cmd.Env`)
@@ -51,6 +52,8 @@ Env injection happens wherever **miso spawns a process it orchestrates**:
 | Call site | What it does | Inject? |
 |-----------|-------------|---------|
 | `main.go` — `ActionScriptFolder` | Folder script in normal mode | Yes |
+| `main.go` — `ActionScriptOverride` | Script override (folder script overriding a built-in command) | Yes |
+| `main.go` — `ActionWorkspaceScript` | Workspace-scoped folder script in monorepo | Yes, per-workspace |
 | `main.go` — simple mode block | Folder script in simple mode | Yes |
 | `tui/launch.go` — `Launch` loop | TUI-spawned process (including turbo/nx task overrides) | Yes, per-workspace |
 | `commands.Run` | PM runs package.json script (`bun run dev`) | No — PM handles env |
@@ -61,6 +64,14 @@ Env injection happens wherever **miso spawns a process it orchestrates**:
 | `cli.RunMisox` | PM exec (npx/bunx) | No — PM handles env |
 
 **Rule:** If miso is spawning the process, inject. If a package manager, turbo, or nx is spawning it, don't.
+
+### TUI process env injection mechanism
+
+The TUI process manager (`process.go`) builds `exec.Command` directly — it does not go through `ExecScriptFile`. To inject env into TUI-spawned processes:
+
+1. Add an `Environ []string` field to the `Process` struct
+2. In `Launch` (launch.go), after building each process entry, call `BuildProcessEnv(root, cfg, entry.WorkspaceDir)` and store the result on the `Process`
+3. In `ProcessManager.Start()`, set `p.cmd.Env = p.Environ` before starting the command (when non-nil)
 
 ### `--env` flag behavior
 
@@ -131,6 +142,13 @@ In a monorepo with multiple env entries:
 When running a script in the `web` workspace, miso resolves the entry paths and checks which fall under the workspace directory. Only `apps/web/.env.local` matches — the `api` entry is not loaded. This prevents env vars from bleeding across workspace boundaries.
 
 Root-level scripts (run from project root, not inside a workspace) get all entries loaded.
+
+### Edge cases
+
+- **Monorepo with no env config:** Discover `.env` files per-workspace using the standard discovery order (`.env.local` → `.env.production` → `.env.development` → `.env`), searching within each workspace directory. Each workspace gets only the env from its own directory. This uses the workspace paths already resolved from `package.json`.
+- **Multiple entries with overlapping variables:** Entries are processed in config array order. Later entries overwrite earlier ones. Process env still wins over all file values.
+- **Missing `.env` file during injection:** Soft-fail with a warning log. Don't abort the script — the file might be optional (e.g., `.env.local` in CI). Validation via `--env` or `miso env` is the mechanism for hard-failing on missing files.
+- **`--env` with TUI:** Validation happens once before TUI launch (in `main.go`), not per-process inside the TUI. The flag is stripped before the TUI sees it.
 
 ## Approach
 
