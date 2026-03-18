@@ -160,6 +160,16 @@ See [Flags](/working-with-miso/flags) for the full reference.
 
 ### Env
 
+Miso automatically loads your registered `.env` files into the environment of every script it runs. You don't need to do anything special — if you've configured an `env` block, the variables are available to your scripts.
+
+For example, if your `.env.local` has `DATABASE_URL=postgres://localhost/mydb`, any script miso runs will see that value. If the variable is already set in your shell (e.g., you exported `DATABASE_URL` yourself), your shell value takes precedence — the `.env` file only fills in variables that aren't already set.
+
+If you don't configure an `env` block at all, miso will auto-discover `.env` files in this order: `.env.local`, `.env.production`, `.env.development`, `.env`.
+
+In monorepo mode, each workspace only gets the env from its own directory — variables from other workspaces don't bleed across boundaries.
+
+The `--env` flag adds **validation** before running the script. Without it, variables are loaded but not validated.
+
 Configure environment variable validation for `miso env`:
 
 ```json
