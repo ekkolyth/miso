@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ekkolyth/miso/internal/cli/env"
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
 )
@@ -56,7 +57,13 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 			args = spec.Args
 		}
 
-		pm.Add(entry, cmd, args, dir)
+		// Build env for this process (scoped to workspace dir)
+		processEnv, envErr := env.BuildProcessEnv(root, cfg, dir)
+		if envErr != nil {
+			return false, fmt.Errorf("build env for %s: %w", entry.Label, envErr)
+		}
+
+		pm.Add(entry, cmd, args, dir, processEnv)
 	}
 
 	// Pre-compute dependency levels if this command has dependsOn config.
