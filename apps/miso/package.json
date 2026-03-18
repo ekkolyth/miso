@@ -3,14 +3,17 @@
 		"miso": "miso.mjs",
 		"misox": "misox.mjs"
 	},
-
+	"scripts": {
+		"postinstall": "node scripts/postinstall.mjs"
+	},
 	"description": "the agnostic package manager",
 	"homepage": "https://misojs.dev",
 	"files": [
 		"README.md",
 		"miso.mjs",
 		"misox.mjs",
-
+		"scripts/postinstall.mjs",
+		"scripts/completion.mjs",
 		"bin/miso-darwin-amd64",
 		"bin/miso-darwin-arm64",
 		"bin/miso-linux-amd64",
