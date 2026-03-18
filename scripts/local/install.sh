@@ -3,7 +3,7 @@ GOBIN=$(go env GOBIN)
 [ -z "$GOBIN" ] && GOBIN=$(go env GOPATH)/bin
 
 # Build first
-./scripts/build/miso.sh
+sh ./scripts/build/miso.sh
 
 echo "Installing $BINARY to $GOBIN"
 cp apps/miso/bin/$BINARY $GOBIN/$BINARY || exit 1
