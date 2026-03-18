@@ -172,7 +172,7 @@ func main() {
 			}
 		}
 
-		if err := scripting.ExecScriptFile(resolved.Path, scriptArgs, originalWorkDir, cfg.Shell); err != nil {
+		if err := scripting.ExecScriptFile(resolved.Path, scriptArgs, originalWorkDir, cfg.Shell, nil); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -307,7 +307,7 @@ func main() {
 		if resolved.Source == scripting.ScriptSourceNone {
 			cli.Fail(logger, fmt.Errorf("script %q not found in workspace %q", parsed.ScriptName, parsed.WorkspaceName), false)
 		}
-		if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, cfg.Shell); err != nil {
+		if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, cfg.Shell, nil); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -322,12 +322,12 @@ func main() {
 		}
 		return
 	case cli.ActionScriptOverride:
-		if err := scripting.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg); err != nil {
+		if err := scripting.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg, nil); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
 	case cli.ActionScriptFolder:
-		if err := scripting.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell); err != nil {
+		if err := scripting.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell, nil); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
