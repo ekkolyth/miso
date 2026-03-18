@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
@@ -223,4 +224,84 @@ func loadEnvFile(path string) (map[string]string, error) {
 		return nil, fmt.Errorf("load env: %w", err)
 	}
 	return envMap, nil
+}
+
+// BuildProcessEnv builds a merged environment for spawning scripts.
+// It loads .env files and merges them with os.Environ(). Process env wins —
+// .env values only fill in vars that aren't already set.
+// Returns nil if no env files are found/configured (caller should use default inherited env).
+func BuildProcessEnv(projectRoot string, cfg config.Config, workspaceDir string) ([]string, error) {
+	fileVars := make(map[string]string)
+	loaded := false
+
+	if len(cfg.Env) > 0 {
+		for _, entry := range cfg.Env {
+			absPath := filepath.Join(projectRoot, entry.Path)
+			if entry.Path == "" {
+				searchDir := projectRoot
+				if cfg.IsMonorepo() && workspaceDir != projectRoot {
+					searchDir = workspaceDir
+				}
+				discovered, err := discoverEnvFile(searchDir)
+				if err != nil {
+					continue
+				}
+				absPath = discovered
+			}
+
+			// Monorepo scoping: only load entries whose path falls under workspaceDir
+			if cfg.IsMonorepo() && workspaceDir != projectRoot {
+				if !strings.HasPrefix(absPath, workspaceDir+string(filepath.Separator)) && absPath != workspaceDir {
+					continue
+				}
+			}
+
+			envMap, err := loadEnvFile(absPath)
+			if err != nil {
+				continue
+			}
+			loaded = true
+			for k, v := range envMap {
+				fileVars[k] = v
+			}
+		}
+	} else {
+		searchDir := projectRoot
+		if cfg.IsMonorepo() && workspaceDir != projectRoot {
+			searchDir = workspaceDir
+		}
+		path, err := discoverEnvFile(searchDir)
+		if err != nil {
+			return nil, nil
+		}
+		envMap, err := loadEnvFile(path)
+		if err != nil {
+			return nil, nil
+		}
+		loaded = true
+		for k, v := range envMap {
+			fileVars[k] = v
+		}
+	}
+
+	if !loaded {
+		return nil, nil
+	}
+
+	processEnv := os.Environ()
+	existing := make(map[string]bool)
+	for _, e := range processEnv {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) >= 1 {
+			existing[parts[0]] = true
+		}
+	}
+
+	for k, v := range fileVars {
+		if !existing[k] {
+			processEnv = append(processEnv, k+"="+v)
+		}
+	}
+
+	return processEnv, nil
 }
