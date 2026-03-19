@@ -33,9 +33,11 @@ Miso selects the interpreter based on file extension:
 | `.lua` | `lua` |
 | `.php` | `php` |
 
-**Shebang takes precedence.** If a script starts with `#!/usr/bin/env python3`, miso uses that interpreter regardless of extension.
+**Shebang is optional.** Miso selects the interpreter from the file extension automatically — a shebang is only needed if you want to override the default for that extension. If a script does start with `#!`, that interpreter takes precedence.
 
 The `shell` field in `miso.json` sets the fallback interpreter for scripts with no recognized extension and no shebang.
+
+**Shell scripts get `-e` by default.** Miso automatically passes `-e` (exit on error) to `sh`, `bash`, `zsh`, and other shell interpreters. You do not need `set -e` (or `set -euo pipefail`) at the top of your scripts — miso handles this for you.
 
 ---
 
@@ -47,7 +49,7 @@ miso build/docs         # runs scripts/build/docs.<ext>  (subdirectory)
 miso <scriptname> --arg # passes --arg to the script
 ```
 
-**Do not use `miso run`** — unlike npm, miso resolves scripts via `miso <name>` directly.
+**You don't need `miso run`** — unlike npm, miso resolves scripts via `miso <name>` directly. `miso run` is supported for muscle memory but is not the intended form.
 
 ---
 
@@ -106,4 +108,6 @@ Miso resolves the script from that workspace's own `scripts/` folder first, then
 
 - **Missing file extension** — `scripts/build` won't be discovered; must be `scripts/build.sh` (or another supported extension)
 - **Using `miso run scriptname`** — in miso, the correct form is `miso scriptname` (no `run` subcommand needed)
-- **Shebang scripts not executable** — scripts invoked via shebang need `chmod +x scripts/myscript.sh`
+- **Adding `chmod +x` to scripts** — never needed; miso always invokes the interpreter directly and passes the script as an argument, so the script file itself never needs to be executable
+- **Adding `set -e` or `set -euo pipefail`** — not needed; miso automatically passes `-e` to shell interpreters, so scripts already exit on error without any boilerplate
+- **Adding a shebang to control exit-on-error** — not needed for the same reason; only add a shebang if you genuinely need a different interpreter than what the extension selects
