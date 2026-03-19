@@ -103,6 +103,24 @@ func main() {
 				cli.Fail(logger, err, false)
 			}
 			return
+		case "skills":
+			add, rm := commands.ParseSkillsFlags(args[1:])
+			if add && rm {
+				cli.Fail(logger, fmt.Errorf("--add and --rm are mutually exclusive"), false)
+			}
+			if add {
+				if err := commands.RunSkillsAdd(); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
+			}
+			if rm {
+				if err := commands.RunSkillsRemove(); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
+			}
+			// Neither --add nor --rm: fall through to normal routing (PM passthrough)
 		}
 	}
 
