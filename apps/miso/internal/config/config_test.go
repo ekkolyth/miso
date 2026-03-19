@@ -285,7 +285,7 @@ func TestLoadRepoObjectNxWithTasks(t *testing.T) {
 func TestTaskConcurrent(t *testing.T) {
 	cfg := Config{
 		Tasks: map[string]TaskConfig{
-			"dev": {Concurrent: []string{"services", "db:studio"}},
+			"dev":   {Concurrent: []string{"services", "db:studio"}},
 			"build": {},
 		},
 	}
@@ -431,5 +431,97 @@ func TestSaveOmitsPackageManagerWhenNil(t *testing.T) {
 	}
 	if strings.Contains(string(data), "packageManager") {
 		t.Error("saved config contains packageManager, want it omitted when nil")
+	}
+}
+
+func TestFindWorkspaceByBasename(t *testing.T) {
+	root := t.TempDir()
+	wsDir := filepath.Join(root, "packages", "api")
+	if err := os.MkdirAll(wsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := []string{wsDir}
+
+	got, err := FindWorkspace("api", workspaces, root)
+	if err != nil {
+		t.Fatalf("FindWorkspace() error: %v", err)
+	}
+	if got != wsDir {
+		t.Errorf("got %q, want %q", got, wsDir)
+	}
+}
+
+func TestFindWorkspaceByRelativePath(t *testing.T) {
+	root := t.TempDir()
+	wsDir := filepath.Join(root, "packages", "api")
+	if err := os.MkdirAll(wsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := []string{wsDir}
+
+	got, err := FindWorkspace("packages/api", workspaces, root)
+	if err != nil {
+		t.Fatalf("FindWorkspace() error: %v", err)
+	}
+	if got != wsDir {
+		t.Errorf("got %q, want %q", got, wsDir)
+	}
+}
+
+func TestFindWorkspaceByPackageName(t *testing.T) {
+	root := t.TempDir()
+	wsDir := filepath.Join(root, "packages", "api")
+	if err := os.MkdirAll(wsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pkgJSON := `{"name": "@myorg/api"}`
+	if err := os.WriteFile(filepath.Join(wsDir, "package.json"), []byte(pkgJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := []string{wsDir}
+
+	got, err := FindWorkspace("@myorg/api", workspaces, root)
+	if err != nil {
+		t.Fatalf("FindWorkspace() error: %v", err)
+	}
+	if got != wsDir {
+		t.Errorf("got %q, want %q", got, wsDir)
+	}
+}
+
+func TestFindWorkspaceAmbiguous(t *testing.T) {
+	root := t.TempDir()
+	ws1 := filepath.Join(root, "apps", "api")
+	ws2 := filepath.Join(root, "packages", "api")
+	for _, d := range []string{ws1, ws2} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	workspaces := []string{ws1, ws2}
+
+	_, err := FindWorkspace("api", workspaces, root)
+	if err == nil {
+		t.Error("expected error for ambiguous match, got nil")
+	}
+	if !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("expected error to contain %q, got: %v", "ambiguous", err)
+	}
+}
+
+func TestFindWorkspaceNotFound(t *testing.T) {
+	root := t.TempDir()
+	wsDir := filepath.Join(root, "packages", "api")
+	if err := os.MkdirAll(wsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := []string{wsDir}
+
+	_, err := FindWorkspace("web", workspaces, root)
+	if err == nil {
+		t.Error("expected error for not found, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected error to contain %q, got: %v", "not found", err)
 	}
 }
