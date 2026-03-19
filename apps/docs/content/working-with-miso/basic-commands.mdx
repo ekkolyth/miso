@@ -16,21 +16,23 @@ In [simple mode](/working-with-miso/simple-mode) (`"packageManager": false`), th
 
 ## Workspace Scripts (Monorepo)
 
-If your project is configured as a monorepo (`"repo": "mono"` in `miso.json`), you can run scripts scoped to a specific workspace using the `workspace:script` syntax:
+If your project is configured as a monorepo (`"repo": "mono"` in `miso.json`), you can run scripts scoped to a specific workspace using the `@workspace/script` syntax:
 
 ```bash
-miso onboarding:build
-miso web:test
-miso api:deploy
+miso @api/build
+miso @packages/web/dev
+miso @myorg/api/test
 ```
 
-This runs the script from that workspace's `scripts/` folder and automatically sets the working directory to the workspace root — so all relative paths inside the script resolve correctly.
+The workspace portion (`@api`, `@packages/web`, `@myorg/api`) is matched against each workspace by basename, relative path, or package name — in that order. The script portion (`build`, `dev`, `test`) is resolved first against the workspace's `scripts/` folder, then falls back to `package.json` scripts.
 
-You can also run workspace scripts without the colon syntax by navigating into the workspace directory first. Miso will automatically scope to that workspace:
+This automatically sets the working directory to the workspace root, so all relative paths inside the script resolve correctly.
+
+You can also run workspace scripts without the `@workspace/` prefix by navigating into the workspace directory first. Miso will automatically scope to that workspace:
 
 ```bash
-cd apps/onboarding
-miso build   # resolves against apps/onboarding/scripts/build.sh
+cd apps/api
+miso build   # resolves against apps/api/scripts/build.sh (or package.json)
 ```
 
 See [Monorepo Setup](/working-with-miso/getting-started#monorepo-setup) for configuration details.
