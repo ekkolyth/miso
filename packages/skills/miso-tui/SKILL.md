@@ -13,9 +13,9 @@ Controls the terminal UI mode. Set at the top level of `miso.json`.
 | `"off"` | Default. No TUI. Normal stdout. |
 | `"tabbed"` | Sidebar with per-process log panes. Arrow keys to navigate, `r` to restart a process. |
 | `"merged"` | Interleaved output with color-coded process labels and a filter bar. |
-| `{ "mode": "tabbed", "cleanExit": true }` | Object form. `cleanExit: true` exits immediately when all processes finish (no 2-second wait). |
+| `{ "mode": "tabbed", "cleanExit": true }` | Object form. `cleanExit: true` suppresses the log dump to stdout when the TUI exits. By default, all buffered process output is printed to stdout after the TUI closes. |
 
-**Auto-exit behavior:** After all processes finish, the TUI waits 2 seconds then exits. Failures are printed to stderr. Set `cleanExit: true` to skip the wait.
+**Auto-exit behavior:** After all processes finish, the TUI waits 2 seconds then exits. By default, all buffered output is also dumped to stdout after the TUI closes. Set `cleanExit: true` to suppress that dump.
 
 ---
 
