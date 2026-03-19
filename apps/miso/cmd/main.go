@@ -220,7 +220,6 @@ func main() {
 				if resolveErr == nil && (resolved.Source == scripting.ScriptSourceFolder || resolved.Source == scripting.ScriptSourcePackageJSON) {
 					parsed.Action = cli.ActionWorkspaceScript
 					parsed.WorkspaceName = filepath.Base(wsDir)
-					parsed.Command = resolved.Path
 				}
 			}
 		}
