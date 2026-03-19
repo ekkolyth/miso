@@ -100,15 +100,6 @@ func WorkspaceFromCWD(cwd string, workspaces []string) (string, bool) {
 	return "", false
 }
 
-// joinWorkspaceNames returns a comma-separated list of workspace short names.
-func joinWorkspaceNames(workspaces []string) string {
-	names := make([]string, 0, len(workspaces))
-	for _, ws := range workspaces {
-		names = append(names, filepath.Base(ws))
-	}
-	return joinStrings(names)
-}
-
 // joinStrings joins a slice of strings with ", ".
 func joinStrings(ss []string) string {
 	result := ""
