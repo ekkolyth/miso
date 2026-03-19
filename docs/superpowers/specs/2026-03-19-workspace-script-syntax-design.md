@@ -76,7 +76,8 @@ The `ActionWorkspaceScript` handler (currently lines 321–339) handles only `Sc
 
 - `ScriptSourceFolder`: unchanged — call `scripting.ExecScriptFile` with `workDir`
 - `ScriptSourcePackageJSON`: call `commands.Run(managerName, parsed.ScriptName, parsed.ScriptArgs, workDir)` — use `workDir` (workspace directory), not `originalWorkDir`
-- `ScriptSourceNone`: error as today
+- `ScriptSourceNone`: error with `"script %q not found in workspace %q"` — this branch is only reached when `FindWorkspace` succeeded but the script was not found in either the `scripts/` folder or `package.json`. `FindWorkspace` errors (not found, ambiguous) are propagated earlier and never reach this branch.
+- The existing `err` check after `ResolveWorkspaceScript` (line 326) continues to surface `FindWorkspace` errors directly — no change needed there.
 
 ### 5. Tests
 
