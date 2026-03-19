@@ -101,6 +101,15 @@ The `ActionWorkspaceScript` handler (currently lines 321–339) handles only `Sc
 - Script not in folder but present in workspace `package.json` → `ScriptSourcePackageJSON`
 - Script found in neither → `ScriptSourceNone`
 
+### 6. Documentation & Skills
+
+**`packages/skills/miso-scripting/SKILL.md`** — the "Workspace-Scoped Scripts" section (lines 85–91) documents the old `workspace:script` syntax. Update it to:
+- Replace the syntax example (`miso workspace:script`) with `miso @workspace/script`
+- Note that the workspace identifier can be a directory basename (`api`), a relative path from root (`packages/api`), or the workspace's `package.json` `name` field (`@myorg/api`)
+- Keep the resolution order note (scripts folder first, then package.json) — it's already correct
+
+**`packages/skills/miso-config/SKILL.md`** — mentions monorepo workspace detection but not invocation syntax. No changes needed.
+
 ## Files Changed
 
 | File | Change |
@@ -112,3 +121,4 @@ The `ActionWorkspaceScript` handler (currently lines 321–339) handles only `Sc
 | `apps/miso/internal/cli/router_test.go` | New — parser tests |
 | `apps/miso/internal/config/config_test.go` | Extended — `FindWorkspace` matching tests |
 | `apps/miso/internal/cli/scripting/workspace_test.go` | New — workspace resolution tests |
+| `packages/skills/miso-scripting/SKILL.md` | Update workspace-scoped scripts section with new syntax and matching behavior |
