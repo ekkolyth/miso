@@ -217,7 +217,7 @@ func main() {
 				resolved, _, resolveErr := scripting.ResolveWorkspaceScript(
 					filepath.Base(wsDir), parsed.ScriptName, projectRoot, cfg,
 				)
-				if resolveErr == nil && resolved.Source == scripting.ScriptSourceFolder {
+				if resolveErr == nil && (resolved.Source == scripting.ScriptSourceFolder || resolved.Source == scripting.ScriptSourcePackageJSON) {
 					parsed.Action = cli.ActionWorkspaceScript
 					parsed.WorkspaceName = filepath.Base(wsDir)
 					parsed.Command = resolved.Path
@@ -320,22 +320,28 @@ func main() {
 	// Route to command handlers
 	switch parsed.Action {
 	case cli.ActionWorkspaceScript:
-		// workspace:script syntax — resolve and execute in the workspace directory
+		// @workspace/script syntax — resolve and execute in the workspace directory
 		resolved, workDir, err := scripting.ResolveWorkspaceScript(
 			parsed.WorkspaceName, parsed.ScriptName, projectRoot, cfg,
 		)
 		if err != nil {
 			cli.Fail(logger, err, false)
 		}
-		if resolved.Source == scripting.ScriptSourceNone {
+		switch resolved.Source {
+		case scripting.ScriptSourceFolder:
+			processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, workDir)
+			if envErr != nil {
+				cli.Fail(logger, envErr, false)
+			}
+			if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, cfg.Shell, processEnv); err != nil {
+				cli.Fail(logger, err, false)
+			}
+		case scripting.ScriptSourcePackageJSON:
+			if err := commands.Run(managerName, parsed.ScriptName, parsed.ScriptArgs, workDir); err != nil {
+				cli.Fail(logger, err, false)
+			}
+		default:
 			cli.Fail(logger, fmt.Errorf("script %q not found in workspace %q", parsed.ScriptName, parsed.WorkspaceName), false)
-		}
-		processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, workDir)
-		if envErr != nil {
-			cli.Fail(logger, envErr, false)
-		}
-		if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, cfg.Shell, processEnv); err != nil {
-			cli.Fail(logger, err, false)
 		}
 		return
 	case cli.ActionScripts:
