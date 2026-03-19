@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/ekkolyth/miso/internal/cli/scripting"
@@ -40,7 +41,7 @@ type ParsedCLI struct {
 	Command       string
 	Args          []string
 	Local         bool   // For upgrade command --local flag
-	WorkspaceName string // For workspace:script syntax
+	WorkspaceName string // For @workspace/script syntax
 }
 
 func ParseLocalFlag(args []string) (bool, []string) {
@@ -152,19 +153,24 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		}, nil
 	}
 
-	// check for workspace:script syntax (only in mono mode)
-	if cfg.IsMonorepo() && strings.Contains(cmd, ":") {
-		parts := strings.SplitN(cmd, ":", 2)
-		workspaceName := parts[0]
-		scriptName := parts[1]
-		if workspaceName != "" && scriptName != "" {
-			return ParsedCLI{
-				Action:        ActionWorkspaceScript,
-				WorkspaceName: workspaceName,
-				ScriptName:    scriptName,
-				ScriptArgs:    parseInlineArgs(args[1:]),
-			}, nil
+	// check for @workspace/script syntax
+	if strings.HasPrefix(cmd, "@") {
+		inner := cmd[1:] // strip leading @
+		lastSlash := strings.LastIndex(inner, "/")
+		if lastSlash < 0 {
+			return ParsedCLI{}, fmt.Errorf("invalid workspace command %q: usage: @<workspace>/<script>", cmd)
 		}
+		workspaceName := inner[:lastSlash]
+		scriptName := inner[lastSlash+1:]
+		if workspaceName == "" || scriptName == "" {
+			return ParsedCLI{}, fmt.Errorf("invalid workspace command %q: usage: @<workspace>/<script>", cmd)
+		}
+		return ParsedCLI{
+			Action:        ActionWorkspaceScript,
+			WorkspaceName: workspaceName,
+			ScriptName:    scriptName,
+			ScriptArgs:    parseInlineArgs(args[1:]),
+		}, nil
 	}
 
 	// check scripts folder and package.json
