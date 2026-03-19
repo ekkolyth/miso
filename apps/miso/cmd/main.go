@@ -107,6 +107,7 @@ func main() {
 			add, rm := commands.ParseSkillsFlags(args[1:])
 			if add && rm {
 				cli.Fail(logger, fmt.Errorf("--add and --rm are mutually exclusive"), false)
+				return
 			}
 			if add {
 				if err := commands.RunSkillsAdd(); err != nil {
