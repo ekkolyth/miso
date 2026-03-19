@@ -82,11 +82,21 @@ Invoke with path syntax: `miso build/docs`, `miso test/e2e`.
 
 ## Workspace-Scoped Scripts (Monorepos)
 
-In a monorepo (`repo: "mono"`), run a script in a specific workspace:
+In a monorepo (`repo: "mono"`), run a script in a specific workspace using the `@workspace/script` syntax:
 
 ```bash
-miso workspace:script    # e.g. miso api:build
+miso @api/build           # run "build" in the workspace identified as "api"
+miso @myorg/api/test      # run "test" in the workspace with package name "@myorg/api"
+miso @packages/web/dev    # run "dev" in the workspace at path "packages/web"
+miso @api/test:unit       # run "test:unit" (colons are fine in script names)
 ```
+
+The workspace identifier can be any of:
+- **Directory basename** — `api` for a workspace at `packages/api`
+- **Relative path from root** — `packages/api`
+- **Package name** — the `name` field in the workspace's `package.json` (e.g. `@myorg/api`)
+
+If the identifier matches more than one workspace, miso will error and list the conflicting paths.
 
 Miso resolves the script from that workspace's own `scripts/` folder first, then falls back to its `package.json` scripts.
 
