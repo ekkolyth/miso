@@ -18,14 +18,6 @@ First found per variable wins. Shell-exported variables always take precedence o
 
 ## `env` Config Block
 
-### Shorthand (single file, no validation)
-
-```json
-"env": {
-  ".env.local": "required"
-}
-```
-
 ### Single entry object
 
 ```json
