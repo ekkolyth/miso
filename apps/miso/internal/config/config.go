@@ -25,9 +25,9 @@ type TaskConfig struct {
 
 // persisted project metadata
 type Config struct {
-	Schema         string `json:"$schema,omitempty"`
-	PackageManager *bool  `json:"packageManager,omitempty"`
-	Scripts        string `json:"scripts"`
+	Schema         string                `json:"$schema,omitempty"`
+	PackageManager *bool                 `json:"packageManager,omitempty"`
+	Scripts        string                `json:"scripts"`
 	Shell          string                `json:"shell,omitempty"`
 	Flags          map[string][]string   `json:"flags,omitempty"`
 	Env            []*EnvEntry           `json:"env,omitempty"`
@@ -190,9 +190,9 @@ func Path(root string) string {
 
 // configLoad is used for two-phase unmarshaling (env can be string, object, or array)
 type configLoad struct {
-	Schema         string `json:"$schema,omitempty"`
-	PackageManager *bool  `json:"packageManager,omitempty"`
-	Scripts        string `json:"scripts"`
+	Schema         string              `json:"$schema,omitempty"`
+	PackageManager *bool               `json:"packageManager,omitempty"`
+	Scripts        string              `json:"scripts"`
 	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`
 	EnvRaw         json.RawMessage     `json:"env,omitempty"`
@@ -490,14 +490,101 @@ func LoadWorkspaces(root string) ([]string, error) {
 	return result, nil
 }
 
-// FindWorkspace matches a short name (e.g. "onboarding") against discovered
-// workspace paths and returns the full path of the matching workspace.
-// It matches against the final directory segment of each workspace path.
-func FindWorkspace(name string, workspaces []string) (string, bool) {
+// FindWorkspace matches a workspace identifier against discovered workspace paths.
+// The identifier is matched against three candidates per workspace, in order:
+//  1. Directory basename (e.g. "api" for /root/packages/api)
+//  2. Relative path from root (e.g. "packages/api")
+//  3. The "name" field in the workspace's package.json (e.g. "@myorg/api")
+//
+// If the identifier matches more than one workspace, an error is returned listing
+// the conflicting paths. If no match is found, an error is returned listing available
+// workspace basenames.
+func FindWorkspace(name string, workspaces []string, root string) (string, error) {
+	var matches []string
+
 	for _, ws := range workspaces {
-		if filepath.Base(ws) == name {
-			return ws, true
+		if matchesWorkspace(name, ws, root) {
+			matches = append(matches, ws)
 		}
 	}
-	return "", false
+
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", fmt.Errorf("workspace %q not found (available: %s)", name, joinWorkspaceNames(workspaces))
+	default:
+		var paths []string
+		for _, m := range matches {
+			rel, err := filepath.Rel(root, m)
+			if err != nil {
+				paths = append(paths, m)
+			} else {
+				paths = append(paths, rel)
+			}
+		}
+		return "", fmt.Errorf("workspace %q is ambiguous — matches multiple workspaces: %s (use a more specific identifier)", name, joinStrings(paths))
+	}
+}
+
+// matchesWorkspace returns true if name matches the given workspace path
+// by basename, relative path from root, or package.json name field.
+func matchesWorkspace(name string, ws string, root string) bool {
+	// 1. basename
+	if filepath.Base(ws) == name {
+		return true
+	}
+
+	// 2. relative path from root
+	rel, err := filepath.Rel(root, ws)
+	if err == nil && filepath.ToSlash(rel) == filepath.ToSlash(name) {
+		return true
+	}
+
+	// 3. package.json name field
+	pkgName := readPackageJSONName(ws)
+	if pkgName != "" && pkgName == name {
+		return true
+	}
+
+	return false
+}
+
+// readPackageJSONName reads the "name" field from a workspace's package.json.
+// Returns empty string if the file is missing or the field is absent.
+func readPackageJSONName(wsDir string) string {
+	data, err := os.ReadFile(filepath.Join(wsDir, "package.json"))
+	if err != nil {
+		return ""
+	}
+	var pkg struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return ""
+	}
+	return pkg.Name
+}
+
+// joinWorkspaceNames returns a comma-separated list of workspace basenames.
+// Defined here (config package) — also duplicated in scripting package; do NOT import across packages.
+func joinWorkspaceNames(workspaces []string) string {
+	names := make([]string, 0, len(workspaces))
+	for _, ws := range workspaces {
+		names = append(names, filepath.Base(ws))
+	}
+	return joinStrings(names)
+}
+
+// joinStrings joins a slice of strings with ", ".
+// Defined here (config package) — also duplicated in scripting package; do NOT import across packages.
+func joinStrings(ss []string) string {
+	result := ""
+	for i, s := range ss {
+		if i > 0 {
+			result += ", "
+		}
+		result += s
+	}
+	return result
 }
