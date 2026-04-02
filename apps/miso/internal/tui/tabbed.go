@@ -326,19 +326,21 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 
 	visible := lines[startIdx:endIdx]
 
-	// Build exactly logHeight rows
-	var logRows []string
+	// Wrap each raw line into visual rows, then take the last logHeight rows.
+	var visualRows []string
 	for _, line := range visible {
-		if lipgloss.Width(line) > width-2 {
-			line = line[:width-2]
-		}
-		logRows = append(logRows, line)
+		visualRows = append(visualRows, wrapLine(line, width-2)...)
 	}
-	for len(logRows) < logHeight {
-		logRows = append(logRows, "")
+	// Take the tail (most recent output fills the bottom of the panel).
+	if len(visualRows) > logHeight {
+		visualRows = visualRows[len(visualRows)-logHeight:]
+	}
+	// Pad to fill remaining space.
+	for len(visualRows) < logHeight {
+		visualRows = append(visualRows, "")
 	}
 
-	logContent := strings.Join(logRows, "\n")
+	logContent := strings.Join(visualRows, "\n")
 
 	logPanel := lipgloss.NewStyle().
 		Width(width).
@@ -354,4 +356,41 @@ func padRight(s string, width int) string {
 		return s[:width]
 	}
 	return s + strings.Repeat(" ", width-len(s))
+}
+
+// wrapLine splits a single log line into multiple visual rows of at most `width`
+// printable columns. It is rune-aware. Always returns at least one row.
+func wrapLine(line string, width int) []string {
+	if width <= 0 {
+		return []string{line}
+	}
+	runes := []rune(line)
+	if lipgloss.Width(string(runes)) <= width {
+		return []string{line}
+	}
+	var rows []string
+	for len(runes) > 0 {
+		// If remaining runes fit entirely, take them all.
+		if lipgloss.Width(string(runes)) <= width {
+			rows = append(rows, string(runes))
+			break
+		}
+		// Binary-search for the largest rune-boundary prefix that fits.
+		lo, hi := 0, len(runes)
+		for lo+1 < hi {
+			mid := (lo + hi) / 2
+			if lipgloss.Width(string(runes[:mid])) <= width {
+				lo = mid
+			} else {
+				hi = mid
+			}
+		}
+		if lo == 0 {
+			// Single rune is wider than width (e.g. full-width terminal art) — take it anyway.
+			lo = 1
+		}
+		rows = append(rows, string(runes[:lo]))
+		runes = runes[lo:]
+	}
+	return rows
 }

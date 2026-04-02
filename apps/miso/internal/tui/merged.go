@@ -194,15 +194,32 @@ func (m MergedModel) View() tea.View {
 		}
 	}
 
-	var logOutput []string
-	for _, line := range windowLines {
-		label := lipgloss.NewStyle().
-			Foreground(line.color).
-			Render(padRight(line.label, maxLabel))
-		logOutput = append(logOutput, label+" "+line.text)
+	prefixWidth := maxLabel + 1            // padRight(label, maxLabel) + " "
+	textWidth := m.width - prefixWidth - 2 // minus Padding(0,1)
+	if textWidth < 1 {
+		textWidth = 1
 	}
 
-	// Pad to fill available height
+	var logOutput []string
+	for _, line := range windowLines {
+		labelRendered := lipgloss.NewStyle().
+			Foreground(line.color).
+			Render(padRight(line.label, maxLabel))
+		indent := strings.Repeat(" ", prefixWidth)
+		wrapped := wrapLine(line.text, textWidth)
+		for i, row := range wrapped {
+			if i == 0 {
+				logOutput = append(logOutput, labelRendered+" "+row)
+			} else {
+				logOutput = append(logOutput, indent+row)
+			}
+		}
+	}
+	// Take the tail.
+	if len(logOutput) > logHeight {
+		logOutput = logOutput[len(logOutput)-logHeight:]
+	}
+	// Pad to fill.
 	for len(logOutput) < logHeight {
 		logOutput = append(logOutput, "")
 	}
