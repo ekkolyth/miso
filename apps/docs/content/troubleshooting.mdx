@@ -1,0 +1,106 @@
+---
+title: Troubleshooting
+---
+
+# Troubleshooting
+
+## Workspace not found
+
+**Error:** `workspace "api" not found`
+
+The workspace identifier in `@workspace/script` must match one of three things: the directory basename (`api`), the relative path from the project root (`packages/api`), or the workspace's `package.json` `name` field (`@myorg/api`).
+
+Run `miso scripts` to see available workspaces, then use a more specific identifier if needed.
+
+**Error:** `workspace "api" is ambiguous — matches multiple workspaces`
+
+Two workspaces share the same directory basename. Use the relative path or package name instead:
+
+```bash
+miso @packages/api/build    # relative path
+miso @myorg/api/build       # package.json name
+```
+
+## TUI doesn't launch
+
+The TUI requires multiple concurrent processes. For a single-repo project, configure `concurrent` tasks:
+
+```json
+{
+  "repo": {
+    "mode": "single",
+    "tasks": {
+      "dev": { "concurrent": ["server", "worker"] }
+    }
+  },
+  "tui": "tabbed"
+}
+```
+
+Without `concurrent`, `miso dev` runs a single process and the TUI has nothing to display.
+
+## `--env` isn't injecting variables
+
+`--env` triggers **validation** before the script runs — it doesn't control injection. Variables are injected automatically for every script miso runs, regardless of whether `--env` is present.
+
+If a variable isn't visible in your script, check:
+
+1. The variable is present in your `.env` file
+2. `env.path` in `miso.json` points to the right file
+3. The variable name matches exactly (case-sensitive)
+
+## Scripts aren't being discovered
+
+**Missing extension:** Miso selects the interpreter from the file extension. A file with no recognized extension runs as `sh`. Always include the extension — `.sh`, `.py`, `.ts`, etc.
+
+**Not executable:** If you use a shebang and the script still won't run, set the executable bit:
+
+```bash
+chmod +x scripts/deploy.sh
+```
+
+Extension-based dispatch doesn't require this — miso invokes the interpreter directly.
+
+**Excluded by prefix:** Files starting with `_` or `.` are intentionally skipped during discovery. They exist for helpers and hidden files only.
+
+## `repo: "turbo"` not working
+
+Miso calls the `turbo` binary directly. Verify it's installed and in your PATH:
+
+```bash
+turbo --version
+```
+
+If it's missing, install it:
+
+```bash
+bun add -g turbo
+# or as a dev dependency
+bun add -D turbo
+```
+
+## `miso skills --add` vs `miso skills add lodash`
+
+These are different commands:
+
+- `miso skills --add` — installs miso's AI agent skills via `npx skills`
+- `miso skills add lodash` — passes through to your package manager and installs `lodash`
+
+The `--add` and `--rm` flags are the only way to invoke the skills installer. Any other form of `miso skills ...` is treated as a regular package manager command.
+
+## Shell script fails silently
+
+Add `set -e` at the top of bash/sh scripts so any failed command immediately exits the script:
+
+```bash
+#!/usr/bin/env bash
+set -e
+
+# rest of your script
+```
+
+Without `set -e`, a failed command mid-script may not produce a non-zero exit code, causing miso and CI to treat the run as successful.
+
+## `miso init` skips the setup prompts
+
+`miso init` exits early if it detects an existing `miso.json`. Delete or rename the file first, then re-run `miso init`.

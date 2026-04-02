@@ -66,6 +66,21 @@ Each entry is validated independently. If a variable fails in the `api` entry, t
 api: missing required variable: REDIS_URL
 ```
 
+## Auto-Discovery
+
+Even without an `env` block in `miso.json`, Miso automatically loads a `.env` file into every script it runs. It walks the following candidates in order and loads the first one it finds:
+
+| Priority | File |
+|---|---|
+| 1 | `.env.local` |
+| 2 | `.env.production` |
+| 3 | `.env.development` |
+| 4 | `.env` |
+
+Variables already set in the shell environment take precedence over values in the file — Miso never overrides a variable that is already present in the process environment.
+
+In a monorepo, auto-discovery searches the workspace root rather than the project root when you run a workspace-scoped script.
+
 ## Next Steps
 
 - [Configure](/env-validation/config) labels, paths, required variables, and validation rules

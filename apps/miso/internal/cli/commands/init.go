@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"github.com/charmbracelet/log"
 
 	"github.com/ekkolyth/miso/internal/config"
@@ -244,7 +244,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 					).
 					Value(&initChoice),
 			),
-		).WithTheme(huh.ThemeCharm())
+		).WithTheme(huh.ThemeFunc(huh.ThemeCharm))
 
 		if err := form.Run(); err != nil {
 			return err
@@ -369,7 +369,7 @@ func askRepoType(styles ui.Styles) (string, error) {
 				).
 				Value(&repoType),
 		),
-	).WithTheme(huh.ThemeCharm())
+	).WithTheme(huh.ThemeFunc(huh.ThemeCharm))
 
 	if err := form.Run(); err != nil {
 		return "", err
@@ -389,7 +389,7 @@ func askWorkspacePatterns(styles ui.Styles) ([]string, error) {
 				Placeholder("apps/*, packages/*").
 				Value(&raw),
 		),
-	).WithTheme(huh.ThemeCharm())
+	).WithTheme(huh.ThemeFunc(huh.ThemeCharm))
 
 	if err := form.Run(); err != nil {
 		return nil, err

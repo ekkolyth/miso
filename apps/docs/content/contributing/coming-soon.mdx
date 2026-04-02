@@ -1,7 +1,112 @@
 ---
-title: Coming Soon
+title: Contributing to Miso
 ---
 
-# Coming Soon
+# Contributing to Miso
 
-Documentation for contributing to Miso is coming soon.
+## Prerequisites
+
+- **Go 1.24+** — the CLI source is in `apps/miso`. Verify with `go version`.
+- **Node.js or Bun** — required for the docs site and the skills package.
+- **miso CLI** — install it first so you can use `miso` to run project scripts. See [Installation](/install).
+
+---
+
+## Getting the code
+
+Fork the repo on GitHub, then clone your fork:
+
+```bash
+git clone https://github.com/<your-username>/miso.git
+cd miso
+```
+
+The main development branch is `dev`. Base your branches off `dev`, not `main`.
+
+---
+
+## Project structure
+
+| Path | What it is |
+| --- | --- |
+| `apps/miso` | CLI source code (Go) |
+| `apps/docs` | This documentation site (Next.js + Nextra) |
+| `packages/skills` | AI agent skills for Claude Code / Cursor |
+
+The repo root uses miso in simple mode (`"packageManager": false`) with `"repo": "mono"`, so all workspace scripts are available via `miso @workspace/script`.
+
+---
+
+## Running locally
+
+### CLI
+
+Build the Go binary and install it to your `GOPATH/bin`:
+
+```bash
+cd apps/miso
+go build -o miso .
+```
+
+Run the local binary directly:
+
+```bash
+./miso scripts
+```
+
+Or install it globally to replace your current miso install during development:
+
+```bash
+go install .
+```
+
+### Docs
+
+```bash
+cd apps/docs
+miso dev
+# or: bun dev
+```
+
+The docs site runs on `http://localhost:3000` by default.
+
+---
+
+## Running tests
+
+From the `apps/miso` directory:
+
+```bash
+go test ./...
+```
+
+There are no test flags required. Tests are co-located with the packages they cover.
+
+---
+
+## Adding a command
+
+All CLI commands live in `apps/miso/internal/cli/commands/`. Each command is a standalone Go file — `upgrade.go` and `skills.go` are good starting points to read before writing a new one.
+
+A command typically:
+
+1. Parses its own flags from `args []string` (see `ParseSkillsFlags` in `skills.go` for the pattern).
+2. Builds an `manager.ExecSpec` describing the process to run.
+3. Calls `manager.Exec(spec, cwd)` to execute it.
+
+The entry point in `apps/miso/main.go` (or the router layer above commands) dispatches to these functions. Match that dispatch pattern when wiring up a new command.
+
+---
+
+## PR conventions
+
+- Base PRs off `dev`, not `main`.
+- Keep PRs focused — one feature or fix per PR.
+- Commit messages: imperative mood, lowercase, short. Examples from the log: `fix build error`, `feat: handle ScriptSourcePackageJSON in workspace execution`, `chore: remove dead joinWorkspaceNames`.
+- No merge commits in your branch — rebase on `dev` before opening the PR.
+
+---
+
+## Docs with code
+
+If you add or change a feature, update the relevant page in `apps/docs/content/`. The docs are the source of truth for how miso behaves — a feature without docs is incomplete.

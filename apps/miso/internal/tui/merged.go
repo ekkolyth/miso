@@ -2,16 +2,17 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Fixed color palette for workspace labels — cycles if more workspaces than colors.
-var labelColors = []lipgloss.Color{
+var labelColors = []color.Color{
 	lipgloss.Color("#7c3aed"), // purple
 	lipgloss.Color("#3b82f6"), // blue
 	lipgloss.Color("#f59e0b"), // amber
@@ -23,23 +24,22 @@ var labelColors = []lipgloss.Color{
 }
 
 type MergedModel struct {
-	pm              *ProcessManager
-	keys            MergedKeyMap
-	cursor          int
-	visible         map[int]bool
-	logLines        []mergedLine
-	scrollOffset    int // 0 = pinned to bottom, >0 = scrolled up N lines
-	width           int
-	height          int
-	script          string
-	delegated       bool
-	selectMode       bool
+	pm               *ProcessManager
+	keys             MergedKeyMap
+	cursor           int
+	visible          map[int]bool
+	logLines         []mergedLine
+	scrollOffset     int // 0 = pinned to bottom, >0 = scrolled up N lines
+	width            int
+	height           int
+	script           string
+	delegated        bool
 	allExitedPending bool
 }
 
 type mergedLine struct {
 	label string
-	color lipgloss.Color
+	color color.Color
 	text  string
 }
 
@@ -69,21 +69,11 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case tea.KeyMsg:
-		// Exit select mode on Escape
-		if m.selectMode && msg.String() == "esc" {
-			m.selectMode = false
-			return m, tea.EnableMouseCellMotion
-		}
+	case tea.KeyPressMsg:
+		// (selectMode removed in v2 migration)
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
-		case key.Matches(msg, m.keys.Select):
-			m.selectMode = !m.selectMode
-			if m.selectMode {
-				return m, tea.DisableMouse
-			}
-			return m, tea.EnableMouseCellMotion
 		case key.Matches(msg, m.keys.Left):
 			if m.cursor > 0 {
 				m.cursor--
@@ -104,9 +94,9 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go m.pm.RestartAll()
 		}
 
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		switch msg.Button {
-		case tea.MouseButtonWheelUp:
+		case tea.MouseWheelUp:
 			maxScroll := len(m.logLines) - m.logHeight()
 			if maxScroll < 0 {
 				maxScroll = 0
@@ -116,7 +106,7 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.scrollOffset = maxScroll
 			}
 			return m, nil
-		case tea.MouseButtonWheelDown:
+		case tea.MouseWheelDown:
 			m.scrollOffset -= 3
 			if m.scrollOffset < 0 {
 				m.scrollOffset = 0
@@ -166,9 +156,9 @@ func (m MergedModel) logHeight() int {
 	return h
 }
 
-func (m MergedModel) View() string {
+func (m MergedModel) View() tea.View {
 	if m.width == 0 || m.height == 0 {
-		return "Loading..."
+		return tea.NewView("Loading...")
 	}
 
 	filterBar := m.renderFilterBar()
@@ -226,7 +216,10 @@ func (m MergedModel) View() string {
 		Padding(0, 1).
 		Render(logContent)
 
-	return filterBar + "\n" + logPanel
+	v := tea.NewView(filterBar + "\n" + logPanel)
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 func (m MergedModel) renderFilterBar() string {
@@ -241,12 +234,10 @@ func (m MergedModel) renderFilterBar() string {
 	}
 
 	var hintText string
-	if m.selectMode {
-		hintText = "SELECT MODE — highlight text to copy · s or esc to exit"
-	} else if m.delegated {
-		hintText = "←→ select · space toggle · s select text · R restart · ctrl+c quit"
+	if m.delegated {
+		hintText = "←→ select · space toggle · R restart · ctrl+c quit"
 	} else {
-		hintText = "←→ select · space toggle · s select text · r restart · R restart all · ctrl+c quit"
+		hintText = "←→ select · space toggle · r restart · R restart all · ctrl+c quit"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
@@ -325,7 +316,7 @@ func (m MergedModel) ensureVisible() {
 	}
 }
 
-func (m MergedModel) colorForLabel(label string) lipgloss.Color {
+func (m MergedModel) colorForLabel(label string) color.Color {
 	for i, proc := range m.pm.Processes {
 		if proc.Entry.Label == label {
 			return labelColors[i%len(labelColors)]
