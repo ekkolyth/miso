@@ -37,6 +37,11 @@ func (s SelectionState) maxRow() int {
 	return s.endRow
 }
 
+// copyIconStr is the canonical display string for the copy-all icon.
+// Used in both renderLogPanel and the mouse hit-detection in Update to keep
+// the string and its computed width in sync.
+const copyIconStr = "[⎘ copy all]"
+
 var (
 	accentColor  = lipgloss.Color("#7c3aed")
 	runningColor = lipgloss.Color("#a3e635")
@@ -109,6 +114,9 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.SetClipboard(m.selectedText())
 			}
 		case key.Matches(msg, m.keys.CopyAll):
+			// No !m.delegated guard here — copying the full buffer is always safe
+			// regardless of delegated mode. Contrast with Restart, which is blocked
+			// in delegated mode to prevent unintended process restarts.
 			m.copyFlash = true
 			return m, tea.Batch(
 				tea.SetClipboard(m.copyAllText()),
@@ -136,10 +144,11 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Copy icon click: y==0, x in log panel, within icon hit area
 			if msg.Y == 0 && msg.X > m.sidebarWidth() {
-				const iconDisplayStr = "[⎘ copy all]"
-				iconW := lipgloss.Width(iconDisplayStr)
+				iconW := lipgloss.Width(copyIconStr)
 				logWidth := m.width - m.sidebarWidth() - 1
-				copyIconX := m.sidebarWidth() + 1 + logWidth - 1 - iconW
+				// left column of the icon: log panel start + log panel width - icon width
+				// log panel starts at sidebarWidth+1 (border col), so: sidebarWidth+1+logWidth-iconW
+				copyIconX := m.sidebarWidth() + 1 + logWidth - iconW
 				if msg.X >= copyIconX {
 					m.copyFlash = true
 					return m, tea.Batch(
@@ -414,8 +423,7 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
-	const iconDisplayStr = "[⎘ copy all]"
-	iconW := lipgloss.Width(iconDisplayStr)
+	iconW := lipgloss.Width(copyIconStr)
 
 	var copyIcon string
 	switch {
@@ -423,7 +431,7 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 		copyIcon = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#111111")).
 			Background(lipgloss.Color("#aaaaaa")).
-			Render(iconDisplayStr)
+			Render(copyIconStr)
 	case m.copyConfirm:
 		copyIcon = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#22c55e")).
@@ -431,13 +439,13 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	default:
 		copyIcon = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#666666")).
-			Render(iconDisplayStr)
+			Render(copyIconStr)
 	}
 
 	nameLen := lipgloss.Width(name) + lipgloss.Width(scrollHint)
 	hintsLen := lipgloss.Width(hints)
-	iconRenderedW := iconW
-	gap := width - nameLen - hintsLen - iconRenderedW - 2 // -2 for Padding(0,1)
+	// Use raw iconW for gap math, not lipgloss.Width(copyIcon) — ANSI codes inflate rendered width.
+	gap := width - nameLen - hintsLen - iconW - 2 // -2 for Padding(0,1)
 	if gap < 1 {
 		gap = 1
 	}
