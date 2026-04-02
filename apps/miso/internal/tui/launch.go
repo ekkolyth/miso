@@ -253,7 +253,12 @@ func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiSc
 		return DeduplicateLabels(append(mainEntries, concEntries...)), nil
 	}
 
-	return nil, nil
+	// Single repo, no concurrent config — resolve the script itself so a
+	// single-process run still gets the TUI.
+	if cfg.SimpleMode() {
+		return ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
+	}
+	return ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
 }
 
 func buildWSInfos(entries []TuiScriptEntry) []WorkspaceInfo {

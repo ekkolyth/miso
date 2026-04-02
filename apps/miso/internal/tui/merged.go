@@ -36,6 +36,8 @@ type MergedModel struct {
 	delegated        bool
 	allExitedPending bool
 	sel              SelectionState
+	copyFlash        bool // true during the 150ms invert flash
+	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
 }
 
 type mergedLine struct {
@@ -96,12 +98,41 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.sel.active {
 				return m, tea.SetClipboard(m.selectedText())
 			}
+		case key.Matches(msg, m.keys.CopyAll):
+			if !m.copyFlash && !m.copyConfirm {
+				m.copyFlash = true
+				return m, tea.Batch(
+					tea.SetClipboard(m.copyAllText()),
+					tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+						return copyFlashDoneMsg{}
+					}),
+				)
+			}
 		case msg.String() == "esc":
 			m.sel = SelectionState{}
 		}
 
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft {
+			// Copy icon click: y==0, x within icon hit area at right of header
+			if msg.Y == 0 {
+				iconW := lipgloss.Width(copyIconStr)
+				// Header has Padding(0,1), so content starts at col 1.
+				// Icon is the last element: it ends at col (width-2) and starts at (width-2-iconW).
+				copyIconX := m.width - 1 - iconW
+				if msg.X >= copyIconX {
+					if !m.copyFlash && !m.copyConfirm {
+						m.copyFlash = true
+						return m, tea.Batch(
+							tea.SetClipboard(m.copyAllText()),
+							tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+								return copyFlashDoneMsg{}
+							}),
+						)
+					}
+					return m, nil
+				}
+			}
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
 				m.sel = SelectionState{active: true, startRow: row, endRow: row}
@@ -167,6 +198,16 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case allExitedMsg:
 		return m, tea.Quit
+
+	case copyFlashDoneMsg:
+		m.copyFlash = false
+		m.copyConfirm = true
+		return m, tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg {
+			return copyConfirmDoneMsg{}
+		})
+
+	case copyConfirmDoneMsg:
+		m.copyConfirm = false
 	}
 
 	return m, nil
@@ -189,21 +230,18 @@ func (m MergedModel) View() tea.View {
 	filterBar := m.renderFilterBar()
 	logHeight := m.logHeight()
 
-	logOutput := m.buildLogVisualRows(logHeight)
+	logOutput := m.buildLogVisualRows(logHeight, m.sel)
 	// Pad to fill.
 	for len(logOutput) < logHeight {
 		logOutput = append(logOutput, "")
 	}
 
-	// Highlight selected rows.
-	for i := range logOutput {
-		if m.sel.active && i >= m.sel.minRow() && i <= m.sel.maxRow() {
-			logOutput[i] = selectedBg.Render(logOutput[i])
-		}
-	}
+	// Note: selection highlighting is applied inside buildLogVisualRows, where
+	// the label and text are still separate pieces. Applying selectedBg.Render()
+	// here (after assembly) doesn't work because the label's trailing ANSI reset
+	// cancels the background before the log text is painted.
 
 	logContent := strings.Join(logOutput, "\n")
-
 	logPanel := lipgloss.NewStyle().
 		Width(m.width).
 		MaxHeight(logHeight).
@@ -229,15 +267,36 @@ func (m MergedModel) renderFilterBar() string {
 
 	var hintText string
 	if m.delegated {
-		hintText = "←→ select · space toggle · c copy · R restart · ctrl+c quit"
+		hintText = "space toggle · c copy · R restart"
 	} else {
-		hintText = "←→ select · space toggle · c copy · r restart · R restart all · ctrl+c quit"
+		hintText = "space toggle · c copy · r restart · R restart all"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
+	iconW := lipgloss.Width(copyIconStr)
+	var copyIcon string
+	switch {
+	case m.copyFlash:
+		copyIcon = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#111111")).
+			Background(lipgloss.Color("#aaaaaa")).
+			Render(copyIconStr)
+	case m.copyConfirm:
+		copyIcon = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#22c55e")).
+			Render("[✓ copied! ]")
+	default:
+		copyIcon = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#666666")).
+			Render(copyIconStr)
+	}
+
 	titleLen := lipgloss.Width(title)
-	hintsLen := lipgloss.Width(hints) + lipgloss.Width(scrollHint)
-	gap := m.width - titleLen - hintsLen - 2
+	scrollHintLen := lipgloss.Width(scrollHint)
+	hintsLen := lipgloss.Width(hints)
+	// Layout: title | gap | scrollHint hints [space] copyIcon [space]
+	// Padding(0,1) accounts for 1 col on each side.
+	gap := m.width - 2 - titleLen - scrollHintLen - hintsLen - 1 - iconW - 1
 	if gap < 1 {
 		gap = 1
 	}
@@ -245,7 +304,7 @@ func (m MergedModel) renderFilterBar() string {
 	header := lipgloss.NewStyle().
 		Width(m.width).
 		Padding(0, 1).
-		Render(title + strings.Repeat(" ", gap) + scrollHint + hints)
+		Render(title + strings.Repeat(" ", gap) + scrollHint + hints + " " + copyIcon)
 
 	// Tabs: single-line colored blocks
 	var items []string
@@ -329,6 +388,19 @@ func (m MergedModel) visibleLabels() map[string]bool {
 	return result
 }
 
+// copyAllText returns the raw log text for all currently visible processes,
+// interleaved in arrival order. If a process is toggled off it is excluded.
+func (m MergedModel) copyAllText() string {
+	visibleLabels := m.visibleLabels()
+	var lines []string
+	for _, line := range m.logLines {
+		if visibleLabels[line.label] {
+			lines = append(lines, line.text)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // mouseToLogRow converts absolute terminal coordinates to a 0-based visual
 // log row index. Returns -1 if the coordinate is above the log area.
 func (m MergedModel) mouseToLogRow(x, y int) int {
@@ -343,7 +415,7 @@ func (m MergedModel) mouseToLogRow(x, y int) int {
 // selectedText returns the selected log rows as a plain string.
 func (m MergedModel) selectedText() string {
 	logHeight := m.logHeight()
-	logOutput := m.buildLogVisualRows(logHeight)
+	logOutput := m.buildLogVisualRows(logHeight, SelectionState{})
 
 	// Slice selection.
 	lo := m.sel.minRow()
@@ -362,7 +434,9 @@ func (m MergedModel) selectedText() string {
 
 // buildLogVisualRows re-derives the visual rows for the merged log panel,
 // applying the scroll window, wrapping, and tail-slice.
-func (m MergedModel) buildLogVisualRows(logHeight int) []string {
+// sel is used to apply selection highlighting row-by-row; pass SelectionState{}
+// (inactive) to skip highlighting (e.g. when building rows for clipboard copy).
+func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) []string {
 	visibleLabels := m.visibleLabels()
 	var visibleLines []mergedLine
 	for _, line := range m.logLines {
@@ -397,16 +471,35 @@ func (m MergedModel) buildLogVisualRows(logHeight int) []string {
 
 	var logOutput []string
 	for _, line := range windowLines {
-		labelRendered := lipgloss.NewStyle().
-			Foreground(line.color).
-			Render(padRight(line.label, maxLabel))
 		indent := strings.Repeat(" ", prefixWidth)
 		wrapped := wrapLine(line.text, textWidth)
+		rowIdx := len(logOutput)
 		for i, row := range wrapped {
+			selected := sel.active && rowIdx+i >= sel.minRow() && rowIdx+i <= sel.maxRow()
 			if i == 0 {
-				logOutput = append(logOutput, labelRendered+" "+row)
+				// Render label and text under the same background so the selection
+				// highlight covers the full line. Applying selectedBg to the
+				// pre-rendered label string doesn't work because the label's
+				// trailing ANSI reset (\x1b[0m) cancels the background mid-line.
+				if selected {
+					labelPart := lipgloss.NewStyle().
+						Foreground(line.color).
+						Background(selectedBg.GetBackground()).
+						Render(padRight(line.label, maxLabel))
+					textPart := selectedBg.Render(" " + row)
+					logOutput = append(logOutput, labelPart+textPart)
+				} else {
+					labelRendered := lipgloss.NewStyle().
+						Foreground(line.color).
+						Render(padRight(line.label, maxLabel))
+					logOutput = append(logOutput, labelRendered+" "+row)
+				}
 			} else {
-				logOutput = append(logOutput, indent+row)
+				if selected {
+					logOutput = append(logOutput, selectedBg.Render(indent+row))
+				} else {
+					logOutput = append(logOutput, indent+row)
+				}
 			}
 		}
 	}
