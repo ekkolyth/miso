@@ -13,6 +13,27 @@ import (
 // allExitedMsg fires after all processes have exited and the 2-second delay has passed.
 type allExitedMsg struct{}
 
+// SelectionState tracks the click-drag log row selection.
+type SelectionState struct {
+	active   bool
+	startRow int // 0-based visual row index within the visible panel
+	endRow   int
+}
+
+func (s SelectionState) minRow() int {
+	if s.startRow <= s.endRow {
+		return s.startRow
+	}
+	return s.endRow
+}
+
+func (s SelectionState) maxRow() int {
+	if s.startRow >= s.endRow {
+		return s.startRow
+	}
+	return s.endRow
+}
+
 var (
 	accentColor  = lipgloss.Color("#7c3aed")
 	runningColor = lipgloss.Color("#a3e635")
@@ -32,6 +53,7 @@ type TabbedModel struct {
 	script           string
 	delegated        bool
 	allExitedPending bool
+	sel              SelectionState
 }
 
 func NewTabbedModel(pm *ProcessManager, script string, delegated bool) TabbedModel {
@@ -76,7 +98,32 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
 			go m.pm.RestartAll()
+		case msg.String() == "c":
+			if m.sel.active {
+				return m, tea.SetClipboard(m.selectedText())
+			}
+		case msg.String() == "esc":
+			m.sel = SelectionState{}
 		}
+
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft {
+			row := m.mouseToLogRow(msg.X, msg.Y)
+			if row >= 0 {
+				m.sel = SelectionState{active: true, startRow: row, endRow: row}
+			}
+		}
+
+	case tea.MouseMotionMsg:
+		if msg.Button == tea.MouseLeft && m.sel.active {
+			row := m.mouseToLogRow(msg.X, msg.Y)
+			if row >= 0 {
+				m.sel.endRow = row
+			}
+		}
+
+	case tea.MouseReleaseMsg:
+		// selection remains until cleared with esc or new click
 
 	case tea.MouseWheelMsg:
 		switch msg.Button {
@@ -287,9 +334,9 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 
 	var hintText string
 	if m.delegated {
-		hintText = "↑↓ navigate · R restart · ctrl+c quit"
+		hintText = "↑↓ navigate · drag to select · c copy · R restart · ctrl+c quit"
 	} else {
-		hintText = "↑↓ navigate · r restart · R restart all · ctrl+c quit"
+		hintText = "↑↓ navigate · drag to select · c copy · r restart · R restart all · ctrl+c quit"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
@@ -340,6 +387,14 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 		visualRows = append(visualRows, "")
 	}
 
+	// Highlight selected rows.
+	selectedBg := lipgloss.NewStyle().Background(lipgloss.Color("#2d4a7a"))
+	for i := range visualRows {
+		if m.sel.active && i >= m.sel.minRow() && i <= m.sel.maxRow() {
+			visualRows[i] = selectedBg.Render(visualRows[i])
+		}
+	}
+
 	logContent := strings.Join(visualRows, "\n")
 
 	logPanel := lipgloss.NewStyle().
@@ -356,6 +411,69 @@ func padRight(s string, width int) string {
 		return s[:width]
 	}
 	return s + strings.Repeat(" ", width-len(s))
+}
+
+// mouseToLogRow converts absolute terminal coordinates to a 0-based visual
+// log row index. Returns -1 if the coordinate is in the header, sidebar,
+// or border column.
+func (m TabbedModel) mouseToLogRow(x, y int) int {
+	logPanelTop := 1 // row 0 is the log header
+	if x <= m.sidebarWidth() {
+		return -1 // in sidebar or border
+	}
+	row := y - logPanelTop
+	if row < 0 {
+		return -1
+	}
+	return row
+}
+
+// selectedText returns the selected log rows as a plain string.
+func (m TabbedModel) selectedText() string {
+	if m.selected >= len(m.pm.Processes) {
+		return ""
+	}
+	proc := m.pm.Processes[m.selected]
+	lines := proc.Buffer.Lines()
+	totalLines := len(lines)
+
+	sidebarWidth := m.sidebarWidth()
+	logWidth := m.width - sidebarWidth - 1
+	logHeight := m.logHeight()
+
+	// Apply same scroll window as renderLogPanel.
+	endIdx := totalLines - m.scrollOffset
+	if endIdx < 0 {
+		endIdx = 0
+	}
+	startIdx := endIdx - logHeight
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	visible := lines[startIdx:endIdx]
+
+	// Wrap to visual rows.
+	var visualRows []string
+	for _, line := range visible {
+		visualRows = append(visualRows, wrapLine(line, logWidth-2)...)
+	}
+	if len(visualRows) > logHeight {
+		visualRows = visualRows[len(visualRows)-logHeight:]
+	}
+
+	// Slice selection.
+	lo := m.sel.minRow()
+	hi := m.sel.maxRow()
+	if lo < 0 {
+		lo = 0
+	}
+	if hi >= len(visualRows) {
+		hi = len(visualRows) - 1
+	}
+	if lo > hi || len(visualRows) == 0 {
+		return ""
+	}
+	return strings.Join(visualRows[lo:hi+1], "\n")
 }
 
 // wrapLine splits a single log line into multiple visual rows of at most `width`

@@ -35,6 +35,7 @@ type MergedModel struct {
 	script           string
 	delegated        bool
 	allExitedPending bool
+	sel              SelectionState
 }
 
 type mergedLine struct {
@@ -91,7 +92,32 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
 			go m.pm.RestartAll()
+		case msg.String() == "c":
+			if m.sel.active {
+				return m, tea.SetClipboard(m.selectedText())
+			}
+		case msg.String() == "esc":
+			m.sel = SelectionState{}
 		}
+
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft {
+			row := m.mouseToLogRow(msg.X, msg.Y)
+			if row >= 0 {
+				m.sel = SelectionState{active: true, startRow: row, endRow: row}
+			}
+		}
+
+	case tea.MouseMotionMsg:
+		if msg.Button == tea.MouseLeft && m.sel.active {
+			row := m.mouseToLogRow(msg.X, msg.Y)
+			if row >= 0 {
+				m.sel.endRow = row
+			}
+		}
+
+	case tea.MouseReleaseMsg:
+		// selection remains until cleared with esc or new click
 
 	case tea.MouseWheelMsg:
 		switch msg.Button {
@@ -224,6 +250,14 @@ func (m MergedModel) View() tea.View {
 		logOutput = append(logOutput, "")
 	}
 
+	// Highlight selected rows.
+	selectedBg := lipgloss.NewStyle().Background(lipgloss.Color("#2d4a7a"))
+	for i := range logOutput {
+		if m.sel.active && i >= m.sel.minRow() && i <= m.sel.maxRow() {
+			logOutput[i] = selectedBg.Render(logOutput[i])
+		}
+	}
+
 	logContent := strings.Join(logOutput, "\n")
 
 	logPanel := lipgloss.NewStyle().
@@ -251,9 +285,9 @@ func (m MergedModel) renderFilterBar() string {
 
 	var hintText string
 	if m.delegated {
-		hintText = "←→ select · space toggle · R restart · ctrl+c quit"
+		hintText = "←→ select · space toggle · drag to select · c copy · R restart · ctrl+c quit"
 	} else {
-		hintText = "←→ select · space toggle · r restart · R restart all · ctrl+c quit"
+		hintText = "←→ select · space toggle · drag to select · c copy · r restart · R restart all · ctrl+c quit"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
@@ -349,4 +383,88 @@ func (m MergedModel) visibleLabels() map[string]bool {
 		}
 	}
 	return result
+}
+
+// mouseToLogRow converts absolute terminal coordinates to a 0-based visual
+// log row index. Returns -1 if the coordinate is above the log area.
+func (m MergedModel) mouseToLogRow(x, y int) int {
+	logPanelTop := 3 // row 0=header, 1=tabs, 2=selector, 3+=logs
+	row := y - logPanelTop
+	if row < 0 {
+		return -1
+	}
+	return row
+}
+
+// selectedText returns the selected log rows as a plain string.
+func (m MergedModel) selectedText() string {
+	logHeight := m.logHeight()
+
+	// Build visible log lines (same as View()).
+	visibleLabels := m.visibleLabels()
+	var visibleLines []mergedLine
+	for _, line := range m.logLines {
+		if visibleLabels[line.label] {
+			visibleLines = append(visibleLines, line)
+		}
+	}
+
+	totalVisible := len(visibleLines)
+	endIdx := totalVisible - m.scrollOffset
+	if endIdx < 0 {
+		endIdx = 0
+	}
+	startIdx := endIdx - logHeight
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	windowLines := visibleLines[startIdx:endIdx]
+
+	// Find max label width.
+	maxLabel := 0
+	for _, proc := range m.pm.Processes {
+		if len(proc.Entry.Label) > maxLabel {
+			maxLabel = len(proc.Entry.Label)
+		}
+	}
+
+	prefixWidth := maxLabel + 1
+	textWidth := m.width - prefixWidth - 2
+	if textWidth < 1 {
+		textWidth = 1
+	}
+
+	// Build visual rows (same logic as View()).
+	var logOutput []string
+	for _, line := range windowLines {
+		labelRendered := lipgloss.NewStyle().
+			Foreground(line.color).
+			Render(padRight(line.label, maxLabel))
+		indent := strings.Repeat(" ", prefixWidth)
+		wrapped := wrapLine(line.text, textWidth)
+		for i, row := range wrapped {
+			if i == 0 {
+				logOutput = append(logOutput, labelRendered+" "+row)
+			} else {
+				logOutput = append(logOutput, indent+row)
+			}
+		}
+	}
+	if len(logOutput) > logHeight {
+		logOutput = logOutput[len(logOutput)-logHeight:]
+	}
+
+	// Slice selection.
+	lo := m.sel.minRow()
+	hi := m.sel.maxRow()
+	if lo < 0 {
+		lo = 0
+	}
+	if hi >= len(logOutput) {
+		hi = len(logOutput) - 1
+	}
+	if lo > hi || len(logOutput) == 0 {
+		return ""
+	}
+	return strings.Join(logOutput[lo:hi+1], "\n")
 }
