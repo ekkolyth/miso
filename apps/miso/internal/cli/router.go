@@ -40,21 +40,7 @@ type ParsedCLI struct {
 	ScriptArgs    []string
 	Command       string
 	Args          []string
-	Local         bool   // For upgrade command --local flag
 	WorkspaceName string // For @workspace/script syntax
-}
-
-func ParseLocalFlag(args []string) (bool, []string) {
-	local := false
-	remaining := args
-	for i, arg := range args {
-		if arg == "--local" {
-			local = true
-			remaining = append(args[:i], args[i+1:]...)
-			break
-		}
-	}
-	return local, remaining
 }
 
 func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) {
@@ -145,11 +131,9 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		if resolved, err := scripting.ResolveScript("upgrade", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, "upgrade", parseInlineArgs(args[1:])), nil
 		}
-		local, remainingArgs := ParseLocalFlag(args[1:])
 		return ParsedCLI{
 			Action: ActionUpgrade,
-			Local:  local,
-			Args:   remainingArgs,
+			Args:   args[1:],
 		}, nil
 	}
 

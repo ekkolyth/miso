@@ -98,8 +98,7 @@ func main() {
 			}
 			return
 		case "upgrade":
-			local, remainingArgs := cli.ParseLocalFlag(args[1:])
-			if err := commands.Upgrade(local, remainingArgs); err != nil {
+			if err := commands.Upgrade(args[1:]); err != nil {
 				cli.Fail(logger, err, false)
 			}
 			return
