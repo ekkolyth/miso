@@ -30,7 +30,9 @@ IDE autocomplete URL. Always use:
 **Type:** `string`
 **Default:** `"./scripts"`
 
-Path to the folder containing your runnable scripts. Can be relative or absolute.
+> **NOT an object.** Unlike `package.json`, the `scripts` field in `miso.json` is a **path string** pointing to a folder — not a map of command names to shell strings. Scripts are files inside that folder, not inline strings.
+
+Path to the folder containing your runnable scripts. Can be relative or absolute. Can be omitted if your scripts live in `./scripts` (the default).
 
 ```json
 "scripts": "./tasks"
@@ -59,7 +61,51 @@ Controls monorepo orchestration:
 - `"mono"` — miso-native orchestration; requires `workspaces` array in root `package.json`
 - `"turbo"` — delegates to Turborepo; parses output into TUI tabs
 - `"nx"` — delegates to Nx (`nx run-many --target=<script>`); parses output into TUI tabs
-- Object form: `{ "mode": "turbo", "tasks": { ... } }` — use when you need `tasks` config alongside delegation
+- Object form: `{ "mode": "turbo", "tasks": { ... } }` — use when you need `tasks` config. `mode` is optional in object form (defaults to `"single"` if omitted). Write `{ "tasks": { ... } }` when you want task config in a standard single project.
+
+---
+
+### Orchestration Override (turbo/nx mode)
+
+When `repo.mode` is `"turbo"` or `"nx"`, miso uses a task-by-task routing rule:
+
+| Task is listed in `repo.tasks`? | What happens when you run `miso <task>`? |
+|---|---|
+| Yes | Miso takes over: launches the TUI directly with miso-native orchestration |
+| No | Miso delegates: runs `turbo run <task>` (or `nx run-many`) as normal |
+
+**This is how you make miso control a specific task instead of delegating to turbo.**
+
+Example: You use Turborepo but want `miso dev` to launch with miso's TUI (not turbo's output), while still using turbo for `build` and `lint`:
+
+```json
+{
+  "repo": {
+    "mode": "turbo",
+    "tasks": {
+      "dev": {
+        "concurrent": ["studio"]
+      }
+    }
+  },
+  "tui": "tabbed"
+}
+```
+
+What happens:
+- `miso dev` → miso discovers workspaces, launches `dev` + `studio` in TUI tabs directly
+- `miso build` → delegates to `turbo run build`
+- `miso lint` → delegates to `turbo run lint`
+
+To override a task without any extra config, an empty object is enough:
+
+```json
+"tasks": {
+  "dev": {}
+}
+```
+
+See `miso-tui` for the full `concurrent` and `dependsOn` reference.
 
 ---
 
@@ -155,3 +201,4 @@ See `miso-env` for full env configuration including variable types and validatio
 - **`repo: "mono"` without `workspaces`** — miso reads `workspaces` from root `package.json` to discover workspace directories; if it's missing, mono mode won't find any workspaces
 - **`tui` inside `repo`** — `tui` is a top-level field, not nested under `repo`
 - **String flags** — `"flags": { "install": "--frozen-lockfile" }` is wrong; must be an array: `["--frozen-lockfile"]`
+- **`"scripts"` as an object** — `"scripts": { "build": "tsc" }` is invalid; `scripts` is a path string like `"./scripts"`. Inline script strings go in `package.json`. Miso discovers runnable files from the folder at that path.
