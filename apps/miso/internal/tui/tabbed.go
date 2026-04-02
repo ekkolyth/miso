@@ -214,6 +214,15 @@ func (m TabbedModel) sidebarWidth() int {
 	return w
 }
 
+// sidebarStartIdx returns the first process index visible in the sidebar list
+// given the available list height. Keeps m.selected visible.
+func (m TabbedModel) sidebarStartIdx(listHeight int) int {
+	if m.selected >= listHeight {
+		return m.selected - listHeight + 1
+	}
+	return 0
+}
+
 func (m TabbedModel) renderSidebar(width, height int) string {
 	if height < 1 {
 		return ""
@@ -243,10 +252,7 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 
 	// Scroll the tab list to keep selected visible
 	procs := m.pm.Processes
-	startIdx := 0
-	if m.selected >= listHeight {
-		startIdx = m.selected - listHeight + 1
-	}
+	startIdx := m.sidebarStartIdx(listHeight)
 	endIdx := startIdx + listHeight
 	if endIdx > len(procs) {
 		endIdx = len(procs)

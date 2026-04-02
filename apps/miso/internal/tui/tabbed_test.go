@@ -4,6 +4,27 @@ import (
 	"testing"
 )
 
+func TestSidebarStartIdx(t *testing.T) {
+	tests := []struct {
+		selected   int
+		listHeight int
+		want       int
+	}{
+		{selected: 0, listHeight: 10, want: 0},
+		{selected: 5, listHeight: 10, want: 0},  // fits, no scroll
+		{selected: 10, listHeight: 10, want: 1}, // selected == listHeight, scroll by 1
+		{selected: 15, listHeight: 10, want: 6}, // selected - listHeight + 1
+	}
+	for _, tt := range tests {
+		m := TabbedModel{selected: tt.selected}
+		got := m.sidebarStartIdx(tt.listHeight)
+		if got != tt.want {
+			t.Errorf("sidebarStartIdx(selected=%d, listHeight=%d) = %d, want %d",
+				tt.selected, tt.listHeight, got, tt.want)
+		}
+	}
+}
+
 func TestWrapLine(t *testing.T) {
 	tests := []struct {
 		name  string
