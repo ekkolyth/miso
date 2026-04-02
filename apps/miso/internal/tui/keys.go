@@ -8,6 +8,7 @@ type TabbedKeyMap struct {
 	Restart    key.Binding
 	RestartAll key.Binding
 	CopyKey    key.Binding
+	CopyAll    key.Binding
 	Quit       key.Binding
 }
 
@@ -18,6 +19,7 @@ func DefaultTabbedKeyMap() TabbedKeyMap {
 		Restart:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "restart")),
 		RestartAll: key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "restart all")),
 		CopyKey:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "copy selection")),
+		CopyAll:    key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "copy all logs")),
 		Quit:       key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 	}
 }
