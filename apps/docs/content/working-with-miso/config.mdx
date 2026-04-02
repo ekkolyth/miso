@@ -2,19 +2,6 @@
 
 You can edit `miso.json` directly to change its settings:
 
-### JSON Schema (IDE Support)
-
-Add a `$schema` property to get autocomplete and validation in VS Code, Cursor, and other editors:
-
-```json
-{
-  "$schema": "https://misojs.dev/miso.schema.json",
-  "scripts": "./scripts"
-}
-```
-
-The schema is available at [https://misojs.dev/miso.schema.json](https://misojs.dev/miso.schema.json) — use this URL in your `miso.json` for type-safe editing.
-
 ### Package Manager
 
 Controls whether miso operates as a package manager wrapper or a standalone script runner:
@@ -26,7 +13,7 @@ Controls whether miso operates as a package manager wrapper or a standalone scri
     command='"packageManager": false'
 />
 
-<DocProp prop="boolean (default: true)" />
+<DocProp prop="boolean" /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default: true</Badge>
 
 When set to `false`, miso runs in **simple mode** — all package manager features are disabled. Every command resolves as a folder script. See [Simple Mode](/working-with-miso/simple-mode) for details.
 
@@ -45,7 +32,9 @@ Sets the path to the folder you want miso to use when you run custom scripts:
 
 <DocProp prop="string" />
 
-This path is relative to the location of your miso.json file. Learn more about [Scripting in Miso](/scripting)
+This path is relative to the location of your miso.json file.
+
+Learn more about [Scripting in Miso](/scripting)
 
 ### Shell
 
@@ -55,12 +44,12 @@ Default interpreter for scripts with no shebang and no recognized extension. If 
     copy={false}
     className="mt-4 border border-neutral-700 rounded-sm"
     title="miso.json"
-    command='shell: "bash"'
+    config={`"shell": "sh" | "zsh" | "bash" | "dash" | "ksh" | "fish" | "nu" | "pwsh"`}
 />
 
-<DocProp prop="string" />
+<DocProp prop="string" /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default: "sh"</Badge>
 
-Examples: `"sh"`, `"bash"`, `"zsh"`. The interpreter must be available in your PATH.
+The selected interpreter must be available in your PATH.
 
 ### Repo
 
@@ -70,54 +59,42 @@ Configure whether your project is a single project or a monorepo:
     copy={false}
     className="mt-4 border border-neutral-700 rounded-sm"
     title="miso.json"
-    command='repo: "mono"'
+    config={`"repo": "single" | "mono" | "turbo" | "nx"`}
 />
 
-<DocProp prop='"single"' />
+<DocProp prop='"single"' /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default</Badge>
 
-Default. Treats the project as a single repository. All scripts resolve from the root `scripts/` folder.
+Treats the project as a single repository. All scripts resolve from the root `scripts/` folder.
 
 <DocProp prop='"mono"' />
 
-Enables monorepo mode. Unlocks workspace-scoped script execution using the `workspace:script` syntax and automatic CWD-based scoping. Requires a `workspaces` field in your root `package.json`.
-
-<DocProp prop='"turbo"' />
-
-Delegates orchestration to [Turborepo](https://turbo.build). Miso spawns `turbo run <script>` as a single process and parses its workspace-prefixed output into TUI tabs. Turbo must be installed and available in your PATH.
-
-<DocProp prop='"nx"' />
-
-Delegates orchestration to [Nx](https://nx.dev). Miso spawns `nx run-many --target=<script>` and parses its output into TUI tabs. Nx must be installed and available in your PATH.
-
-You can also use the object form for task configuration in any mode:
-
-```json
-{
-  "repo": {
-    "mode": "mono",
-    "tasks": {
-      "build": { "dependsOn": ["^build"] },
-      "dev": { "concurrent": ["services", "db:studio"] }
-    }
-  }
-}
-```
-
-- `dependsOn` with the `^` prefix means "run this task in upstream dependencies first."
-- `concurrent` lists additional tasks to discover and run in parallel alongside the main task.
-- In turbo/nx mode, tasks listed here use miso's direct orchestration instead of delegation.
-
-See [TUI Configuration](/tui/configuration) for details.
+Enables monorepo mode. Unlocks workspace-scoped script execution using the `@workspace/script` syntax and automatic CWD-based scoping. Requires a `workspaces` field in your root `package.json`.
 
 When set to `"mono"`, miso reads workspace paths from your root `package.json`:
 
-```json
-{
-  "workspaces": ["apps/*", "packages/*"]
-}
-```
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="package.json"
+    config={`{
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ]
+}`}
+/>
 
 See [Monorepo Scripts](/scripting/scripts-folder#monorepo) for full details on workspace script execution.
+
+
+<DocProp prop='"turbo"' />
+
+Delegates orchestration to [Turborepo](https://turbo.build). Turbo must be installed and available in your PATH.
+
+<DocProp prop='"nx"' />
+
+Delegates orchestration to [Nx](https://nx.dev). Nx must be installed and available in your PATH.
+
 
 ### TUI
 
@@ -127,53 +104,39 @@ Configure the multi-terminal UI mode for running scripts across workspaces:
     copy={false}
     className="mt-4 border border-neutral-700 rounded-sm"
     title="miso.json"
-    command='tui: "tabbed"'
+    config={`"tui": "off" | "tabbed" | "merged"`}
 />
 
-<DocProp prop='"off"' />
-
-Default. TUI is disabled — output goes to the terminal as normal.
-
-<DocProp prop='"tabbed"' />
-
-Shows a sidebar with your workspace list and a log panel for the selected workspace. See [Tabbed Mode](/tui/tabbed-mode).
-
-<DocProp prop='"merged"' />
-
-Interleaves all workspace output in a single stream with color-coded labels. See [Merged Mode](/tui/merged-mode).
+See [TUI Configuration](/tui/configuration) for the full reference.
 
 ### Flags
 
 Add default flags to package manager commands:
 
-```json
-{
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`{
   "flags": {
     "install": ["--frozen-lockfile"],
     "add": ["--dev"],
     "dev": ["--env"]
   }
-}
-```
+}`}
+/>
 
-See [Flags](/working-with-miso/flags) for the full reference.
+See [Flags](/scripting/flags) for the full reference.
 
 ### Env
 
-Miso automatically loads your registered `.env` files into the environment of every script it runs. You don't need to do anything special — if you've configured an `env` block, the variables are available to your scripts.
+Configure environment variable loading and validation:
 
-For example, if your `.env.local` has `DATABASE_URL=postgres://localhost/mydb`, any script miso runs will see that value. If the variable is already set in your shell (e.g., you exported `DATABASE_URL` yourself), your shell value takes precedence — the `.env` file only fills in variables that aren't already set.
-
-If you don't configure an `env` block at all, miso will auto-discover `.env` files in this order: `.env.local`, `.env.production`, `.env.development`, `.env`.
-
-In monorepo mode, each workspace only gets the env from its own directory — variables from other workspaces don't bleed across boundaries.
-
-The `--env` flag adds **validation** before running the script. Without it, variables are loaded but not validated.
-
-Configure environment variable validation for `miso env`:
-
-```json
-{
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`{
   "env": [
     {
       "label": "web",
@@ -181,19 +144,11 @@ Configure environment variable validation for `miso env`:
       "required": "all",
       "variables": {
         "PORT": "port",
-        "DATABASE_URL": "url",
-        "NODE_ENV": {
-          "type": "enum",
-          "values": ["development", "production", "test"],
-          "optional": true
-        }
+        "DATABASE_URL": "url"
       }
     }
   ]
-}
-```
+}`}
+/>
 
-- **label**: Human-readable name for this env entry (used in log output).
-- **path**: Path to the `.env` file, relative to project root.
-- **required**: `"all"` (every variable unless optional), `"none"`, or an array of specific keys.
-- **variables**: Either an object (type validation) or array (presence only). See [Env validation](/env-validation) for the full spec.
+See [Env Configuration](/env-validation/config) for the full reference.

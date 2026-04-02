@@ -11,7 +11,7 @@ Controls the terminal UI mode. Set at the top level of `miso.json`.
 | Value | Behavior |
 |---|---|
 | `"off"` | Default. No TUI. Normal stdout. |
-| `"tabbed"` | Sidebar with per-process log panes. Arrow keys to navigate, `r` to restart a process. |
+| `"tabbed"` | Sidebar with per-process log panes. Click or use arrow keys to navigate, `r` to restart, `C` to copy full log buffer. |
 | `"merged"` | Interleaved output with color-coded process labels and a filter bar. |
 | `{ "mode": "tabbed", "cleanExit": true }` | Object form. `cleanExit: true` suppresses the log dump to stdout when the TUI exits. By default, all buffered process output is printed to stdout after the TUI closes. |
 

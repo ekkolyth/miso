@@ -33,7 +33,7 @@ Miso selects the interpreter based on file extension:
 | `.lua` | `lua` |
 | `.php` | `php` |
 
-**Shebang is optional.** Miso selects the interpreter from the file extension automatically — a shebang is only needed if you want to override the default for that extension. If a script does start with `#!`, that interpreter takes precedence.
+**Never add a shebang.** Miso selects the interpreter from the file extension — the extension is how you control which interpreter runs your script. If a script does start with `#!`, that interpreter takes precedence, but this should never be necessary in miso.
 
 The `shell` field in `miso.json` sets the fallback interpreter for scripts with no recognized extension and no shebang.
 
@@ -110,4 +110,4 @@ Miso resolves the script from that workspace's own `scripts/` folder first, then
 - **Using `miso run scriptname`** — in miso, the correct form is `miso scriptname` (no `run` subcommand needed)
 - **Adding `chmod +x` to scripts** — never needed; miso always invokes the interpreter directly and passes the script as an argument, so the script file itself never needs to be executable
 - **Adding `set -e` or `set -euo pipefail`** — not needed; miso automatically passes `-e` to shell interpreters, so scripts already exit on error without any boilerplate
-- **Adding a shebang to control exit-on-error** — not needed for the same reason; only add a shebang if you genuinely need a different interpreter than what the extension selects
+- **Adding a shebang** — never needed; use the file extension to control which interpreter runs the script
