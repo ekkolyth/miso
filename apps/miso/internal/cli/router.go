@@ -23,7 +23,6 @@ const (
 	ActionPassthrough
 	ActionInit
 	ActionVersion
-	ActionMisox
 	ActionUpgrade
 	ActionScriptFolder
 	ActionScriptPackageJSON
@@ -34,7 +33,6 @@ const (
 type ParsedCLI struct {
 	Action        Action
 	PackageNames  []string
-	PackageName   string // For misox command
 	ScriptName    string
 	ScriptNames   []string // For multiple scripts
 	ScriptArgs    []string
@@ -111,21 +109,6 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		return ParsedCLI{Action: ActionInit}, nil
 	case "version", "v":
 		return ParsedCLI{Action: ActionVersion}, nil
-	case "misox":
-		// check script override
-		if resolved, err := scripting.ResolveScript("misox", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
-			return buildScriptAction(resolved, "misox", parseInlineArgs(args[1:])), nil
-		}
-		if len(args) < 2 {
-			return ParsedCLI{}, errors.New("usage: miso misox <package> [args...]")
-		}
-		packageName := args[1]
-		remainingArgs := args[2:]
-		return ParsedCLI{
-			Action:      ActionMisox,
-			PackageName: packageName,
-			Args:        remainingArgs,
-		}, nil
 	case "upgrade":
 		// check script override
 		if resolved, err := scripting.ResolveScript("upgrade", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {

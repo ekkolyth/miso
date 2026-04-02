@@ -121,6 +121,19 @@ func main() {
 				return
 			}
 			// Neither --add nor --rm: fall through to normal routing (PM passthrough)
+		case "misox":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "usage: miso misox <package> [args...]")
+				os.Exit(1)
+			}
+			misoxManager := "npm"
+			if detected, err := manager.DetectManager(originalWorkDir); err == nil {
+				misoxManager = detected
+			}
+			if err := cli.RunMisox(misoxManager, args[1], args[2:], originalWorkDir); err != nil {
+				cli.Fail(logger, err, false)
+			}
+			return
 		}
 	}
 
@@ -397,11 +410,6 @@ func main() {
 		return
 	case cli.ActionDev:
 		if err := commands.Dev(managerName, parsed.ScriptArgs, originalWorkDir, cfg); err != nil {
-			cli.Fail(logger, err, false)
-		}
-		return
-	case cli.ActionMisox:
-		if err := cli.RunMisox(managerName, parsed.PackageName, parsed.Args, originalWorkDir); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
