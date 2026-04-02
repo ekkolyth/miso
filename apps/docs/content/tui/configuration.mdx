@@ -5,95 +5,108 @@ description: Configure the TUI display mode, repo modes, and dependency ordering
 
 # Configuration
 
-## `tui` Option
+### `tui`
 
 Controls how concurrent scripts are displayed.
 
-| Value | Description |
-|-------|-------------|
-| `"off"` (default) | No TUI. Normal single-process execution. |
-| `"tabbed"` | Sidebar with workspace list, selected workspace's logs on the right. |
-| `"merged"` | Interleaved log stream with colored labels and filter toggles. |
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`"tui": "off" | "tabbed" | "merged"`}
+/>
 
-```json
-{
-  "tui": "tabbed"
-}
-```
+<DocProp prop='"off"' /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default</Badge>
 
-### Object Form
+No TUI. Normal single-process execution.
 
-For additional options, use the object form:
+<DocProp prop='"tabbed"' />
 
-```json
-{
+Sidebar with workspace list, selected workspace's logs on the right. See [Tabbed Mode](/tui/tabbed-mode).
+
+<DocProp prop='"merged"' />
+
+Interleaved log stream with colored labels and filter toggles. See [Merged Mode](/tui/merged-mode).
+
+You can also use the object form for additional options:
+
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`{
   "tui": {
     "mode": "tabbed",
     "cleanExit": true
   }
-}
-```
+}`}
+/>
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `mode` | string | `"off"` | TUI display mode: `"off"`, `"tabbed"`, or `"merged"` |
-| `cleanExit` | boolean | `false` | When `true`, suppress log dump on TUI exit. By default, all buffered output is printed to stdout when the TUI exits. |
+<DocProp prop="mode" />
 
-## `repo` Option
+TUI display mode. Accepts `"off"`, `"tabbed"`, or `"merged"`.
+
+<DocProp prop="cleanExit" />
+
+When `true`, suppresses the log dump on TUI exit. By default, all buffered output is printed to stdout when the TUI exits.
+
+### `repo`
 
 Controls how miso discovers and orchestrates workspaces.
 
-### String Form
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`"repo": "single" | "mono" | "turbo" | "nx"`}
+/>
 
-| Value | Description |
-|-------|-------------|
-| `"single"` (default) | Standard project. Uses `concurrent` in task config for companion scripts. |
-| `"mono"` | Monorepo. Miso discovers workspaces and orchestrates scripts. |
-| `"turbo"` | Monorepo. Delegates orchestration to Turborepo, miso provides the UI. |
-| `"nx"` | Monorepo. Delegates orchestration to Nx, miso provides the UI. |
+<DocProp prop='"single"' /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default</Badge>
 
-```json
-{
-  "repo": "mono"
-}
-```
+Standard project. Uses `concurrent` in task config for companion scripts.
 
-### Object Form (with task configuration)
+<DocProp prop='"mono"' />
 
-For concurrent tasks, dependency ordering, or turbo/nx task overrides, use the object form with `tasks`:
+Monorepo. Miso discovers workspaces and orchestrates scripts directly.
 
-```json
-{
+<DocProp prop='"turbo"' />
+
+Monorepo. Delegates orchestration to Turborepo — miso provides the UI. `turbo` must be available in your PATH.
+
+<DocProp prop='"nx"' />
+
+Monorepo. Delegates orchestration to Nx — miso provides the UI. `nx` must be available in your PATH.
+
+You can also use the object form to configure per-task behaviour:
+
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`{
   "repo": {
     "mode": "mono",
     "tasks": {
-      "build": { "dependsOn": ["^build"] },
-      "dev": { "concurrent": ["services", "db:studio"] }
+      "build": {
+        "dependsOn": ["^build"]
+      },
+      "dev": {
+        "concurrent": ["services", "db:studio"]
+      }
     }
   }
-}
-```
+}`}
+/>
 
-The `tasks` key maps command names to task configuration. Each task supports:
+<DocProp prop="dependsOn" />
 
-- **`dependsOn`** — array of strings. The `^` prefix (e.g., `"^build"`) means "run this task in upstream workspace dependencies first," reading the dependency graph from each workspace's `package.json`.
-- **`concurrent`** — array of strings. Additional task names to discover and run in parallel alongside the main task. Each name is discovered across all workspaces (monorepo) or resolved from the project root (single repo).
+Array of task names to run before this one. The `^` prefix (e.g. `"^build"`) means run the task in upstream workspace dependencies first, reading the dependency graph from each workspace's `package.json`.
 
-The object form works in all repo modes. In turbo/nx mode, tasks listed in `tasks` use miso's direct orchestration instead of delegation to the underlying tool.
+<DocProp prop="concurrent" />
+
+Array of additional task names to discover and run in parallel alongside the main task. In turbo/nx mode, tasks listed here use miso's direct orchestration instead of delegation.
 
 Commands not listed in `tasks`, or listed without `dependsOn`, run all workspaces in parallel.
-
-### Turbo/Nx Delegation
-
-When using `"turbo"` or `"nx"` mode:
-
-- Miso spawns the underlying tool as a single process (`turbo run <script>` or `nx run-many --target=<script>`)
-- Output is parsed and displayed in the TUI with per-workspace tabs
-- Workspaces are discovered dynamically as output arrives
-- Individual process restart (`r`) is disabled — only full restart (`R`) is available
-- The underlying tool handles dependency ordering, caching, and parallelism
-
-**Requirements:** The `turbo` or `nx` binary must be available in your PATH.
 
 ## Script Discovery
 

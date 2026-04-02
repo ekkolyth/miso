@@ -6,38 +6,12 @@ title: Basic Commands
 
 Miso comes with a handful of built-in commands to ensure that your experience moving between package managers is perfect.
 
-When you execute commands via miso, it first checks to see if the argument provided is a "built-in" command, if it is, it immediately executes.
-
-To learn more about this, check out [Resolution Order](/scripting/script-resolution#resolution-order)
-
 <Callout type="info">
 In [simple mode](/working-with-miso/simple-mode) (`"packageManager": false`), there are no built-in commands — everything resolves as a script. The commands below (install, add, remove, dev, misox) are only available when a package manager is configured.
 </Callout>
 
-## Workspace Scripts (Monorepo)
 
-If your project is configured as a monorepo (`"repo": "mono"` in `miso.json`), you can run scripts scoped to a specific workspace using the `@workspace/script` syntax:
-
-```bash
-miso @api/build
-miso @packages/web/dev
-miso @myorg/api/test
-```
-
-The workspace portion (`@api`, `@packages/web`, `@myorg/api`) is matched against each workspace by basename, relative path, or package name — in that order. The script portion (`build`, `dev`, `test`) is resolved first against the workspace's `scripts/` folder, then falls back to `package.json` scripts.
-
-This automatically sets the working directory to the workspace root, so all relative paths inside the script resolve correctly.
-
-You can also run workspace scripts without the `@workspace/` prefix by navigating into the workspace directory first. Miso will automatically scope to that workspace:
-
-```bash
-cd apps/api
-miso build   # resolves against apps/api/scripts/build.sh (or package.json)
-```
-
-See [Monorepo Setup](/working-with-miso/getting-started#monorepo-setup) for configuration details.
-
-## Install Dependencies
+### Install Dependencies
 
 Install all dependencies from your lockfile:
 
@@ -49,7 +23,7 @@ miso install
 miso i
 ```
 
-## Add Packages
+### Add Packages
 
 Add one or more packages to your project:
 
@@ -64,7 +38,7 @@ miso add -D vitest    # dev dependency
 miso add -E lodash    # exact version
 ```
 
-## Remove Packages
+### Remove Packages
 
 Remove one or more packages:
 
@@ -78,7 +52,7 @@ _or_
 miso rm lodash react redux
 ```
 
-## Dev
+### Dev
 
 Shortcut for running the `dev` script:
 
@@ -86,9 +60,9 @@ Shortcut for running the `dev` script:
 miso dev
 ```
 
-This is equivalent to `npm run dev`/`bun dev` but also supports [flag configuration](/content/working-with-miso/flags).
+This is equivalent to `npm run dev`/`bun dev` but also supports [flag configuration](/scripting/flags).
 
-## Scripts
+### Scripts
 
 List all available scripts miso can run from both the configured scripts folder and package.json:
 
@@ -110,25 +84,7 @@ package.json:
   lint: eslint .
 ```
 
-## misox
-
-`misox` is a stand-in replacement for `npx`.
-
-```bash
-misox prettier --write .
-misox eslint --init
-```
-
-It automatically uses the right tool for your package manager:
-
-| Package Manager | Equivalent |
-| --------------- | ---------- |
-| npm             | `npx`      |
-| bun             | `bunx`     |
-| pnpm            | `pnpm dlx` |
-| yarn            | `yarn dlx` |
-
-## Env
+### Env
 
 Validate environment variables from your .env file:
 
@@ -138,7 +94,7 @@ miso env
 
 See [Env Validation](/env-validation) for configuration and types.
 
-## Version
+### Version
 
 Show miso version:
 
@@ -154,7 +110,7 @@ Output:
 miso 1.2.3
 ```
 
-## Upgrade
+### Upgrade
 
 Upgrade miso to the latest version:
 
@@ -162,25 +118,17 @@ Upgrade miso to the latest version:
 miso upgrade
 ```
 
-To upgrade miso as a local dependency instead of globally, add the `--install` flag:
+To upgrade miso as a local dependency instead of globally, add the `--local` flag:
 
 ```bash
 miso upgrade --local
 ```
 
-## Skills
+### misox
 
-Miso ships a set of AI agent skills (`miso-config`, `miso-scripting`, `miso-tui`, `miso-env`). Use `--add` to install them all or `--rm` to remove them:
-
-```bash
-miso skills --add   # install all miso agent skills
-miso skills --rm    # remove all miso agent skills
-```
-
-Without flags, `skills` passes through to your package manager:
+`misox` is a stand-in replacement for `npx`.
 
 ```bash
-miso skills add lodash
-miso skills add -D vitest
-miso skills remove lodash
+misox prettier --write .
+misox eslint --init
 ```

@@ -45,7 +45,7 @@
 						"mode": {
 							"type": "string",
 							"enum": ["single", "mono", "turbo", "nx"],
-							"description": "Repository mode"
+							"description": "Repository mode. Defaults to 'single' if omitted."
 						},
 						"tasks": {
 							"type": "object",
@@ -67,12 +67,11 @@
 							},
 							"description": "Per-task configuration. Available in all repo modes. Defines dependency ordering (dependsOn) and companion tasks (concurrent). In turbo/nx mode, tasks listed here use miso's direct orchestration instead of delegation."
 						}
-					},
-					"required": ["mode"],
-					"additionalProperties": false
-				}
-			],
-			"default": "single",
+				},
+				"additionalProperties": false
+			}
+		],
+		"default": "single",
 			"description": "Repository type and optional task configuration. String shorthand or object with mode and tasks."
 		},
 		"tui": {

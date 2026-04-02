@@ -4,20 +4,22 @@ title: Agent Skills
 
 # Agent Skills
 
-Without guidance, AI coding agents frequently misconfigure miso. They use `"package-manager"` instead of `"packageManager"`, nest `tui` inside `repo`, omit file extensions from scripts, or write `"required": true` instead of `"required": "all"`. Agent skills are knowledge files that teach AI agents the exact conventions miso uses — so they get it right the first time.
+Skills are plain Markdown files that get injected into your AI agent's context (Claude Code, Cursor, OpenCode, etc). When the agent detects a relevant task, the matching skill loads automatically.
 
-Skills are plain Markdown files that get installed into your AI agent's context (Claude Code, Cursor, Windsurf, OpenCode, and [40+ others](https://github.com/ekkolyth/skills)). When the agent detects a relevant task, the matching skill loads automatically.
+<Callout type="info">
+Skills are installed as local files — they don't require an internet connection after installation and are safe to commit to version control.
+</Callout>
 
-## Available Skills
+### Available Skills
 
 | Skill | Loads when... | Covers |
 | --- | --- | --- |
-| `miso-config` | Creating or editing `miso.json` | All top-level fields, types, defaults, annotated examples, common mistakes |
-| `miso-scripting` | Working with the scripts folder, creating or debugging scripts | Extension dispatch, shebang rules, subdirectories, `@workspace/script` syntax, resolution order |
-| `miso-tui` | Configuring multi-process TUI, task ordering, concurrent tasks | `tui` field, `repo` modes, `tasks.concurrent`, `tasks.dependsOn` |
-| `miso-env` | Configuring env validation, debugging env injection | `env` config block, variable types, `--env` flag, injection behavior |
+| `config` | Creating or editing `miso.json` | All top-level fields, types, defaults, annotated examples, common mistakes |
+| `scripting` | Working with the scripts folder, creating or debugging scripts | Extension dispatch, shebang rules, subdirectories, `@workspace/script` syntax, resolution order |
+| `tui` | Configuring multi-process TUI, task ordering, concurrent tasks | `tui` field, `repo` modes, `tasks.concurrent`, `tasks.dependsOn` |
+| `env` | Configuring env validation, debugging env injection | `env` config block, variable types, `--env` flag, injection behavior |
 
-## Install All Skills
+### Install All Skills
 
 The fastest way to install all four skills at once is through the miso CLI:
 
@@ -27,38 +29,8 @@ miso skills --add
 
 This installs skills for whichever AI agent miso detects in your project.
 
-## Install Without the miso CLI
-
-If you prefer to install without using the miso CLI, use `npx` directly:
-
-```bash
-npx skills add ekkolyth/miso --all
-```
-
-To target a specific agent — for example, OpenCode:
-
-```bash
-npx skills add ekkolyth/miso --all -a opencode
-```
-
-## Install a Specific Skill
-
-To install only one skill rather than all four:
-
-```bash
-npx skills add ekkolyth/miso --skill miso-env
-```
-
-Replace `miso-env` with any of the skill names in the table above.
-
-## Remove Skills
+### Remove Skills
 
 ```bash
 miso skills --rm
 ```
-
-This removes all miso agent skills from your project.
-
-<Callout type="info">
-Skills are installed as local files — they don't require an internet connection after installation and are safe to commit to version control.
-</Callout>
