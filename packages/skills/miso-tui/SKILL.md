@@ -70,7 +70,58 @@ Launch additional tasks alongside this one in the TUI:
 }
 ```
 
-Running `miso dev` will also launch `studio` as a TUI tab. Tasks listed in `concurrent` are handled directly by miso's TUI — they are **not** delegated to turbo/nx.
+Running `miso dev` will also launch `studio` as a TUI tab alongside it. `concurrent` tasks are always run by miso directly — they are **not** passed to turbo/nx even when `mode` is `"turbo"`.
+
+In `"mono"` mode, `concurrent` launches extra scripts from the root `scripts/` folder alongside the workspace-distributed task.
+In `"turbo"` mode, `concurrent` launches extra scripts from the root `scripts/` folder alongside miso's native `dev` orchestration (not turbo's).
+
+---
+
+### Overriding a Turbo (or Nx) Task
+
+When `repo.mode` is `"turbo"` or `"nx"`, miso routes each command individually:
+
+- **Task name is in `repo.tasks`** → miso runs it directly with its own TUI orchestration
+- **Task name is NOT in `repo.tasks`** → miso delegates to `turbo run <task>` (or `nx run-many`)
+
+This lets you pick exactly which tasks miso controls and which turbo handles.
+
+**Example: take over `dev`, keep turbo for everything else**
+
+Before (turbo handles dev — string shorthand):
+```json
+{
+  "repo": "turbo",
+  "tui": "tabbed"
+}
+```
+`miso dev` → delegates to `turbo run dev`; turbo parses output into TUI tabs.
+
+After (miso handles dev — object form with `tasks`):
+```json
+{
+  "repo": {
+    "mode": "turbo",
+    "tasks": {
+      "dev": {
+        "concurrent": ["studio"]
+      }
+    }
+  },
+  "tui": "tabbed"
+}
+```
+`miso dev` → miso discovers workspaces from `package.json`, launches `dev` + `studio` in parallel in TUI tabs directly. `miso build` and `miso lint` still delegate to turbo.
+
+**Minimum override (no extra config needed):**
+
+```json
+"tasks": {
+  "dev": {}
+}
+```
+
+An empty task entry is enough to make miso take over `dev`.
 
 ---
 
@@ -102,3 +153,5 @@ Running `miso dev` will also launch `studio` as a TUI tab. Tasks listed in `conc
 - **`dependsOn` without `^`** — `"dependsOn": ["build"]` means same-workspace dependency; use `"dependsOn": ["^build"]` for cross-workspace topological ordering
 - **Expecting TUI for a single process** — the TUI only launches when multiple processes are involved (either monorepo workspaces or `concurrent` tasks configured)
 - **`tui` nested inside `repo`** — `tui` is a top-level field, not under `repo`
+- **`"repo": "turbo"` when you want miso to run dev** — string shorthand `"turbo"` fully delegates all tasks to turbo; to make miso handle specific tasks, use the object form with `tasks`: `{ "mode": "turbo", "tasks": { "dev": {} } }`
+- **`concurrent` tasks going to turbo** — `concurrent` tasks are always run by miso directly, even in `"turbo"` mode; they are not passed to `turbo run`
