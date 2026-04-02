@@ -397,29 +397,16 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 		return ""
 	}
 
-	proc := m.pm.Processes[m.selected]
-
-	// Header (1 line) — dim the process name when it has stopped
-	nameColor := accentColor
-	if proc.State == StateExited {
-		if proc.ExitCode != 0 {
-			nameColor = exitedColor
-		} else {
-			nameColor = mutedColor
-		}
-	}
-	name := lipgloss.NewStyle().Foreground(nameColor).Bold(true).Render(proc.Entry.Label)
-
 	scrollHint := ""
 	if m.scrollOffset > 0 {
-		scrollHint = lipgloss.NewStyle().Foreground(mutedColor).Render(fmt.Sprintf(" (scrolled +%d)", m.scrollOffset))
+		scrollHint = lipgloss.NewStyle().Foreground(mutedColor).Render(fmt.Sprintf("(scrolled +%d)", m.scrollOffset))
 	}
 
 	var hintText string
 	if m.delegated {
-		hintText = "c copy · C copy all · R restart · ctrl+c quit"
+		hintText = "c copy · R restart"
 	} else {
-		hintText = "c copy · C copy all · r restart · R restart all · ctrl+c quit"
+		hintText = "c copy · r restart · R restart all"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
@@ -442,18 +429,19 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 			Render(copyIconStr)
 	}
 
-	nameLen := lipgloss.Width(name) + lipgloss.Width(scrollHint)
+	scrollHintLen := lipgloss.Width(scrollHint)
 	hintsLen := lipgloss.Width(hints)
 	// Use raw iconW for gap math, not lipgloss.Width(copyIcon) — ANSI codes inflate rendered width.
-	gap := width - nameLen - hintsLen - iconW - 2 // -2 for Padding(0,1)
+	// Width(width) with no padding: manually add the 1-col left pad in the content string.
+	// Total content = 1 (left pad) + scrollHint + gap + hints + 1 (space) + icon + 1 (right pad)
+	gap := width - 1 - scrollHintLen - hintsLen - 1 - iconW - 1 // 1+1+1 = left pad, space, right pad
 	if gap < 1 {
 		gap = 1
 	}
 
 	header := lipgloss.NewStyle().
 		Width(width).
-		Padding(0, 1).
-		Render(name + scrollHint + strings.Repeat(" ", gap) + hints + " " + copyIcon)
+		Render(" " + scrollHint + strings.Repeat(" ", gap) + hints + " " + copyIcon + " ")
 
 	// Log lines with scroll support
 	logHeight := height - 1
