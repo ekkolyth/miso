@@ -54,6 +54,20 @@ First found per variable wins. Shell-exported variables always take precedence o
 ]
 ```
 
+### `variables` — presence-only array form
+
+When you only need to verify that variables exist (no type checking), use an array of names:
+
+```json
+"env": {
+  "path": ".env.local",
+  "required": "all",
+  "variables": ["DATABASE_URL", "API_KEY", "PORT"]
+}
+```
+
+This checks that each named variable is present in the env file but does not validate its format or type.
+
 ---
 
 ## Entry Fields
@@ -63,7 +77,7 @@ First found per variable wins. Shell-exported variables always take precedence o
 | `path` | `string` | Path to the `.env` file, relative to `miso.json` |
 | `label` | `string` | Optional. Display name used in validation output |
 | `required` | `"all" \| "none" \| string[]` | Which variables must be present. `"all"` = all defined variables. Array = specific keys only. |
-| `variables` | `object` | Variable name → type validator |
+| `variables` | `object \| string[]` | Variable name → type validator (object), or list of variable names for presence-only checking (array) |
 
 ---
 
@@ -94,6 +108,22 @@ Equivalent to `"PORT": { "type": "port" }`.
 | `"uuid"` | Valid UUID v4 |
 | `"pattern"` | Matches regex. Requires `pattern` string. |
 
+### `bool` — custom truthy/falsy strings
+
+By default, `bool` accepts:
+- True: `"true"`, `"1"`, `"yes"`, `"on"`
+- False: `"false"`, `"0"`, `"no"`, `"off"`
+
+Override with `trueValues` and `falseValues`:
+
+```json
+"ENABLE_FEATURE": {
+  "type": "bool",
+  "trueValues": ["enabled", "yes"],
+  "falseValues": ["disabled", "no"]
+}
+```
+
 ### Examples
 
 ```json
@@ -104,6 +134,7 @@ Equivalent to `"PORT": { "type": "port" }`.
   "DESCRIPTION": { "type": "string", "min": 1, "max": 255 },
   "RETRY_COUNT": { "type": "int+", "max": 10 },
   "FEATURE_FLAG": "bool",
+  "ENABLE_FEATURE": { "type": "bool", "trueValues": ["enabled"], "falseValues": ["disabled"] },
   "API_SECRET": { "type": "string", "optional": true }
 }
 ```
