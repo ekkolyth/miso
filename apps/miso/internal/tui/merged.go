@@ -92,7 +92,7 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
 			go m.pm.RestartAll()
-		case msg.String() == "c":
+		case key.Matches(msg, m.keys.CopyKey):
 			if m.sel.active {
 				return m, tea.SetClipboard(m.selectedText())
 			}
@@ -189,69 +189,13 @@ func (m MergedModel) View() tea.View {
 	filterBar := m.renderFilterBar()
 	logHeight := m.logHeight()
 
-	// Build visible log lines (only from visible workspaces)
-	var visibleLines []mergedLine
-	visibleLabels := m.visibleLabels()
-	for _, line := range m.logLines {
-		if visibleLabels[line.label] {
-			visibleLines = append(visibleLines, line)
-		}
-	}
-
-	totalVisible := len(visibleLines)
-
-	// Calculate visible window based on scroll offset
-	endIdx := totalVisible - m.scrollOffset
-	if endIdx < 0 {
-		endIdx = 0
-	}
-	startIdx := endIdx - logHeight
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	windowLines := visibleLines[startIdx:endIdx]
-
-	// Find max label width for padding
-	maxLabel := 0
-	for _, proc := range m.pm.Processes {
-		if len(proc.Entry.Label) > maxLabel {
-			maxLabel = len(proc.Entry.Label)
-		}
-	}
-
-	prefixWidth := maxLabel + 1            // padRight(label, maxLabel) + " "
-	textWidth := m.width - prefixWidth - 2 // minus Padding(0,1)
-	if textWidth < 1 {
-		textWidth = 1
-	}
-
-	var logOutput []string
-	for _, line := range windowLines {
-		labelRendered := lipgloss.NewStyle().
-			Foreground(line.color).
-			Render(padRight(line.label, maxLabel))
-		indent := strings.Repeat(" ", prefixWidth)
-		wrapped := wrapLine(line.text, textWidth)
-		for i, row := range wrapped {
-			if i == 0 {
-				logOutput = append(logOutput, labelRendered+" "+row)
-			} else {
-				logOutput = append(logOutput, indent+row)
-			}
-		}
-	}
-	// Take the tail.
-	if len(logOutput) > logHeight {
-		logOutput = logOutput[len(logOutput)-logHeight:]
-	}
+	logOutput := m.buildLogVisualRows(logHeight)
 	// Pad to fill.
 	for len(logOutput) < logHeight {
 		logOutput = append(logOutput, "")
 	}
 
 	// Highlight selected rows.
-	selectedBg := lipgloss.NewStyle().Background(lipgloss.Color("#2d4a7a"))
 	for i := range logOutput {
 		if m.sel.active && i >= m.sel.minRow() && i <= m.sel.maxRow() {
 			logOutput[i] = selectedBg.Render(logOutput[i])
@@ -399,8 +343,26 @@ func (m MergedModel) mouseToLogRow(x, y int) int {
 // selectedText returns the selected log rows as a plain string.
 func (m MergedModel) selectedText() string {
 	logHeight := m.logHeight()
+	logOutput := m.buildLogVisualRows(logHeight)
 
-	// Build visible log lines (same as View()).
+	// Slice selection.
+	lo := m.sel.minRow()
+	hi := m.sel.maxRow()
+	if lo < 0 {
+		lo = 0
+	}
+	if hi >= len(logOutput) {
+		hi = len(logOutput) - 1
+	}
+	if lo > hi || len(logOutput) == 0 {
+		return ""
+	}
+	return strings.Join(logOutput[lo:hi+1], "\n")
+}
+
+// buildLogVisualRows re-derives the visual rows for the merged log panel,
+// applying the scroll window, wrapping, and tail-slice.
+func (m MergedModel) buildLogVisualRows(logHeight int) []string {
 	visibleLabels := m.visibleLabels()
 	var visibleLines []mergedLine
 	for _, line := range m.logLines {
@@ -420,7 +382,6 @@ func (m MergedModel) selectedText() string {
 	}
 	windowLines := visibleLines[startIdx:endIdx]
 
-	// Find max label width.
 	maxLabel := 0
 	for _, proc := range m.pm.Processes {
 		if len(proc.Entry.Label) > maxLabel {
@@ -434,7 +395,6 @@ func (m MergedModel) selectedText() string {
 		textWidth = 1
 	}
 
-	// Build visual rows (same logic as View()).
 	var logOutput []string
 	for _, line := range windowLines {
 		labelRendered := lipgloss.NewStyle().
@@ -453,18 +413,5 @@ func (m MergedModel) selectedText() string {
 	if len(logOutput) > logHeight {
 		logOutput = logOutput[len(logOutput)-logHeight:]
 	}
-
-	// Slice selection.
-	lo := m.sel.minRow()
-	hi := m.sel.maxRow()
-	if lo < 0 {
-		lo = 0
-	}
-	if hi >= len(logOutput) {
-		hi = len(logOutput) - 1
-	}
-	if lo > hi || len(logOutput) == 0 {
-		return ""
-	}
-	return strings.Join(logOutput[lo:hi+1], "\n")
+	return logOutput
 }

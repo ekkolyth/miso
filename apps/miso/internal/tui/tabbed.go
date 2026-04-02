@@ -41,6 +41,7 @@ var (
 	mutedColor   = lipgloss.Color("#555555")
 	headerBg     = lipgloss.Color("#1a1a2e")
 	panelBg      = lipgloss.Color("#0d0d1a")
+	selectedBg   = lipgloss.NewStyle().Background(lipgloss.Color("#2d4a7a"))
 )
 
 type TabbedModel struct {
@@ -98,7 +99,7 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
 			go m.pm.RestartAll()
-		case msg.String() == "c":
+		case key.Matches(msg, m.keys.CopyKey):
 			if m.sel.active {
 				return m, tea.SetClipboard(m.selectedText())
 			}
@@ -358,37 +359,13 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 		logHeight = 0
 	}
 
-	lines := proc.Buffer.Lines()
-	totalLines := len(lines)
-
-	// Calculate visible window based on scroll offset
-	endIdx := totalLines - m.scrollOffset
-	if endIdx < 0 {
-		endIdx = 0
-	}
-	startIdx := endIdx - logHeight
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	visible := lines[startIdx:endIdx]
-
-	// Wrap each raw line into visual rows, then take the last logHeight rows.
-	var visualRows []string
-	for _, line := range visible {
-		visualRows = append(visualRows, wrapLine(line, width-2)...)
-	}
-	// Take the tail (most recent output fills the bottom of the panel).
-	if len(visualRows) > logHeight {
-		visualRows = visualRows[len(visualRows)-logHeight:]
-	}
+	visualRows := m.buildLogVisualRows(width, logHeight)
 	// Pad to fill remaining space.
 	for len(visualRows) < logHeight {
 		visualRows = append(visualRows, "")
 	}
 
 	// Highlight selected rows.
-	selectedBg := lipgloss.NewStyle().Background(lipgloss.Color("#2d4a7a"))
 	for i := range visualRows {
 		if m.sel.active && i >= m.sel.minRow() && i <= m.sel.maxRow() {
 			visualRows[i] = selectedBg.Render(visualRows[i])
@@ -430,36 +407,10 @@ func (m TabbedModel) mouseToLogRow(x, y int) int {
 
 // selectedText returns the selected log rows as a plain string.
 func (m TabbedModel) selectedText() string {
-	if m.selected >= len(m.pm.Processes) {
-		return ""
-	}
-	proc := m.pm.Processes[m.selected]
-	lines := proc.Buffer.Lines()
-	totalLines := len(lines)
-
 	sidebarWidth := m.sidebarWidth()
 	logWidth := m.width - sidebarWidth - 1
 	logHeight := m.logHeight()
-
-	// Apply same scroll window as renderLogPanel.
-	endIdx := totalLines - m.scrollOffset
-	if endIdx < 0 {
-		endIdx = 0
-	}
-	startIdx := endIdx - logHeight
-	if startIdx < 0 {
-		startIdx = 0
-	}
-	visible := lines[startIdx:endIdx]
-
-	// Wrap to visual rows.
-	var visualRows []string
-	for _, line := range visible {
-		visualRows = append(visualRows, wrapLine(line, logWidth-2)...)
-	}
-	if len(visualRows) > logHeight {
-		visualRows = visualRows[len(visualRows)-logHeight:]
-	}
+	visualRows := m.buildLogVisualRows(logWidth, logHeight)
 
 	// Slice selection.
 	lo := m.sel.minRow()
@@ -474,6 +425,37 @@ func (m TabbedModel) selectedText() string {
 		return ""
 	}
 	return strings.Join(visualRows[lo:hi+1], "\n")
+}
+
+// buildLogVisualRows re-derives the visual rows for the currently selected
+// process's log panel. It applies the scroll window, wraps each raw line, and
+// tail-slices to logHeight. logWidth is the panel width passed to renderLogPanel.
+func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) []string {
+	if m.selected >= len(m.pm.Processes) {
+		return nil
+	}
+	proc := m.pm.Processes[m.selected]
+	lines := proc.Buffer.Lines()
+	totalLines := len(lines)
+
+	endIdx := totalLines - m.scrollOffset
+	if endIdx < 0 {
+		endIdx = 0
+	}
+	startIdx := endIdx - logHeight
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	visible := lines[startIdx:endIdx]
+
+	var visualRows []string
+	for _, line := range visible {
+		visualRows = append(visualRows, wrapLine(line, logWidth-2)...)
+	}
+	if len(visualRows) > logHeight {
+		visualRows = visualRows[len(visualRows)-logHeight:]
+	}
+	return visualRows
 }
 
 // wrapLine splits a single log line into multiple visual rows of at most `width`
