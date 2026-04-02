@@ -365,7 +365,7 @@ func wrapLine(line string, width int) []string {
 		return []string{line}
 	}
 	runes := []rune(line)
-	if lipgloss.Width(string(runes)) <= width {
+	if lipgloss.Width(line) <= width {
 		return []string{line}
 	}
 	var rows []string

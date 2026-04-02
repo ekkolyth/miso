@@ -47,6 +47,12 @@ func TestWrapLine(t *testing.T) {
 			width: 0,
 			want:  []string{"hello"},
 		},
+		{
+			name:  "wide runes (CJK, each 2 cols)",
+			line:  "你好世界", // 4 chars × 2 cols = 8 cols total
+			width: 4,
+			want:  []string{"你好", "世界"}, // 2 chars × 2 cols = 4 each
+		},
 	}
 
 	for _, tt := range tests {
