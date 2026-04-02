@@ -3,4 +3,6 @@ export default {
     config: 'Configuration',
     'basic-commands': 'Basic Commands',
     flags: 'Flags',
+    'simple-mode': 'Simple Mode',
+    'agent-skills': 'Agent Skills',
 }

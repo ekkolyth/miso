@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 // lipgloss styles used across cli
 type Styles struct {
@@ -12,7 +16,7 @@ type Styles struct {
 }
 
 // LabelColors is the palette used to color workspace/app labels (matches merged TUI view).
-var LabelColors = []lipgloss.Color{
+var LabelColors = []color.Color{
 	lipgloss.Color("#7c3aed"), // purple
 	lipgloss.Color("#3b82f6"), // blue
 	lipgloss.Color("#f59e0b"), // amber

@@ -167,3 +167,20 @@ To upgrade miso as a local dependency instead of globally, add the `--install` f
 ```bash
 miso upgrade --local
 ```
+
+## Skills
+
+Miso ships a set of AI agent skills (`miso-config`, `miso-scripting`, `miso-tui`, `miso-env`). Use `--add` to install them all or `--rm` to remove them:
+
+```bash
+miso skills --add   # install all miso agent skills
+miso skills --rm    # remove all miso agent skills
+```
+
+Without flags, `skills` passes through to your package manager:
+
+```bash
+miso skills add lodash
+miso skills add -D vitest
+miso skills remove lodash
+```

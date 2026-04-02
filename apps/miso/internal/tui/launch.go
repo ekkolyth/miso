@@ -8,7 +8,7 @@ import (
 	"strings"
 	"syscall"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/ekkolyth/miso/internal/cli/env"
 	"github.com/ekkolyth/miso/internal/config"
@@ -118,7 +118,7 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 		return false, fmt.Errorf("unknown tui mode: %s", cfg.TuiMode)
 	}
 
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(model)
 	pm.SetProgram(p)
 
 	// Catch OS signals — tell bubbletea to quit cleanly so it restores

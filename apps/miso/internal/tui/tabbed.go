@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // allExitedMsg fires after all processes have exited and the 2-second delay has passed.
@@ -23,15 +23,14 @@ var (
 )
 
 type TabbedModel struct {
-	pm              *ProcessManager
-	keys            TabbedKeyMap
-	selected        int
-	scrollOffset    int // 0 = pinned to bottom (auto-scroll), >0 = scrolled up N lines
-	width           int
-	height          int
-	script          string
-	delegated       bool
-	selectMode       bool
+	pm               *ProcessManager
+	keys             TabbedKeyMap
+	selected         int
+	scrollOffset     int // 0 = pinned to bottom (auto-scroll), >0 = scrolled up N lines
+	width            int
+	height           int
+	script           string
+	delegated        bool
 	allExitedPending bool
 }
 
@@ -55,21 +54,11 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case tea.KeyMsg:
-		// Exit select mode on Escape
-		if m.selectMode && msg.String() == "esc" {
-			m.selectMode = false
-			return m, tea.EnableMouseCellMotion
-		}
+	case tea.KeyPressMsg:
+		// (selectMode removed in v2 migration)
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
-		case key.Matches(msg, m.keys.Select):
-			m.selectMode = !m.selectMode
-			if m.selectMode {
-				return m, tea.DisableMouse
-			}
-			return m, tea.EnableMouseCellMotion
 		case key.Matches(msg, m.keys.Up):
 			if m.selected > 0 {
 				m.selected--
@@ -90,9 +79,9 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go m.pm.RestartAll()
 		}
 
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		switch msg.Button {
-		case tea.MouseButtonWheelUp:
+		case tea.MouseWheelUp:
 			// Scroll log up (increase offset)
 			if m.selected < len(m.pm.Processes) {
 				maxScroll := m.pm.Processes[m.selected].Buffer.Len() - m.logHeight()
@@ -105,7 +94,7 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case tea.MouseButtonWheelDown:
+		case tea.MouseWheelDown:
 			// Scroll log down (decrease offset, 0 = bottom)
 			m.scrollOffset -= 3
 			if m.scrollOffset < 0 {
@@ -142,9 +131,9 @@ func (m TabbedModel) logHeight() int {
 	return h
 }
 
-func (m TabbedModel) View() string {
+func (m TabbedModel) View() tea.View {
 	if m.width == 0 || m.height == 0 {
-		return "Loading..."
+		return tea.NewView("Loading...")
 	}
 
 	sidebarWidth := m.sidebarWidth()
@@ -161,7 +150,10 @@ func (m TabbedModel) View() string {
 		Foreground(lipgloss.Color("#333333")).
 		Render(borderStr)
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, border, logs)
+	v := tea.NewView(lipgloss.JoinHorizontal(lipgloss.Top, sidebar, border, logs))
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 func (m TabbedModel) sidebarWidth() int {
@@ -295,12 +287,10 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	}
 
 	var hintText string
-	if m.selectMode {
-		hintText = "SELECT MODE — highlight text to copy · s or esc to exit"
-	} else if m.delegated {
-		hintText = "↑↓ navigate · s select · R restart · ctrl+c quit"
+	if m.delegated {
+		hintText = "↑↓ navigate · R restart · ctrl+c quit"
 	} else {
-		hintText = "↑↓ navigate · s select · r restart · R restart all · ctrl+c quit"
+		hintText = "↑↓ navigate · r restart · R restart all · ctrl+c quit"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 

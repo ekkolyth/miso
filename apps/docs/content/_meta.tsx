@@ -6,6 +6,7 @@ export default {
     scripting: 'Scripting',
     tui: 'Terminal UI (TUI)',
     turbo: 'Turborepo Integration',
+    troubleshooting: 'Troubleshooting',
     contributing: 'Contributing to Miso',
     examples: 'Examples',
 }
