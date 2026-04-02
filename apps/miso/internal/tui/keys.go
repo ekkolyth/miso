@@ -31,6 +31,7 @@ type MergedKeyMap struct {
 	Restart    key.Binding
 	RestartAll key.Binding
 	CopyKey    key.Binding
+	CopyAll    key.Binding
 	Quit       key.Binding
 }
 
@@ -38,10 +39,11 @@ func DefaultMergedKeyMap() MergedKeyMap {
 	return MergedKeyMap{
 		Left:       key.NewBinding(key.WithKeys("left"), key.WithHelp("←", "left")),
 		Right:      key.NewBinding(key.WithKeys("right"), key.WithHelp("→", "right")),
-		Toggle:     key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle")),
+		Toggle:     key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "toggle")),
 		Restart:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "restart")),
 		RestartAll: key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "restart all")),
 		CopyKey:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "copy selection")),
+		CopyAll:    key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "copy all visible logs")),
 		Quit:       key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 	}
 }
