@@ -55,7 +55,6 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
-		// (selectMode removed in v2 migration)
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
