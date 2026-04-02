@@ -56,6 +56,32 @@ func TestMouseToTabIdx(t *testing.T) {
 	}
 }
 
+func TestCopyAllText(t *testing.T) {
+	rb := NewRingBuffer(100)
+	rb.Write("line one")
+	rb.Write("line two")
+	rb.Write("line three")
+
+	pm := &ProcessManager{
+		Processes: []*Process{
+			{Buffer: rb},
+		},
+	}
+	m := TabbedModel{pm: pm, selected: 0}
+
+	got := m.copyAllText()
+	want := "line one\nline two\nline three"
+	if got != want {
+		t.Errorf("copyAllText() = %q, want %q", got, want)
+	}
+
+	// out-of-range selected
+	m.selected = 5
+	if m.copyAllText() != "" {
+		t.Error("copyAllText() with out-of-range selected should return empty string")
+	}
+}
+
 func TestWrapLine(t *testing.T) {
 	tests := []struct {
 		name  string

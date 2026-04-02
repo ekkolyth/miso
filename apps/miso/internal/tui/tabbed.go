@@ -13,6 +13,9 @@ import (
 // allExitedMsg fires after all processes have exited and the 2-second delay has passed.
 type allExitedMsg struct{}
 
+type copyFlashDoneMsg struct{}
+type copyConfirmDoneMsg struct{}
+
 // SelectionState tracks the click-drag log row selection.
 type SelectionState struct {
 	active   bool
@@ -55,6 +58,8 @@ type TabbedModel struct {
 	delegated        bool
 	allExitedPending bool
 	sel              SelectionState
+	copyFlash        bool // true during the 150ms invert flash
+	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
 }
 
 func NewTabbedModel(pm *ProcessManager, script string, delegated bool) TabbedModel {
@@ -103,6 +108,14 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.sel.active {
 				return m, tea.SetClipboard(m.selectedText())
 			}
+		case key.Matches(msg, m.keys.CopyAll):
+			m.copyFlash = true
+			return m, tea.Batch(
+				tea.SetClipboard(m.copyAllText()),
+				tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+					return copyFlashDoneMsg{}
+				}),
+			)
 		case msg.String() == "esc":
 			m.sel = SelectionState{}
 		}
@@ -120,6 +133,22 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = tabIdx
 				m.scrollOffset = 0
 				return m, nil
+			}
+			// Copy icon click: y==0, x in log panel, within icon hit area
+			if msg.Y == 0 && msg.X > m.sidebarWidth() {
+				const iconDisplayStr = "[⎘ copy all]"
+				iconW := lipgloss.Width(iconDisplayStr)
+				logWidth := m.width - m.sidebarWidth() - 1
+				copyIconX := m.sidebarWidth() + 1 + logWidth - 1 - iconW
+				if msg.X >= copyIconX {
+					m.copyFlash = true
+					return m, tea.Batch(
+						tea.SetClipboard(m.copyAllText()),
+						tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+							return copyFlashDoneMsg{}
+						}),
+					)
+				}
 			}
 			// existing log-row selection
 			row := m.mouseToLogRow(msg.X, msg.Y)
@@ -178,9 +207,27 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case allExitedMsg:
 		return m, tea.Quit
+
+	case copyFlashDoneMsg:
+		m.copyFlash = false
+		m.copyConfirm = true
+		return m, tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg {
+			return copyConfirmDoneMsg{}
+		})
+
+	case copyConfirmDoneMsg:
+		m.copyConfirm = false
+		return m, nil
 	}
 
 	return m, nil
+}
+
+func (m TabbedModel) copyAllText() string {
+	if m.selected >= len(m.pm.Processes) {
+		return ""
+	}
+	return strings.Join(m.pm.Processes[m.selected].Buffer.Lines(), "\n")
 }
 
 func (m TabbedModel) logHeight() int {
@@ -361,15 +408,36 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 
 	var hintText string
 	if m.delegated {
-		hintText = "c copy · R restart · ctrl+c quit"
+		hintText = "c copy · C copy all · R restart · ctrl+c quit"
 	} else {
-		hintText = "c copy · r restart · R restart all · ctrl+c quit"
+		hintText = "c copy · C copy all · r restart · R restart all · ctrl+c quit"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
+	const iconDisplayStr = "[⎘ copy all]"
+	iconW := lipgloss.Width(iconDisplayStr)
+
+	var copyIcon string
+	switch {
+	case m.copyFlash:
+		copyIcon = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#111111")).
+			Background(lipgloss.Color("#aaaaaa")).
+			Render(iconDisplayStr)
+	case m.copyConfirm:
+		copyIcon = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#22c55e")).
+			Render("[✓ copied! ]")
+	default:
+		copyIcon = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#666666")).
+			Render(iconDisplayStr)
+	}
+
 	nameLen := lipgloss.Width(name) + lipgloss.Width(scrollHint)
 	hintsLen := lipgloss.Width(hints)
-	gap := width - nameLen - hintsLen - 2
+	iconRenderedW := iconW
+	gap := width - nameLen - hintsLen - iconRenderedW - 2 // -2 for Padding(0,1)
 	if gap < 1 {
 		gap = 1
 	}
@@ -377,7 +445,7 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	header := lipgloss.NewStyle().
 		Width(width).
 		Padding(0, 1).
-		Render(name + scrollHint + strings.Repeat(" ", gap) + hints)
+		Render(name + scrollHint + strings.Repeat(" ", gap) + hints + " " + copyIcon)
 
 	// Log lines with scroll support
 	logHeight := height - 1
