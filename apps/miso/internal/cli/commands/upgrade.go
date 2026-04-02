@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const githubLatestURL = "https://api.github.com/repos/ekkolyth/miso/releases/latest"
@@ -103,6 +104,9 @@ func extractBinaryFromTarGz(r io.Reader, entryName, destPath string) error {
 		if hdr.Name != entryName {
 			continue
 		}
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != 0 {
+			return fmt.Errorf("archive entry %q is not a regular file (type %d)", entryName, hdr.Typeflag)
+		}
 		f, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 		if err != nil {
 			return fmt.Errorf("create dest file: %w", err)
@@ -129,10 +133,15 @@ func installBinary(src, dst string) error {
 	}
 	defer in.Close()
 
-	tmpDst := dst + ".tmp"
-	out, err := os.OpenFile(tmpDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	out, err := os.CreateTemp(filepath.Dir(dst), ".miso-upgrade-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpDst := out.Name()
+	if err := out.Chmod(0755); err != nil {
+		out.Close()
+		os.Remove(tmpDst)
+		return fmt.Errorf("chmod temp file: %w", err)
 	}
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
@@ -180,10 +189,10 @@ func upgradeOneBinary(client HTTPClient, binaryName, version, target, entryName,
 	return nil
 }
 
-// Upgrade downloads the latest miso (and misox if present) binaries from GitHub
-// Releases and replaces the currently-running binary in-place. No sudo required.
+// Upgrade downloads the latest miso (and misox) binary from GitHub Releases
+// and replaces the current binary in-place. args is reserved for future flags.
 func Upgrade(args []string) error {
-	client := &http.Client{}
+	client := &http.Client{Timeout: 60 * time.Second}
 
 	// 1. Detect platform
 	target, err := platformTarget(runtime.GOOS, runtime.GOARCH)
