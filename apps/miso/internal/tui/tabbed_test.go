@@ -25,6 +25,37 @@ func TestSidebarStartIdx(t *testing.T) {
 	}
 }
 
+func TestMouseToTabIdx(t *testing.T) {
+	tests := []struct {
+		name       string
+		x, y       int
+		sidebarW   int
+		listHeight int
+		startIdx   int
+		numProcs   int
+		want       int // -1 = no-op
+	}{
+		{"click on header row", 2, 0, 20, 10, 0, 3, -1},
+		{"click on divider row", 2, 1, 20, 10, 0, 3, -1},
+		{"click first tab", 2, 2, 20, 10, 0, 3, 0},
+		{"click second tab", 2, 3, 20, 10, 0, 3, 1},
+		{"click past last tab", 2, 9, 20, 10, 0, 3, -1},
+		{"click in log panel", 25, 3, 20, 10, 0, 3, -1},
+		{"scrolled sidebar", 2, 2, 20, 10, 5, 8, 5},
+		{"click below visible list", 2, 7, 20, 5, 0, 20, -1},
+		// y=7 → tabRow=5, listHeight=5, so row isn't rendered — should be -1
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := TabbedModel{selected: 0}
+			got := m.mouseToTabIdx(tt.x, tt.y, tt.sidebarW, tt.listHeight, tt.startIdx, tt.numProcs)
+			if got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWrapLine(t *testing.T) {
 	tests := []struct {
 		name  string

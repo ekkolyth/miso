@@ -109,6 +109,19 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft {
+			sw := m.sidebarWidth()
+			listHeight := m.height - 2
+			if listHeight < 0 {
+				listHeight = 0
+			}
+			startIdx := m.sidebarStartIdx(listHeight)
+			tabIdx := m.mouseToTabIdx(msg.X, msg.Y, sw, listHeight, startIdx, len(m.pm.Processes))
+			if tabIdx >= 0 {
+				m.selected = tabIdx
+				m.scrollOffset = 0
+				return m, nil
+			}
+			// existing log-row selection
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
 				m.sel = SelectionState{active: true, startRow: row, endRow: row}
@@ -401,6 +414,24 @@ func padRight(s string, width int) string {
 		return s[:width]
 	}
 	return s + strings.Repeat(" ", width-len(s))
+}
+
+// mouseToTabIdx converts a mouse click to a process index in the sidebar.
+// Returns -1 if the click is not on a valid process row.
+// sidebarW, listHeight, startIdx, numProcs are passed in to keep the method pure/testable.
+func (m TabbedModel) mouseToTabIdx(x, y, sidebarW, listHeight, startIdx, numProcs int) int {
+	if x >= sidebarW {
+		return -1 // not in sidebar
+	}
+	tabRow := y - 2 // skip header (y=0) and divider (y=1)
+	if tabRow < 0 || tabRow >= listHeight {
+		return -1
+	}
+	idx := startIdx + tabRow
+	if idx >= numProcs {
+		return -1
+	}
+	return idx
 }
 
 // mouseToLogRow converts absolute terminal coordinates to a 0-based visual
