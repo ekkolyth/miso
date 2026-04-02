@@ -4,25 +4,45 @@ title: Installation
 
 # Installation
 
-## Install Globally (recommended)
+## Recommended: Install with curl
 
-Install miso globally using your preferred package manager:
+The fastest way to install miso — no Node.js or npm required:
+
+```bash
+curl -fsSL https://misojs.dev/install | bash
+```
+
+This installs miso to `~/.local/bin`. If that directory is not on your `PATH`,
+the installer will print the line to add to your shell config.
+
+**Supported platforms:** macOS (Intel & Apple Silicon), Linux (x86-64 & ARM64).  
+**Windows:** Use the npm install method below, or download a binary from the
+[GitHub Releases](https://github.com/ekkolyths/miso/releases) page.
+
+## Alternative: Install via package manager
+
+If you prefer to install miso through a JavaScript package manager:
 
 <CommandSelect
     bun="bun install -g @ekkolyth/miso"
     pnpm="pnpm install -g @ekkolyth/miso"
     yarn="yarn global add @ekkolyth/miso"
     npm="npm install -g @ekkolyth/miso"
-    go="go install github.com/ekkolyth/miso/apps/miso/cmd@latest"
+    go="go install github.com/ekkolyths/miso/apps/miso/cmd@latest"
 />
 
-Once installed, you can update to the latest version of miso any time by running:
+## Upgrading
+
+Once installed, upgrade miso to the latest version at any time:
 
 <CommandSelect miso="miso upgrade" />
 
+`miso upgrade` downloads the latest binary directly from GitHub and replaces
+the current binary in-place. No sudo required.
+
 ## Install in a project
 
-If you want to install miso only in the project you're currently working on, add it as a dev dependency:
+To install miso only in the project you're currently working on, add it as a dev dependency:
 
 <CommandSelect
     bun="bun add @ekkolyth/miso -d"
