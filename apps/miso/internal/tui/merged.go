@@ -224,14 +224,14 @@ func (m MergedModel) renderFilterBar() string {
 
 	scrollHint := ""
 	if m.scrollOffset > 0 {
-		scrollHint = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Render(fmt.Sprintf("(scrolled +%d) ", m.scrollOffset))
+		scrollHint = lipgloss.NewStyle().Foreground(mutedColor).Render(fmt.Sprintf("(scrolled +%d) ", m.scrollOffset))
 	}
 
 	var hintText string
 	if m.delegated {
-		hintText = "←→ select · space toggle · drag to select · c copy · R restart · ctrl+c quit"
+		hintText = "←→ select · space toggle · c copy · R restart · ctrl+c quit"
 	} else {
-		hintText = "←→ select · space toggle · drag to select · c copy · r restart · R restart all · ctrl+c quit"
+		hintText = "←→ select · space toggle · c copy · r restart · R restart all · ctrl+c quit"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 

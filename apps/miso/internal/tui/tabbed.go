@@ -265,10 +265,9 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 			if proc.ExitCode != 0 {
 				statusText = fmt.Sprintf("✕ %d", proc.ExitCode)
 				statusFg = exitedColor
-				labelFg = exitedColor
 			} else {
-				statusText = "✓"
-				statusFg = runningColor
+				statusText = "■"
+				statusFg = mutedColor
 			}
 		} else {
 			statusText = "●"
@@ -285,12 +284,12 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 		if i == m.selected {
 			bg := accentColor
 			status := lipgloss.NewStyle().Foreground(statusFg).Background(bg).Render(statusText)
+			labelRenderedSel := lipgloss.NewStyle().Foreground(labelFg).Background(bg).Render(padRight(label, padW))
 			row := lipgloss.NewStyle().
 				Width(width).
 				Padding(0, 1).
 				Background(bg).
-				Foreground(lipgloss.Color("#ffffff")).
-				Render(padRight(label, padW) + " " + status)
+				Render(labelRenderedSel + lipgloss.NewStyle().Background(bg).Render(" ") + status)
 			rows = append(rows, row)
 		} else {
 			bg := headerBg
@@ -325,19 +324,27 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 
 	proc := m.pm.Processes[m.selected]
 
-	// Header (1 line)
-	name := lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render(proc.Entry.Label)
+	// Header (1 line) — dim the process name when it has stopped
+	nameColor := accentColor
+	if proc.State == StateExited {
+		if proc.ExitCode != 0 {
+			nameColor = exitedColor
+		} else {
+			nameColor = mutedColor
+		}
+	}
+	name := lipgloss.NewStyle().Foreground(nameColor).Bold(true).Render(proc.Entry.Label)
 
 	scrollHint := ""
 	if m.scrollOffset > 0 {
-		scrollHint = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Render(fmt.Sprintf(" (scrolled +%d)", m.scrollOffset))
+		scrollHint = lipgloss.NewStyle().Foreground(mutedColor).Render(fmt.Sprintf(" (scrolled +%d)", m.scrollOffset))
 	}
 
 	var hintText string
 	if m.delegated {
-		hintText = "↑↓ navigate · drag to select · c copy · R restart · ctrl+c quit"
+		hintText = "c copy · R restart · ctrl+c quit"
 	} else {
-		hintText = "↑↓ navigate · drag to select · c copy · r restart · R restart all · ctrl+c quit"
+		hintText = "c copy · r restart · R restart all · ctrl+c quit"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
