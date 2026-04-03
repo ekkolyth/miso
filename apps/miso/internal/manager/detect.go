@@ -18,7 +18,6 @@ var lockfileMap = map[string]string{
 
 var ErrNoLockfile = errors.New("no lockfile detected")
 
-// LockfileNames returns the list of lockfile filenames for project root detection.
 func LockfileNames() []string {
 	names := make([]string, 0, len(lockfileMap))
 	for k := range lockfileMap {

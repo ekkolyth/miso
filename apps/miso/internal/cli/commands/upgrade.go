@@ -16,8 +16,7 @@ import (
 
 const githubLatestURL = "https://api.github.com/repos/ekkolyth/miso/releases/latest"
 
-// HTTPClient is an interface for making HTTP GET requests.
-// It exists so tests can inject a mock without spawning a real HTTP server.
+// for test injection without a real HTTP server
 type HTTPClient interface {
 	Get(url string) (*http.Response, error)
 }

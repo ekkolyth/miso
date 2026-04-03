@@ -15,7 +15,6 @@ type WorkspaceInfo struct {
 	Dir  string
 }
 
-// TuiScriptEntry represents a single script that can be launched from the TUI.
 type TuiScriptEntry struct {
 	Label        string
 	ScriptName   string

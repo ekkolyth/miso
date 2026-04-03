@@ -122,12 +122,12 @@ func (c *Config) EnsureDefaults() {
 	}
 }
 
-// IsMonorepo returns true for repo modes that use workspace discovery.
+// mono, turbo, or nx
 func (c Config) IsMonorepo() bool {
 	return c.Repo == "mono" || c.Repo == "turbo" || c.Repo == "nx"
 }
 
-// RepoMode returns the resolved repo mode string, defaulting to "single".
+// defaults to "single"
 func (c Config) RepoMode() string {
 	if c.Repo == "" {
 		return "single"
@@ -135,13 +135,12 @@ func (c Config) RepoMode() string {
 	return c.Repo
 }
 
-// IsDelegated returns true when orchestration is delegated to turbo or nx.
+// turbo or nx
 func (c Config) IsDelegated() bool {
 	return c.Repo == "turbo" || c.Repo == "nx"
 }
 
-// HasDependsOn returns true if the given command has a dependsOn entry with a ^ prefix
-// in the tasks configuration.
+// checks for ^ prefix in dependsOn
 func (c Config) HasDependsOn(command string) bool {
 	if c.Tasks == nil {
 		return false
@@ -158,7 +157,6 @@ func (c Config) HasDependsOn(command string) bool {
 	return false
 }
 
-// TaskConcurrent returns the concurrent task names for the given command, or nil.
 func (c Config) TaskConcurrent(command string) []string {
 	if c.Tasks == nil {
 		return nil
@@ -173,12 +171,10 @@ func (c Config) TaskConcurrent(command string) []string {
 	return task.Concurrent
 }
 
-// TuiEnabled returns true when the multi-terminal UI is active (tabbed or merged mode)
 func (c Config) TuiEnabled() bool {
 	return c.TuiMode == "tabbed" || c.TuiMode == "merged"
 }
 
-// SimpleMode returns true when package manager features are disabled.
 func (c Config) SimpleMode() bool {
 	return c.PackageManager != nil && !*c.PackageManager
 }
@@ -444,8 +440,7 @@ func Save(root string, cfg Config) error {
 	return nil
 }
 
-// LoadWorkspaces reads workspace glob patterns from the root package.json
-// and expands them into actual directory paths that exist on disk.
+// expands globs; returns only paths that exist on disk
 func LoadWorkspaces(root string) ([]string, error) {
 	pkgPath := filepath.Join(root, "package.json")
 	data, err := os.ReadFile(pkgPath)

@@ -21,9 +21,7 @@ type LineMeta struct {
 	CacheHit *bool
 }
 
-// ParseLine parses a single line of turbo output into a LineMeta.
-// Lines that do not match the turbo workspace output format are returned
-// with Skip set to true.
+// non-matching lines returned with Skip=true
 func ParseLine(line string) LineMeta {
 	matches := turboLineRe.FindStringSubmatch(line)
 	if matches == nil {

@@ -9,7 +9,6 @@ import (
 	"sort"
 )
 
-// TurboTask represents a single task definition from turbo.json.
 type TurboTask struct {
 	DependsOn  []string `json:"dependsOn"`
 	Cache      *bool    `json:"cache"`
@@ -25,7 +24,7 @@ type TurboConfig struct {
 	Tasks   map[string]TurboTask
 }
 
-// TaskNames returns the sorted list of task names in the config.
+// sorted
 func (c TurboConfig) TaskNames() []string {
 	names := make([]string, 0, len(c.Tasks))
 	for name := range c.Tasks {
@@ -41,8 +40,6 @@ type rawTurboConfig struct {
 	Pipeline map[string]TurboTask `json:"pipeline"`
 }
 
-// LoadConfig reads turbo.json from root and returns a TurboConfig.
-//
 // Behaviour:
 //   - File not found → empty TurboConfig with initialized Tasks map, nil error.
 //   - Malformed JSON → error.

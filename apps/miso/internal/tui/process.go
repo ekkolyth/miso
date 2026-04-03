@@ -11,7 +11,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// ProcessState represents the lifecycle state of a managed process.
 type ProcessState int
 
 const (
@@ -20,13 +19,11 @@ const (
 	StateExited
 )
 
-// ProcessOutputMsg is a bubbletea message carrying a single captured output line.
 type ProcessOutputMsg struct {
 	Label string
 	Line  string
 }
 
-// ProcessStateMsg is a bubbletea message indicating a process state change.
 type ProcessStateMsg struct {
 	Label string
 	State ProcessState
@@ -57,7 +54,6 @@ type ProcessManager struct {
 	program   *tea.Program
 }
 
-// NewProcessManager creates an empty ProcessManager.
 func NewProcessManager() *ProcessManager {
 	return &ProcessManager{}
 }
@@ -69,7 +65,6 @@ func (pm *ProcessManager) SetProgram(p *tea.Program) {
 	pm.program = p
 }
 
-// Add creates a new Process entry and appends it to the manager.
 func (pm *ProcessManager) Add(entry TuiScriptEntry, command string, args []string, dir string, environ []string) *Process {
 	p := &Process{
 		Entry:   entry,
@@ -273,7 +268,6 @@ func (pm *ProcessManager) sendOutput(p *Process, line string) {
 	}
 }
 
-// AllExited returns true if every process has reached StateExited.
 func (pm *ProcessManager) AllExited() bool {
 	pm.mu.Lock()
 	procs := make([]*Process, len(pm.Processes))
@@ -294,7 +288,6 @@ func (pm *ProcessManager) AllExited() bool {
 	return true
 }
 
-// FailedCount returns the number of processes that exited with non-zero code.
 func (pm *ProcessManager) FailedCount() int {
 	pm.mu.Lock()
 	procs := make([]*Process, len(pm.Processes))
