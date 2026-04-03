@@ -16,11 +16,11 @@ func ParseSkillsFlags(args []string) (add bool, rm bool) {
 	return
 }
 
-// RunSkillsAdd runs: npx skills add "<repo-url>" --all
+// RunSkillsAdd runs: npx skills add "<repo-url>" --skill '*' --yes
 func RunSkillsAdd() error {
 	spec := manager.ExecSpec{
 		Command: "npx",
-		Args:    []string{"skills", "add", "https://github.com/ekkolyth/miso/tree/main/packages/skills", "--all"},
+		Args:    []string{"skills", "add", "https://github.com/ekkolyth/miso/tree/main/packages/skills", "--skill", "*", "--yes"},
 	}
 	return manager.Exec(spec, "")
 }
