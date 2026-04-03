@@ -1,5 +1,5 @@
 import Image from 'next/image'
-import { Head } from 'nextra/components'
+import { Head, Search } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import { Footer, Layout, Navbar } from 'nextra-theme-docs'
 import 'nextra-theme-docs/style-prefixed.css'
@@ -57,6 +57,7 @@ export default async function RootLayout({
                     pageMap={await getPageMap()}
                     docsRepositoryBase='https://github.com/ekkolyth/miso/apps/docs'
                     footer={footer}
+                    search={<Search />}
                 >
                     {children}
                 </Layout>

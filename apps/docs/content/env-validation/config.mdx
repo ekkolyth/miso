@@ -8,7 +8,7 @@ Configure the `env` key in `miso.json` as an array of entries — one per app or
 
 <Terminal
     copy={false}
-    className="mt-4 border border-neutral-700 rounded-sm"
+    className="mt-4"
     title="miso.json"
     config={`{
   "env": [
@@ -68,7 +68,13 @@ If omitted, Miso falls back to the same discovery order used when no `env` confi
 
 Controls which variables in this entry must be present:
 
-<DocProp prop='"all"' /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default</Badge>
+<DocProp prop='"all"' />
+<Badge
+    variant="default"
+    className="bg-primary-900 font-bold text-primary-400 border-primary-400"
+>
+    Default
+</Badge>
 
 Every variable must be present unless marked `optional: true` on that variable.
 
@@ -88,7 +94,7 @@ Defines the variables to validate for this entry. Accepts either an **object** (
 
 <Terminal
     copy={false}
-    className="mt-4 border border-neutral-700 rounded-sm"
+    className="mt-4"
     title="miso.json"
     config={`{
   "variables": {
@@ -106,7 +112,7 @@ Defines the variables to validate for this entry. Accepts either an **object** (
 
 <Terminal
     copy={false}
-    className="mt-4 border border-neutral-700 rounded-sm"
+    className="mt-4"
     title="miso.json"
     config={`{
   "variables": ["DATABASE_URL", "API_KEY", "REDIS_URL"]
@@ -121,7 +127,7 @@ If you only have one `.env` file, you still use an array — just with a single 
 
 <Terminal
     copy={false}
-    className="mt-4 border border-neutral-700 rounded-sm"
+    className="mt-4"
     title="miso.json"
     config={`{
   "env": [
@@ -135,28 +141,3 @@ If you only have one `.env` file, you still use an array — just with a single 
   ]
 }`}
 />
-
-## Migration from the old format
-
-The previous `env` format used a flat object with a `path` array and a single `variables` block:
-
-<Terminal
-    copy={false}
-    className="mt-4 border border-neutral-700 rounded-sm"
-    title="miso.json"
-    config={`{
-  "env": {
-    "path": [".env.local", ".env"],
-    "required": "all",
-    "variables": {
-      "PORT": "port"
-    }
-  }
-}`}
-/>
-
-Miso still accepts this form — it is automatically normalised to a single-entry array at load time, so existing configs continue to work without changes. Migrating to the array form is recommended when you want per-app validation.
-
-## Next
-
-See the [Types & VarConfig](/env-validation/reference) reference for shorthand types, full `VarConfig` options, and all supported validators.

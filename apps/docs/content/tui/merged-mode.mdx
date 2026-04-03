@@ -9,24 +9,16 @@ Merged mode shows all workspace output in a single interleaved stream. Each line
 
 ## Keybindings
 
-| Key | Action |
-|-----|--------|
-| `←` / `→` | Select workspace in filter bar |
-| `space` | Toggle selected workspace visibility |
-| `r` | Restart workspace at cursor |
-| `R` | Restart all workspaces |
-| `Ctrl+C` | Quit (stops all processes) |
+| Key       | Action                               |
+| --------- | ------------------------------------ |
+| `←` / `→` | Select workspace in filter bar       |
+| `space`   | Toggle selected workspace visibility |
+| `r`       | Restart workspace at cursor          |
+| `R`       | Restart all workspaces               |
+| `Ctrl+C`  | Quit (stops all processes)           |
 
-In delegated mode (Turbo/Nx), `r` is disabled — only `R` (restart all) is available.
+In delegated mode (Turbo/Nx), `r` (restart single process) is disabled — only `R` (restart all) is available.
 
 ## Filter Bar
 
 Each workspace appears as a colored badge in the filter bar. Use arrow keys to move the cursor and space to toggle visibility. Hidden workspaces appear dimmed with strikethrough — their output is filtered from the stream.
-
-## Colors
-
-Workspaces are assigned colors from a fixed palette in alphabetical order, so colors are consistent across runs.
-
-## Auto-Exit
-
-When all processes exit, the TUI waits 2 seconds then quits automatically. If any process had a non-zero exit code, a summary is printed to stderr after exit.

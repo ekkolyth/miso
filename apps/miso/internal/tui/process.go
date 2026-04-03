@@ -40,9 +40,10 @@ type Process struct {
 	Args     []string
 	Dir      string   // working directory for the process
 	Environ  []string // environment variables for the process (nil = inherit)
-	State    ProcessState
-	ExitCode int
-	Buffer   *RingBuffer
+	State     ProcessState
+	ExitCode  int
+	StartedAt time.Time
+	Buffer    *RingBuffer
 
 	cmd  *exec.Cmd
 	done chan struct{}
@@ -142,6 +143,7 @@ func (pm *ProcessManager) Start(p *Process) error {
 
 	p.mu.Lock()
 	p.State = StateRunning
+	p.StartedAt = time.Now()
 	p.mu.Unlock()
 	pm.sendState(p, StateRunning, 0)
 

@@ -4,11 +4,13 @@ title: Env Validation
 
 # Env Validation
 
-> **Note:** Miso automatically loads `.env` files into your scripts — you don't need `--env` for that. The `--env` flag and `miso env` are for **validation**: checking that variables exist and match their expected types before running.
-
-`miso env` validates environment variables from your `.env` files against rules defined in `miso.json`.
+<Callout type="info">
+> Miso automatically loads `.env` files into your scripts — you don't need `--env` for that. The `--env` flag and `miso env` are for **validation**: checking that variables exist and match their expected types before running.
+</Callout>
 
 ## Usage
+
+`miso env` validates environment variables from your `.env` files against rules defined in `miso.json`.
 
 ```bash
 miso env
@@ -21,38 +23,37 @@ miso dev --env
 miso build --env
 ```
 
-- **With env config**: Loads each configured `.env` file, validates its variables, and prints success or the first error.
-- **Without env config**: Uses discovery to find a `.env` file in the project root.
-- **Empty variables**: Succeeds—nothing to validate.
-
 ## Quick Start
 
 1. Add an `env` array to `miso.json`, with one entry per app or `.env` file:
 
-```json
-{
-    "env": [
-        {
-            "label": "web",
-            "path": "apps/web/.env.local",
-            "variables": {
-                "PORT": "port",
-                "DATABASE_URL": "url"
-            }
-        },
-        {
-            "label": "api",
-            "path": "apps/api/.env",
-            "variables": {
-                "REDIS_URL": {
-                    "type": "url",
-                    "schemes": ["redis", "rediss"]
-                }
-            }
-        }
-    ]
-}
-```
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"env": [
+\t\t{
+\t\t\t"label": "web",
+\t\t\t"path": "apps/web/.env.local",
+\t\t\t"variables": {
+\t\t\t\t"PORT": "port",
+\t\t\t\t"DATABASE_URL": "url"
+\t\t\t}
+\t\t},
+\t\t{
+\t\t\t"label": "api",
+\t\t\t"path": "apps/api/.env",
+\t\t\t"variables": {
+\t\t\t\t"REDIS_URL": {
+\t\t\t\t\t"type": "url",
+\t\t\t\t\t"schemes": ["redis", "rediss"]
+\t\t\t\t}
+\t\t\t}
+\t\t}
+\t]
+}`}
+/>
 
 2. Run `miso env` before starting your app (or in CI):
 
@@ -70,12 +71,12 @@ api: missing required variable: REDIS_URL
 
 Even without an `env` block in `miso.json`, Miso automatically loads a `.env` file into every script it runs. It walks the following candidates in order and loads the first one it finds:
 
-| Priority | File |
-|---|---|
-| 1 | `.env.local` |
-| 2 | `.env.production` |
-| 3 | `.env.development` |
-| 4 | `.env` |
+| Priority | File               |
+| -------- | ------------------ |
+| 1        | `.env.local`       |
+| 2        | `.env.production`  |
+| 3        | `.env.development` |
+| 4        | `.env`             |
 
 Variables already set in the shell environment take precedence over values in the file — Miso never overrides a variable that is already present in the process environment.
 
