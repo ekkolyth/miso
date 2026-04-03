@@ -184,15 +184,18 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 
 		// Fallback: assign exit code only to processes that didn't get individual codes
 		pm.mu.Lock()
-		nProcs := len(pm.Processes)
-		for _, proc := range pm.Processes {
+		procs := make([]*Process, len(pm.Processes))
+		copy(procs, pm.Processes)
+		nProcs := len(procs)
+		pm.mu.Unlock()
+
+		for _, proc := range procs {
+			proc.mu.Lock()
 			if proc.State != StateExited {
 				proc.State = StateExited
 				proc.ExitCode = code
 			}
-		}
-		pm.mu.Unlock()
-		for _, proc := range pm.Processes {
+			proc.mu.Unlock()
 			pm.sendState(proc, StateExited, proc.ExitCode)
 		}
 
