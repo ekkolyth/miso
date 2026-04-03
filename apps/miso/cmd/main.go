@@ -84,16 +84,7 @@ func main() {
 			}
 			return
 		case "version", "v":
-			// load config if available
-			var projectRoot string
-			var cfg config.Config
-			if root, err := cli.FindProjectRoot(originalWorkDir); err == nil {
-				projectRoot = root
-				if loadedCfg, err := cli.LoadConfig(projectRoot); err == nil {
-					cfg = loadedCfg
-				}
-			}
-			if err := commands.RunVersion(projectRoot, cfg); err != nil {
+			if err := commands.RunVersion(); err != nil {
 				cli.Fail(logger, err, false)
 			}
 			return

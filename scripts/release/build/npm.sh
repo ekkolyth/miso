@@ -12,16 +12,19 @@ cd "$REPO_ROOT"
 mkdir -p dist/bin
 cd apps/miso
 
-CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o ../../dist/bin/miso-darwin-amd64 ./cmd
-CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o ../../dist/bin/miso-darwin-arm64 ./cmd
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../../dist/bin/miso-linux-amd64 ./cmd
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o ../../dist/bin/miso-linux-arm64 ./cmd
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ../../dist/bin/miso-windows-amd64.exe ./cmd
-CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o ../../dist/bin/misox-darwin-amd64 ./cmd
-CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o ../../dist/bin/misox-darwin-arm64 ./cmd
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../../dist/bin/misox-linux-amd64 ./cmd
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o ../../dist/bin/misox-linux-arm64 ./cmd
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ../../dist/bin/misox-windows-amd64.exe ./cmd
+VERSION=$(node -p "require('./package.json').version")
+LDFLAGS="-X github.com/ekkolyth/miso/internal/cli/commands.Version=$VERSION"
+
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o ../../dist/bin/miso-darwin-amd64 ./cmd
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o ../../dist/bin/miso-darwin-arm64 ./cmd
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o ../../dist/bin/miso-linux-amd64 ./cmd
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o ../../dist/bin/miso-linux-arm64 ./cmd
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o ../../dist/bin/miso-windows-amd64.exe ./cmd
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o ../../dist/bin/misox-darwin-amd64 ./cmd
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o ../../dist/bin/misox-darwin-arm64 ./cmd
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o ../../dist/bin/misox-linux-amd64 ./cmd
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o ../../dist/bin/misox-linux-arm64 ./cmd
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o ../../dist/bin/misox-windows-amd64.exe ./cmd
 
 chmod +x \
   ../../dist/bin/miso-darwin-amd64 \

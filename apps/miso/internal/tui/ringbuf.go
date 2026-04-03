@@ -32,7 +32,7 @@ func (rb *RingBuffer) Write(line string) {
 	}
 }
 
-// Lines returns all lines in the buffer in order (oldest to newest).
+// oldest to newest
 func (rb *RingBuffer) Lines() []string {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
@@ -60,7 +60,6 @@ func (rb *RingBuffer) Clear() {
 	rb.count = 0
 }
 
-// Len returns the current number of lines in the buffer.
 func (rb *RingBuffer) Len() int {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()

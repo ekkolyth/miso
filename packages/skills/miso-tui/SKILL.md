@@ -1,3 +1,8 @@
+---
+name: miso-tui
+description: Reference for configuring miso's TUI display modes, task ordering, and concurrent tasks
+---
+
 # miso-tui
 
 **Use this skill** when configuring multi-process TUI display, task ordering, or concurrent tasks.

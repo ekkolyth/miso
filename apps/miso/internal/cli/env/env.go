@@ -17,7 +17,6 @@ import (
 
 const EnvFlag = "--env"
 
-// HasEnvFlag returns true if --env is in the given args
 func HasEnvFlag(args []string) bool {
 	for _, a := range args {
 		if a == EnvFlag {
@@ -27,7 +26,6 @@ func HasEnvFlag(args []string) bool {
 	return false
 }
 
-// StripEnvFlag returns a copy of args with --env removed
 func StripEnvFlag(args []string) []string {
 	out := make([]string, 0, len(args))
 	for _, a := range args {
@@ -38,7 +36,6 @@ func StripEnvFlag(args []string) []string {
 	return out
 }
 
-// StripEnvFromFlags returns a copy of cfg with --env removed from all flag slices
 func StripEnvFromFlags(cfg config.Config) config.Config {
 	if cfg.Flags == nil {
 		return cfg

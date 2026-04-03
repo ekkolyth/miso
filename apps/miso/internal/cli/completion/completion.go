@@ -105,17 +105,14 @@ func getCandidates(prev string, cur string, cwd string) []string {
 	return names
 }
 
-// ScriptBash returns the bash completion script.
 func ScriptBash() string {
 	return scripts.Bash
 }
 
-// ScriptZsh returns the zsh completion script.
 func ScriptZsh() string {
 	return scripts.Zsh
 }
 
-// ScriptFish returns the fish completion script.
 func ScriptFish() string {
 	return scripts.Fish
 }

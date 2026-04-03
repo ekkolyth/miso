@@ -13,8 +13,7 @@ type PackageInfo struct {
 	Deps []string // combined dependencies + devDependencies package names
 }
 
-// ReadPackageInfo reads a workspace's package.json and extracts name and dependency names.
-// Returns empty PackageInfo (not an error) if package.json doesn't exist.
+// empty PackageInfo (not error) when package.json doesn't exist
 func ReadPackageInfo(dir string) (PackageInfo, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "package.json"))
 	if err != nil {
@@ -51,9 +50,7 @@ func ReadPackageInfo(dir string) (PackageInfo, error) {
 	return PackageInfo{Name: pkg.Name, Deps: deps}, nil
 }
 
-// BuildDependencyGraph reads package.json from each workspace and builds an adjacency
-// list mapping workspace names to the workspace names they depend on.
-// Only dependencies that match another workspace's package name are included.
+// only intra-workspace dependencies; external packages excluded
 func BuildDependencyGraph(workspaces []WorkspaceInfo) (map[string][]string, error) {
 	type wsInfo struct {
 		ws      WorkspaceInfo
