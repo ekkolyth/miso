@@ -179,8 +179,9 @@ func upgradeOneBinary(client HTTPClient, binaryName, version, target, entryName,
 	}
 	defer os.RemoveAll(tmpDir)
 
+	const maxBinaryBytes = 100 * 1024 * 1024 // 100 MB
 	tmpBinary := filepath.Join(tmpDir, binaryName)
-	if err := extractBinaryFromTarGz(resp.Body, entryName, tmpBinary); err != nil {
+	if err := extractBinaryFromTarGz(io.LimitReader(resp.Body, maxBinaryBytes), entryName, tmpBinary); err != nil {
 		return fmt.Errorf("extract %s: %w", binaryName, err)
 	}
 	if err := installBinary(tmpBinary, destPath); err != nil {

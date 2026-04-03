@@ -33,12 +33,19 @@ func ReadPackageInfo(dir string) (PackageInfo, error) {
 		return PackageInfo{}, fmt.Errorf("parse package.json in %s: %w", dir, err)
 	}
 
+	seen := make(map[string]bool)
 	var deps []string
 	for name := range pkg.Dependencies {
-		deps = append(deps, name)
+		if !seen[name] {
+			seen[name] = true
+			deps = append(deps, name)
+		}
 	}
 	for name := range pkg.DevDependencies {
-		deps = append(deps, name)
+		if !seen[name] {
+			seen[name] = true
+			deps = append(deps, name)
+		}
 	}
 
 	return PackageInfo{Name: pkg.Name, Deps: deps}, nil

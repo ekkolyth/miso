@@ -276,12 +276,18 @@ func (pm *ProcessManager) sendOutput(p *Process, line string) {
 // AllExited returns true if every process has reached StateExited.
 func (pm *ProcessManager) AllExited() bool {
 	pm.mu.Lock()
-	defer pm.mu.Unlock()
-	if len(pm.Processes) == 0 {
+	procs := make([]*Process, len(pm.Processes))
+	copy(procs, pm.Processes)
+	pm.mu.Unlock()
+
+	if len(procs) == 0 {
 		return false
 	}
-	for _, p := range pm.Processes {
-		if p.State != StateExited {
+	for _, p := range procs {
+		p.mu.Lock()
+		state := p.State
+		p.mu.Unlock()
+		if state != StateExited {
 			return false
 		}
 	}
@@ -291,10 +297,17 @@ func (pm *ProcessManager) AllExited() bool {
 // FailedCount returns the number of processes that exited with non-zero code.
 func (pm *ProcessManager) FailedCount() int {
 	pm.mu.Lock()
-	defer pm.mu.Unlock()
+	procs := make([]*Process, len(pm.Processes))
+	copy(procs, pm.Processes)
+	pm.mu.Unlock()
+
 	count := 0
-	for _, p := range pm.Processes {
-		if p.State == StateExited && p.ExitCode != 0 {
+	for _, p := range procs {
+		p.mu.Lock()
+		exited := p.State == StateExited
+		code := p.ExitCode
+		p.mu.Unlock()
+		if exited && code != 0 {
 			count++
 		}
 	}
@@ -304,7 +317,10 @@ func (pm *ProcessManager) FailedCount() int {
 // WaitAllExited blocks until every process in procs has reached StateExited.
 func (pm *ProcessManager) WaitAllExited(procs []*Process) {
 	for _, p := range procs {
-		<-p.done
+		p.mu.Lock()
+		done := p.done
+		p.mu.Unlock()
+		<-done
 	}
 }
 
