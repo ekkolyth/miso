@@ -8,130 +8,164 @@ title: Types & VarConfig
 
 `"KEY": "type"` validates the type only; the variable is required by default.
 
-```json
-{
-    "env": [
-        {
-            "label": "web",
-            "path": "apps/web/.env.local",
-            "variables": {
-                "PORT": "port",
-                "DATABASE_URL": "url",
-                "API_KEY": "string"
-            }
-        }
-    ]
-}
-```
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"env": [
+\t\t{
+\t\t\t"label": "web",
+\t\t\t"path": "apps/web/.env.local",
+\t\t\t"variables": {
+\t\t\t\t"PORT": "port",
+\t\t\t\t"DATABASE_URL": "url",
+\t\t\t\t"API_KEY": "string"
+\t\t\t}
+\t\t}
+\t]
+}`}
+/>
 
 Shorthand-supported types: `string`, `port`, `int`, `int+`, `float`, `bool`, `url`, `email`, `json`, `uuid`. The `pattern` and `enum` types cannot use shorthand because they require additional fields (`pattern` or `values`).
 
 ## VarConfig
 
-For full control, use an object with a `type` and optional fields:
+For full control, use an object with a `type` and optional fields.
 
-| Field | Required | Default | Notes |
-|-------|----------|---------|-------|
-| `type` | yes | — | One of: `string`, `port`, `int`, `int+`, `float`, `bool`, `url`, `enum`, `email`, `json`, `uuid`, `pattern` |
-| `optional` | no | `false` | If true, missing value passes validation |
-| `min` | no | type-specific | string: length (default 1). int/int+/float: value range |
-| `max` | no | type-specific | string: length (default 255). int/int+/float: value range |
-| `pattern` | no | — | Regex for `pattern` type |
-| `values` | no | — | Allowed values for `enum` type |
-| `schemes` | no | `["http","https"]` | URL schemes for `url` type |
-| `trueValues` | no | `["true","1","yes","on"]` | Bool parsing |
-| `falseValues` | no | `["false","0","no","off"]` | Bool parsing |
+### `type`
+
+**Required.** One of: `string`, `port`, `int`, `int+`, `float`, `bool`, `url`, `enum`, `email`, `json`, `uuid`, `pattern`.
+
+### `optional`
+
+Defaults to `false`. If `true`, a missing value passes validation — only present values are type-checked.
+
+### `min` / `max`
+
+Type-specific range constraints:
+
+- **string** — character length. `min` defaults to `1`, `max` defaults to `255`.
+- **int / int+ / float** — numeric value range.
+
+### `pattern`
+
+A regex string used by the `pattern` type. Required when `type` is `"pattern"`.
+
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"VERSION": {
+\t\t"type": "pattern",
+\t\t"pattern": "^v?\\\\d+\\\\.\\\\d+\\\\.\\\\d+$"
+\t}
+}`}
+/>
+
+### `values`
+
+An array of allowed strings for the `enum` type. Required when `type` is `"enum"`.
+
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"NODE_ENV": {
+\t\t"type": "enum",
+\t\t"values": ["development", "production", "test"],
+\t\t"optional": true
+\t}
+}`}
+/>
+
+### `schemes`
+
+An array of allowed URL schemes for the `url` type. Defaults to `["http", "https"]`.
+
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"REDIS_URL": {
+\t\t"type": "url",
+\t\t"schemes": ["redis", "rediss"]
+\t}
+}`}
+/>
+
+### `trueValues` / `falseValues`
+
+Arrays of strings used to parse `bool` values. Defaults:
+
+- `trueValues`: `["true", "1", "yes", "on"]`
+- `falseValues`: `["false", "0", "no", "off"]`
 
 Unknown `VarConfig` keys cause an error (strict mode).
 
-## Types
+### Types
 
-| Type | Description |
-|------|-------------|
-| `string` | Non-empty string. `min`/`max` = length (chars). |
-| `port` | Integer 1–65535. |
-| `int` | Any integer. |
-| `int+` | Positive integer. `min` defaults to 1. |
-| `float` | Float. |
-| `bool` | Boolean. Uses `trueValues`/`falseValues` for parsing. |
-| `url` | URL. `schemes` restricts allowed schemes (default http/https). |
-| `enum` | One of `values`. Requires `values` array. |
-| `email` | Email address. |
-| `json` | Valid JSON. |
-| `uuid` | UUID. |
-| `pattern` | Regex match. Requires `pattern` field. |
+| Type      | Description                                                    |
+| --------- | -------------------------------------------------------------- |
+| `string`  | Non-empty string. `min`/`max` = length (chars).                |
+| `port`    | Integer 1–65535.                                               |
+| `int`     | Any integer.                                                   |
+| `int+`    | Positive integer. `min` defaults to 1.                         |
+| `float`   | Float.                                                         |
+| `bool`    | Boolean. Uses `trueValues`/`falseValues` for parsing.          |
+| `url`     | URL. `schemes` restricts allowed schemes (default http/https). |
+| `enum`    | One of `values`. Requires `values` array.                      |
+| `email`   | Email address.                                                 |
+| `json`    | Valid JSON.                                                    |
+| `uuid`    | UUID.                                                          |
+| `pattern` | Regex match. Requires `pattern` field.                         |
 
-## Examples
+### Basic Example
 
-**Optional variable with enum:**
-
-```json
-"NODE_ENV": {
-    "type": "enum",
-    "values": ["development", "production", "test"],
-    "optional": true
-}
-```
-
-**String with length constraints:**
-
-```json
-"APP_NAME": {
-    "type": "string",
-    "min": 1,
-    "max": 50
-}
-```
-
-**Custom regex:**
-
-```json
-"VERSION": {
-    "type": "pattern",
-    "pattern": "^v?\\d+\\.\\d+\\.\\d+$"
-}
-```
-
-**Full multi-app example:**
-
-```json
-{
-    "env": [
-        {
-            "label": "web",
-            "path": "apps/web/.env.local",
-            "variables": {
-                "PORT": "port",
-                "DATABASE_URL": "url",
-                "API_KEY": {
-                    "type": "string",
-                    "min": 1,
-                    "max": 32
-                },
-                "DEBUG_MODE": "bool"
-            }
-        },
-        {
-            "label": "api",
-            "path": "apps/api/.env",
-            "required": "all",
-            "variables": {
-                "NODE_ENV": {
-                    "type": "enum",
-                    "values": ["development", "production", "test"],
-                    "optional": true
-                },
-                "REDIS_URL": {
-                    "type": "url",
-                    "schemes": ["redis", "rediss"]
-                },
-                "RATE_LIMIT": {
-                    "type": "int+",
-                    "min": 1,
-                    "max": 1000
-                }
-            }
-        }
-    ]
-}
-```
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"env": [
+\t\t{
+\t\t\t"label": "web",
+\t\t\t"path": "apps/web/.env.local",
+\t\t\t"variables": {
+\t\t\t\t"PORT": "port",
+\t\t\t\t"DATABASE_URL": "url",
+\t\t\t\t"API_KEY": {
+\t\t\t\t\t"type": "string",
+\t\t\t\t\t"min": 1,
+\t\t\t\t\t"max": 32
+\t\t\t\t},
+\t\t\t\t"DEBUG_MODE": "bool"
+\t\t\t}
+\t\t},
+\t\t{
+\t\t\t"label": "api",
+\t\t\t"path": "apps/api/.env",
+\t\t\t"required": "all",
+\t\t\t"variables": {
+\t\t\t\t"NODE_ENV": {
+\t\t\t\t\t"type": "enum",
+\t\t\t\t\t"values": ["development", "production", "test"],
+\t\t\t\t\t"optional": true
+\t\t\t\t},
+\t\t\t\t"REDIS_URL": {
+\t\t\t\t\t"type": "url",
+\t\t\t\t\t"schemes": ["redis", "rediss"]
+\t\t\t\t},
+\t\t\t\t"RATE_LIMIT": {
+\t\t\t\t\t"type": "int+",
+\t\t\t\t\t"min": 1,
+\t\t\t\t\t"max": 1000
+\t\t\t\t}
+\t\t\t}
+\t\t}
+\t]
+}`}
+/>

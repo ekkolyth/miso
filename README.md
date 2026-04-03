@@ -10,22 +10,59 @@ Miso is a tiny cli tool that let's you stop worrying about which package manager
 
 Miso doesn't care where you work or what tools you use. It sits as a light wrapper on top of bun, pnpm, and more, that let's you remember one set of commands.
 
+## Simple Mode
+
+Don't use JavaScript? Miso also works as a standalone script runner. Set `"packageManager": false` in your `miso.json` and use miso for script execution, TUI, env validation, and task orchestration in any project.
+
+```json
+{
+    "$schema": "https://misojs.dev/miso.schema.json",
+    "packageManager": false,
+    "scripts": "./scripts"
+}
+```
+
 ## Get Started
 
 ### Installation
 
-#### Install via npm
+#### Recommended: Install with curl
 
-Global Install (recommended)
+```bash
+curl -fsSL https://misojs.dev/install | bash
+```
+
+Supported platforms: macOS (Intel & Apple Silicon), Linux (x86-64 & ARM64).
+Windows: Use the npm install method below, or download a binary from the [GitHub Releases](https://github.com/ekkolyth/miso/releases) page.
+
+#### Install via package manager
 
 ```bash
 npm install -g @ekkolyth/miso
+```
+
+#### Upgrading
+
+```bash
+miso upgrade
 ```
 
 Then run `miso init` to add miso to your project:
 
 ```bash
 miso init
+```
+
+## Simple Mode
+
+Don't use JavaScript? Miso also works as a standalone script runner. Set `"packageManager": false` in your `miso.json` and use miso for script execution, TUI, env validation, and task orchestration in any project.
+
+```json
+{
+    "$schema": "https://misojs.dev/miso.schema.json",
+    "packageManager": false,
+    "scripts": "./scripts"
+}
 ```
 
 ### Example miso.json (Kitchen Sink)

@@ -6,32 +6,27 @@ Understanding how Miso resolves commands is important for organizing your script
 
 When you run a command with Miso, it resolves the command in the following order:
 
-1. **Built-in commands** - Core Miso functionality
+1. **Core Built-in commands** - Core Miso functionality
 2. **Scripts folder** - Custom scripts in your configured scripts directory
-3. **Package.json scripts** - Scripts defined in package.json
-4. **Passthrough** - Forwarded to the package manager
+3. **Package Management Commands** - Commands to manage dependencies
+4. **Package.json scripts** - Scripts defined in package.json
+5. **Passthrough** - Forwarded to the package manager
 
 Let's examine each step in detail.
 
-## 1. Built-in Commands
+### 1. Core Built-In Commands
 
-Miso checks for built-in commands first. These include:
+Miso starts by checking it's core commands. These are the only commands that cannot be overwritten by the Script folder having a matched named action:
 
 - `init` - Initialize a new project
 - `version` - Display Miso version
-- `dev` - Start development server
-- `install` - Install dependencies
-- `update` - Update Miso itself
-- `add` - Add new dependencies
-- `remove` - Remove dependencies
-- `scripts` - List all available scripts
+- `upgrade` - Upgrade installed miso version
 - `env` - Validate environment variables from .env files
+- `skills` - add miso skills if flag is present
 
-"Built-ins" are the only arguments that take priority over all others. These cannot be overridden with scripts, which is _not_ the case for other package manager's commands you may run with miso.
+### 2. Scripts Folder
 
-## 2. Scripts Folder
-
-If no built-in command matches, Miso searches the configured scripts folder:
+After it passes it's core commands, miso The searches it's configured scripts folder recursively, and the first matching script is executed.
 
 ```
 scripts/
@@ -41,9 +36,16 @@ scripts/
     staging.sh   → miso deploy/staging
 ```
 
-The scripts folder is searched recursively, and the first matching script is executed.
+### 3. Package Management Commands
 
-## 3. Package.json Scripts
+If no script is found, miso then checks for it's built in commands:
+
+- `install` or `i` - Install dependencies
+- `add` - Add new dependencies
+- `remove` - Remove dependencies
+- `scripts` - List all available scripts and actions
+
+### 3. Package.json Scripts
 
 If no script is found in the scripts folder, Miso looks for a matching entry in package.json:
 
@@ -61,10 +63,10 @@ If a match is found, it's executed via your configured package manager:
 
 ```bash
 miso dev
-# Executes: pnpm run dev (or npm run dev, yarn dev, bun dev)
+# Executes: npm run dev (or bun dev, pnpm dev, etc)
 ```
 
-## 4. Passthrough
+### 4. Passthrough
 
 If the command isn't found in any of the previous steps, Miso forwards it to your package manager:
 

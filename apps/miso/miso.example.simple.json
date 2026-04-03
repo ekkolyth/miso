@@ -1,0 +1,19 @@
+{
+	"$schema": "https://misojs.dev/miso.schema.json",
+	"packageManager": false,
+	"scripts": "./scripts",
+	"shell": "bash",
+	"tui": "tabbed",
+	"repo": {
+		"tasks": {
+			"dev": { "concurrent": ["services"] }
+		}
+	},
+	"env": {
+		"path": ".env.local",
+		"variables": {
+			"PORT": "port",
+			"DATABASE_URL": "url"
+		}
+	}
+}

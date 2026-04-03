@@ -11,7 +11,7 @@ import (
 
 // execute script file with shebang detection and extension-based interpreter selection
 // defaultShell: used when no shebang or known extension; empty means "sh"
-func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShell string) error {
+func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShell string, environ []string) error {
 	// read first line to detect shebang
 	file, err := os.Open(scriptPath)
 	if err != nil {
@@ -75,6 +75,9 @@ func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShe
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
+	if environ != nil {
+		cmd.Env = environ
+	}
 	return cmd.Run()
 }
 

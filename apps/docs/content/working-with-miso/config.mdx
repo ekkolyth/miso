@@ -1,90 +1,23 @@
 # Configuring Miso
 
-You can edit `miso.json` directly to change it's settings:
-
-### JSON Schema (IDE Support)
-
-Add a `$schema` property to get autocomplete and validation in VS Code, Cursor, and other editors:
-
-```json
-{
-  "$schema": "https://misojs.dev/miso.schema.json",
-  "package-manager": "bun",
-  "name": "my-project",
-  "scripts": "./scripts"
-}
-```
-
-The schema is available at [https://misojs.dev/miso.schema.json](https://misojs.dev/miso.schema.json) — use this URL in your `miso.json` for type-safe editing.
+You can edit `miso.json` directly to change its settings:
 
 ### Package Manager
 
-Set or update your project's package manager:
+Controls whether miso operates as a package manager wrapper or a standalone script runner:
 
 <Terminal
     copy={false}
     className="mt-4 border border-neutral-700 rounded-sm"
     title="miso.json"
-    command='packageManager: "bun"'
+    command='"packageManager": false'
 />
 
-<DocProp prop="bun" />
+<DocProp prop="boolean" /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default: true</Badge>
 
-Sets "package manager" to "bun"
+When set to `false`, miso runs in **simple mode** — all package manager features are disabled. Every command resolves as a folder script. See [Simple Mode](/working-with-miso/simple-mode) for details.
 
-<DocProp prop="pnpm" />
-
-Sets "package manager" to "pnpm"
-
-<DocProp prop="yarn" />
-
-Sets "package manager" to "yarn"
-
-<DocProp prop="npm" />
-
-Sets "package manager" to "npm"
-
-### Package Manager
-
-Set or update your project's package manager:
-
-<Terminal
-    copy={false}
-    className="mt-4 border border-neutral-700 rounded-sm"
-    title="miso.json"
-    command='name: "my-cool-react-app"'
-/>
-
-<DocProp prop="string" />
-
-Set's the name of your project. To be honest, I don't know why. I think I had a reason at first, but it's already in `package.json` so this will probably be deprecated at some point.
-
-### Package Manager
-
-Set or update your project's package manager:
-
-<Terminal
-    copy={false}
-    className="mt-4 border border-neutral-700 rounded-sm"
-    title="miso.json"
-    command='packageManager: "bun"'
-/>
-
-<DocProp prop="bun" />
-
-Sets "package manager" to "bun"
-
-<DocProp prop="pnpm" />
-
-Sets "package manager" to "pnpm"
-
-<DocProp prop="yarn" />
-
-Sets "package manager" to "yarn"
-
-<DocProp prop="npm" />
-
-Sets "package manager" to "npm"
+When `true` (or omitted), miso operates normally as a package manager wrapper.
 
 ### Scripts
 
@@ -99,7 +32,9 @@ Sets the path to the folder you want miso to use when you run custom scripts:
 
 <DocProp prop="string" />
 
-This path is relative to the location of your miso.json file. Learn more about [Scripting in Miso](/scripting)
+This path is relative to the location of your miso.json file.
+
+Learn more about [Scripting in Miso](/scripting)
 
 ### Shell
 
@@ -109,12 +44,12 @@ Default interpreter for scripts with no shebang and no recognized extension. If 
     copy={false}
     className="mt-4 border border-neutral-700 rounded-sm"
     title="miso.json"
-    command='shell: "bash"'
+    config={`"shell": "sh" | "zsh" | "bash" | "dash" | "ksh" | "fish" | "nu" | "pwsh"`}
 />
 
-<DocProp prop="string" />
+<DocProp prop="string" /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default: "sh"</Badge>
 
-Examples: `"sh"`, `"bash"`, `"zsh"`. The interpreter must be available in your PATH.
+The selected interpreter must be available in your PATH.
 
 ### Repo
 
@@ -124,49 +59,96 @@ Configure whether your project is a single project or a monorepo:
     copy={false}
     className="mt-4 border border-neutral-700 rounded-sm"
     title="miso.json"
-    command='repo: "mono"'
+    config={`"repo": "single" | "mono" | "turbo" | "nx"`}
 />
 
-<DocProp prop='"single"' />
+<DocProp prop='"single"' /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default</Badge>
 
-Default. Treats the project as a single repository. All scripts resolve from the root `scripts/` folder.
+Treats the project as a single repository. All scripts resolve from the root `scripts/` folder.
 
 <DocProp prop='"mono"' />
 
-Enables monorepo mode. Unlocks workspace-scoped script execution using the `workspace:script` syntax and automatic CWD-based scoping. Requires a `workspaces` field in your root `package.json`.
+Enables monorepo mode. Unlocks workspace-scoped script execution using the `@workspace/script` syntax and automatic CWD-based scoping. Requires a `workspaces` field in your root `package.json`.
 
 When set to `"mono"`, miso reads workspace paths from your root `package.json`:
 
-```json
-{
-  "workspaces": ["apps/*", "packages/*"]
-}
-```
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="package.json"
+    config={`{
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ]
+}`}
+/>
 
 See [Monorepo Scripts](/scripting/scripts-folder#monorepo) for full details on workspace script execution.
 
+
+<DocProp prop='"turbo"' />
+
+Delegates orchestration to [Turborepo](https://turbo.build). Turbo must be installed and available in your PATH.
+
+<DocProp prop='"nx"' />
+
+Delegates orchestration to [Nx](https://nx.dev). Nx must be installed and available in your PATH.
+
+
+### TUI
+
+Configure the multi-terminal UI mode for running scripts across workspaces:
+
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`"tui": "off" | "tabbed" | "merged"`}
+/>
+
+See [TUI Configuration](/tui/configuration) for the full reference.
+
+### Flags
+
+Add default flags to package manager commands:
+
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`{
+  "flags": {
+    "install": ["--frozen-lockfile"],
+    "add": ["--dev"],
+    "dev": ["--env"]
+  }
+}`}
+/>
+
+See [Flags](/scripting/flags) for the full reference.
+
 ### Env
 
-Configure environment variable validation for `miso env`:
+Configure environment variable loading and validation:
 
-```json
-{
-  "env": {
-    "path": [".env.local", ".env"],
-    "required": "all",
-    "variables": {
-      "PORT": "port",
-      "DATABASE_URL": "url",
-      "NODE_ENV": {
-        "type": "enum",
-        "values": ["development", "production", "test"],
-        "optional": true
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`{
+  "env": [
+    {
+      "label": "web",
+      "path": ".env.local",
+      "required": "all",
+      "variables": {
+        "PORT": "port",
+        "DATABASE_URL": "url"
       }
     }
-  }
-}
-```
+  ]
+}`}
+/>
 
-- **path**: Array of .env file paths (relative to project root). Loaded in order; later files override earlier. If omitted, miso discovers `.env.local`, `.env.production`, `.env.development`, or `.env`.
-- **required**: `"all"` (every variable unless optional), `"none"`, or an array of specific keys.
-- **variables**: Either an object (type validation) or array (presence only). See [Env validation](/env-validation) for the full spec.
+See [Env Configuration](/env-validation/config) for the full reference.

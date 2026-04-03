@@ -1,0 +1,88 @@
+---
+title: Best Practices
+---
+
+# Best Practices
+
+## Always Include an Extension
+
+Miso uses the file extension to select the interpreter. A file without a recognized extension defaults to `sh`, which may not be what you want:
+
+```
+scripts/migrate.py   # runs with python3
+scripts/migrate      # runs with sh — probably wrong
+```
+
+Always be explicit.
+
+## Shebang vs. Extension
+
+Extension-based dispatch is fine for most scripts. Use a shebang when you need a specific binary path or want the script to be portable outside of miso:
+
+```python
+#!/usr/bin/env python3
+
+import sys
+...
+```
+
+When both are present, the shebang takes precedence over the extension.
+
+## Organizing with Subdirectories
+
+Group scripts by domain using subdirectories. Invoke them with a `/` separator:
+
+```
+scripts/
+  db/
+    migrate.sh
+    seed.sh
+    reset.sh
+  ci/
+    lint.sh
+    test.sh
+    release.sh
+```
+
+```bash
+miso db/migrate
+miso ci/release
+```
+
+Nest as deeply as you need. An `index` file in a subdirectory acts as the default for that directory:
+
+```bash
+# scripts/db/index.sh runs when you call:
+miso db
+```
+
+## Helper Files
+
+Prefix files with `_` to exclude them from discovery. Miso skips them during scanning, so they're never exposed as runnable commands:
+
+```
+scripts/
+  deploy.sh
+  _utils.sh      # shared helpers — not a command
+  _colors.sh     # not a command
+```
+
+Source them from other scripts as needed:
+
+```bash
+# scripts/deploy.sh
+source "$(dirname "$0")/_utils.sh"
+```
+
+## Exit Codes
+
+Always exit with a meaningful code. Miso propagates the exit code to the calling shell, so CI pipelines and build tools see failures correctly:
+
+```bash
+if [ -z "$DEPLOY_ENV" ]; then
+  echo "Error: DEPLOY_ENV is not set"
+  exit 1
+fi
+```
+
+A script that exits `0` signals success. Any non-zero value signals failure.

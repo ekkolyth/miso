@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/ekkolyth/miso/internal/cli/scripting"
@@ -22,7 +23,6 @@ const (
 	ActionPassthrough
 	ActionInit
 	ActionVersion
-	ActionMisox
 	ActionUpgrade
 	ActionScriptFolder
 	ActionScriptPackageJSON
@@ -33,27 +33,12 @@ const (
 type ParsedCLI struct {
 	Action        Action
 	PackageNames  []string
-	PackageName   string // For misox command
 	ScriptName    string
 	ScriptNames   []string // For multiple scripts
 	ScriptArgs    []string
 	Command       string
 	Args          []string
-	Local         bool   // For upgrade command --local flag
-	WorkspaceName string // For workspace:script syntax
-}
-
-func ParseLocalFlag(args []string) (bool, []string) {
-	local := false
-	remaining := args
-	for i, arg := range args {
-		if arg == "--local" {
-			local = true
-			remaining = append(args[:i], args[i+1:]...)
-			break
-		}
-	}
-	return local, remaining
+	WorkspaceName string // For @workspace/script syntax
 }
 
 func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) {
@@ -124,47 +109,35 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		return ParsedCLI{Action: ActionInit}, nil
 	case "version", "v":
 		return ParsedCLI{Action: ActionVersion}, nil
-	case "misox":
-		// check script override
-		if resolved, err := scripting.ResolveScript("misox", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
-			return buildScriptAction(resolved, "misox", parseInlineArgs(args[1:])), nil
-		}
-		if len(args) < 2 {
-			return ParsedCLI{}, errors.New("usage: miso misox <package> [args...]")
-		}
-		packageName := args[1]
-		remainingArgs := args[2:]
-		return ParsedCLI{
-			Action:      ActionMisox,
-			PackageName: packageName,
-			Args:        remainingArgs,
-		}, nil
 	case "upgrade":
 		// check script override
 		if resolved, err := scripting.ResolveScript("upgrade", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, "upgrade", parseInlineArgs(args[1:])), nil
 		}
-		local, remainingArgs := ParseLocalFlag(args[1:])
 		return ParsedCLI{
 			Action: ActionUpgrade,
-			Local:  local,
-			Args:   remainingArgs,
+			Args:   args[1:],
 		}, nil
 	}
 
-	// check for workspace:script syntax (only in mono mode)
-	if cfg.IsMono() && strings.Contains(cmd, ":") {
-		parts := strings.SplitN(cmd, ":", 2)
-		workspaceName := parts[0]
-		scriptName := parts[1]
-		if workspaceName != "" && scriptName != "" {
-			return ParsedCLI{
-				Action:        ActionWorkspaceScript,
-				WorkspaceName: workspaceName,
-				ScriptName:    scriptName,
-				ScriptArgs:    parseInlineArgs(args[1:]),
-			}, nil
+	// check for @workspace/script syntax
+	if strings.HasPrefix(cmd, "@") {
+		inner := cmd[1:] // strip leading @
+		lastSlash := strings.LastIndex(inner, "/")
+		if lastSlash < 0 {
+			return ParsedCLI{}, fmt.Errorf("invalid workspace command %q: usage: @<workspace>/<script>", cmd)
 		}
+		workspaceName := inner[:lastSlash]
+		scriptName := inner[lastSlash+1:]
+		if workspaceName == "" || scriptName == "" {
+			return ParsedCLI{}, fmt.Errorf("invalid workspace command %q: usage: @<workspace>/<script>", cmd)
+		}
+		return ParsedCLI{
+			Action:        ActionWorkspaceScript,
+			WorkspaceName: workspaceName,
+			ScriptName:    scriptName,
+			ScriptArgs:    parseInlineArgs(args[1:]),
+		}, nil
 	}
 
 	// check scripts folder and package.json

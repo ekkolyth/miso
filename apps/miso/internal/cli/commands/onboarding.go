@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/ekkolyth/miso/internal/ui"
 )
@@ -45,7 +45,7 @@ func selectManager(options []string, preselected string, styles ui.Styles) (stri
 
 	form := huh.NewForm(
 		huh.NewGroup(selectField),
-	).WithTheme(huh.ThemeCharm())
+	).WithTheme(huh.ThemeFunc(huh.ThemeCharm))
 
 	if err := form.Run(); err != nil {
 		return "", err
@@ -98,7 +98,7 @@ func (m *nameModel) Init() tea.Cmd {
 
 func (m *nameModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			m.err = ErrAborted
@@ -118,13 +118,13 @@ func (m *nameModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *nameModel) View() string {
+func (m *nameModel) View() tea.View {
 	help := m.style.Muted.Render("Enter a project name and press Enter.")
-	return lipgloss.NewStyle().Padding(1, 2).Render(
+	return tea.NewView(lipgloss.NewStyle().Padding(1, 2).Render(
 		fmt.Sprintf("%s\n\n%s\n\n%s",
 			m.style.Heading.Render("What is the name of the project?"),
 			m.input.View(),
 			help,
 		),
-	)
+	))
 }

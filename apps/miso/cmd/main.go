@@ -19,6 +19,8 @@ import (
 	"github.com/ekkolyth/miso/internal/manager/npm"
 	"github.com/ekkolyth/miso/internal/manager/pnpm"
 	"github.com/ekkolyth/miso/internal/manager/yarn"
+	"github.com/ekkolyth/miso/internal/tui"
+	"github.com/ekkolyth/miso/internal/turbo"
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
@@ -96,8 +98,39 @@ func main() {
 			}
 			return
 		case "upgrade":
-			local, remainingArgs := cli.ParseLocalFlag(args[1:])
-			if err := commands.Upgrade(local, remainingArgs); err != nil {
+			if err := commands.Upgrade(args[1:]); err != nil {
+				cli.Fail(logger, err, false)
+			}
+			return
+		case "skills":
+			add, rm := commands.ParseSkillsFlags(args[1:])
+			if add && rm {
+				cli.Fail(logger, fmt.Errorf("--add and --rm are mutually exclusive"), false)
+				return
+			}
+			if add {
+				if err := commands.RunSkillsAdd(); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
+			}
+			if rm {
+				if err := commands.RunSkillsRemove(); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
+			}
+			// Neither --add nor --rm: fall through to normal routing (PM passthrough)
+		case "misox":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "usage: miso misox <package> [args...]")
+				os.Exit(1)
+			}
+			misoxManager := "npm"
+			if detected, err := manager.DetectManager(originalWorkDir); err == nil {
+				misoxManager = detected
+			}
+			if err := cli.RunMisox(misoxManager, args[1], args[2:], originalWorkDir); err != nil {
 				cli.Fail(logger, err, false)
 			}
 			return
@@ -115,6 +148,71 @@ func main() {
 		cli.Fail(logger, err, false)
 	}
 
+	// Simple mode: bypass ParseCLI and EnsureManager entirely.
+	// Only meta-commands are handled; everything else is folder script resolution.
+	if cfg.SimpleMode() {
+		if len(args) == 0 {
+			cli.Fail(logger, fmt.Errorf("missing command"), true)
+		}
+
+		cmd := args[0]
+
+		// Meta-commands that remain in simple mode
+		// (init, version, upgrade, completion already handled above)
+		switch cmd {
+		case "env":
+			if err := env.Run(projectRoot, cfg, logger); err != nil {
+				os.Exit(1)
+			}
+			return
+		case "scripts":
+			if err := scripting.List(cfg, projectRoot, styles, logger); err != nil {
+				cli.Fail(logger, err, false)
+			}
+			return
+		}
+
+		// Resolve as folder script only (no package.json fallback)
+		resolved, err := scripting.ResolveScriptFolderOnly(cmd, projectRoot, cfg)
+		if err != nil {
+			cli.Fail(logger, err, false)
+		}
+
+		if resolved.Source == scripting.ScriptSourceNone {
+			cli.Fail(logger, fmt.Errorf("script '%s' not found in %s", cmd, cfg.Scripts), false)
+		}
+
+		scriptArgs := args[1:]
+
+		// Handle --env flag: run env validation before script execution
+		if env.HasEnvFlag(scriptArgs) {
+			if err := env.Run(projectRoot, cfg, logger); err != nil {
+				os.Exit(1)
+			}
+			scriptArgs = env.StripEnvFlag(scriptArgs)
+		}
+
+		// TUI interception for simple mode
+		if cfg.TuiEnabled() {
+			ran, err := tui.Launch(cfg, cmd, projectRoot, nil)
+			if err != nil {
+				cli.Fail(logger, err, false)
+			}
+			if ran {
+				return
+			}
+		}
+
+		processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, originalWorkDir)
+		if envErr != nil {
+			cli.Fail(logger, envErr, false)
+		}
+		if err := scripting.ExecScriptFile(resolved.Path, scriptArgs, originalWorkDir, cfg.Shell, processEnv); err != nil {
+			cli.Fail(logger, err, false)
+		}
+		return
+	}
+
 	parsed, err := cli.ParseCLI(args, cfg, projectRoot)
 	if err != nil {
 		cli.Fail(logger, err, true)
@@ -123,7 +221,7 @@ func main() {
 	// CWD-aware mono scoping: if repo is "mono" and we're inside a workspace,
 	// and the parsed action is a plain script (not already workspace-scoped),
 	// try to resolve the script from the current workspace's scripts folder first.
-	if cfg.IsMono() && originalWorkDir != projectRoot &&
+	if cfg.IsMonorepo() && originalWorkDir != projectRoot &&
 		parsed.Action == cli.ActionScriptPackageJSON {
 		workspaces, wsErr := config.LoadWorkspaces(projectRoot)
 		if wsErr == nil && len(workspaces) > 0 {
@@ -131,10 +229,9 @@ func main() {
 				resolved, _, resolveErr := scripting.ResolveWorkspaceScript(
 					filepath.Base(wsDir), parsed.ScriptName, projectRoot, cfg,
 				)
-				if resolveErr == nil && resolved.Source == scripting.ScriptSourceFolder {
+				if resolveErr == nil && (resolved.Source == scripting.ScriptSourceFolder || resolved.Source == scripting.ScriptSourcePackageJSON) {
 					parsed.Action = cli.ActionWorkspaceScript
 					parsed.WorkspaceName = filepath.Base(wsDir)
-					parsed.Command = resolved.Path
 				}
 			}
 		}
@@ -143,7 +240,7 @@ func main() {
 	// env does not need package manager
 	if parsed.Action == cli.ActionEnv {
 		if err := env.Run(projectRoot, cfg, logger); err != nil {
-			cli.Fail(logger, err, false)
+			os.Exit(1)
 		}
 		return
 	}
@@ -161,21 +258,101 @@ func main() {
 	// --env flag: run env validation first, then strip from args before passing to command
 	cfg, parsed = runEnvIfRequested(projectRoot, cfg, parsed, logger)
 
+	// TUI interception — check if we should launch the TUI instead of normal execution
+	if cfg.TuiEnabled() {
+		// Only intercept when running from project root (not workspace subdirectory)
+		isRoot := true
+		if cfg.IsMonorepo() {
+			workspaces, wsErr := config.LoadWorkspaces(projectRoot)
+			if wsErr == nil && len(workspaces) > 0 {
+				if _, inWs := scripting.WorkspaceFromCWD(originalWorkDir, workspaces); inWs {
+					isRoot = false
+				}
+			}
+		}
+
+		if isRoot {
+			switch parsed.Action {
+			case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON:
+				scriptName := parsed.ScriptName
+				if parsed.Action == cli.ActionDev {
+					scriptName = "dev"
+				}
+
+				if cfg.IsDelegated() {
+					// Check if this task is overridden by miso's direct orchestration
+					_, taskOverridden := cfg.Tasks[scriptName]
+					if taskOverridden {
+						mgr, ok := manager.GetManager(managerName)
+						if !ok {
+							cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+						}
+						ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr)
+						if err != nil {
+							cli.Fail(logger, err, false)
+						}
+						if ran {
+							return
+						}
+					} else {
+						// Only delegate to turbo/nx if the script is actually a pipeline task
+						turboCfg, turboErr := turbo.LoadConfig(projectRoot)
+						if turboErr == nil {
+							if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
+								_, turboFlags := turbo.SplitFlags(parsed.ScriptArgs, cfg.TuiEnabled())
+								ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags)
+								if err != nil {
+									cli.Fail(logger, err, false)
+								}
+								if ran {
+									return
+								}
+							}
+						}
+					}
+				} else {
+					mgr, ok := manager.GetManager(managerName)
+					if !ok {
+						cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+					}
+					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr)
+					if err != nil {
+						cli.Fail(logger, err, false)
+					}
+					if ran {
+						return
+					}
+				}
+				// TUI was not applicable — fall through to normal execution
+			}
+		}
+	}
+
 	// Route to command handlers
 	switch parsed.Action {
 	case cli.ActionWorkspaceScript:
-		// workspace:script syntax — resolve and execute in the workspace directory
+		// @workspace/script syntax — resolve and execute in the workspace directory
 		resolved, workDir, err := scripting.ResolveWorkspaceScript(
 			parsed.WorkspaceName, parsed.ScriptName, projectRoot, cfg,
 		)
 		if err != nil {
 			cli.Fail(logger, err, false)
 		}
-		if resolved.Source == scripting.ScriptSourceNone {
+		switch resolved.Source {
+		case scripting.ScriptSourceFolder:
+			processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, workDir)
+			if envErr != nil {
+				cli.Fail(logger, envErr, false)
+			}
+			if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, cfg.Shell, processEnv); err != nil {
+				cli.Fail(logger, err, false)
+			}
+		case scripting.ScriptSourcePackageJSON:
+			if err := commands.Run(managerName, parsed.ScriptName, parsed.ScriptArgs, workDir); err != nil {
+				cli.Fail(logger, err, false)
+			}
+		default:
 			cli.Fail(logger, fmt.Errorf("script %q not found in workspace %q", parsed.ScriptName, parsed.WorkspaceName), false)
-		}
-		if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, cfg.Shell); err != nil {
-			cli.Fail(logger, err, false)
 		}
 		return
 	case cli.ActionScripts:
@@ -189,12 +366,20 @@ func main() {
 		}
 		return
 	case cli.ActionScriptOverride:
-		if err := scripting.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg); err != nil {
+		processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, originalWorkDir)
+		if envErr != nil {
+			cli.Fail(logger, envErr, false)
+		}
+		if err := scripting.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg, processEnv); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
 	case cli.ActionScriptFolder:
-		if err := scripting.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell); err != nil {
+		processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, originalWorkDir)
+		if envErr != nil {
+			cli.Fail(logger, envErr, false)
+		}
+		if err := scripting.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell, processEnv); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -225,11 +410,6 @@ func main() {
 		return
 	case cli.ActionDev:
 		if err := commands.Dev(managerName, parsed.ScriptArgs, originalWorkDir, cfg); err != nil {
-			cli.Fail(logger, err, false)
-		}
-		return
-	case cli.ActionMisox:
-		if err := cli.RunMisox(managerName, parsed.PackageName, parsed.Args, originalWorkDir); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -271,7 +451,7 @@ func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedC
 	}
 
 	if err := env.Run(projectRoot, cfg, logger); err != nil {
-		cli.Fail(logger, err, false)
+		os.Exit(1)
 	}
 
 	// Strip --env from cfg flags and parsed args

@@ -1,0 +1,84 @@
+---
+title: Turborepo Integration
+description: Using miso with Turborepo for monorepo orchestration
+---
+
+# Turborepo Integration
+
+Miso integrates with Turborepo by delegating orchestration while providing an enhanced terminal UI.
+
+## Setup
+
+Set `repo` to `"turbo"` in your `miso.json`:
+
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"repo": "turbo",
+\t"tui": "tabbed"
+}`}
+/>
+
+**Requirements:** The `turbo` binary must be available in your PATH.
+
+## How It Works
+
+When you run `miso dev` or `miso build` with turbo mode:
+
+1. Miso spawns `turbo run <task>` as a single process
+2. Turbo handles dependency ordering, caching, and parallelism
+3. Miso displays the process output it in the TUI with per-workspace tabs
+4. Each workspace gets its own tab with independent scroll, exit code, and cache status
+
+### With TUI enabled
+
+Miso wraps turbo's output in the tabbed or merged view. Workspaces are discovered dynamically as turbo's output arrives.
+
+### With TUI disabled
+
+Miso stays invisible. Your command falls through to the package manager, which runs the root `package.json` script (e.g., `"dev": "turbo dev"`). There is no difference from running without miso.
+
+## What Miso Delegates vs Handles
+
+| Concern                         | Owner                   |
+| ------------------------------- | ----------------------- |
+| Task dependency ordering        | Turbo                   |
+| Caching                         | Turbo                   |
+| Parallelism                     | Turbo                   |
+| Output display (TUI)            | Miso                    |
+| Task discovery (`miso scripts`) | Miso (reads turbo.json) |
+
+## Overriding Tasks with Miso Orchestration
+
+By default, all tasks are delegated to Turbo. If you want Miso to orchestrate specific tasks directly — while Turbo handles everything else — add a `tasks` block to the `repo` config.
+
+A common use case: let Miso manage your dev servers (so you get per-process restart, status indicators, and the full TUI experience) while Turbo handles builds, linting, and other pipeline tasks.
+
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"tui": "tabbed",
+\t"repo": {
+\t\t"mode": "turbo",
+\t\t"tasks": {
+\t\t\t"dev": {
+\t\t\t\t"concurrent": ["db:studio", "stripe:listen"]
+\t\t\t}
+\t\t}
+\t}
+}`}
+/>
+
+With this config, `miso dev` uses Miso's direct orchestration — discovering dev scripts across your workspaces, launching them as individual processes, and giving you per-workspace restart with `r`. Any other command like `miso build` or `miso lint` is still delegated to Turbo as normal.
+
+## Version Support
+
+Miso supports both turbo.json formats:
+
+v2 (current): reads from the tasks key
+v1 (legacy): reads from the pipeline key
+Version is detected automatically.

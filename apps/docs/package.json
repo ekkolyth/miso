@@ -2,6 +2,7 @@
     "name": "miso-docs",
     "homepage": "https://misojs.dev",
     "private": true,
+    "license": "MIT",
     "scripts": {
         "copy:schema": "cp ../miso/miso.schema.json public/miso.schema.json",
         "prebuild": "cp ../miso/miso.schema.json public/miso.schema.json",
