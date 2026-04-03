@@ -5,8 +5,6 @@ export default {
     'env-validation': 'Env Validation',
     scripting: 'Scripting',
     tui: 'Terminal UI (TUI)',
-    turbo: 'Turborepo Integration',
-    troubleshooting: 'Troubleshooting',
-    contributing: 'Contributing to Miso',
     examples: 'Examples',
+    contributing: 'Contributing to Miso',
 }

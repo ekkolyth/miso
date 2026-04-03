@@ -3,4 +3,5 @@ export default {
     configuration: 'Configuration',
     'tabbed-mode': 'Tabbed Mode',
     'merged-mode': 'Merged Mode',
+    'turborepo-integration': 'Turborepo Integration'
 }

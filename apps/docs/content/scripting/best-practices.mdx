@@ -4,20 +4,6 @@ title: Best Practices
 
 # Best Practices
 
-## Naming Conventions
-
-Use lowercase names with hyphens or underscores. Prefer descriptive verbs that make the intent clear at a glance:
-
-```
-deploy-staging.sh    # good
-ds.sh                # bad — too abbreviated
-
-seed-database.sh     # good
-sd.sh                # bad
-```
-
-Avoid spaces in filenames — miso resolves scripts by path and spaces complicate shell invocation.
-
 ## Always Include an Extension
 
 Miso uses the file extension to select the interpreter. A file without a recognized extension defaults to `sh`, which may not be what you want:
@@ -35,7 +21,6 @@ Extension-based dispatch is fine for most scripts. Use a shebang when you need a
 
 ```python
 #!/usr/bin/env python3
-# scripts/seed.py
 
 import sys
 ...
@@ -101,26 +86,3 @@ fi
 ```
 
 A script that exits `0` signals success. Any non-zero value signals failure.
-
-## Scripts Folder vs. package.json Scripts
-
-Use the scripts folder for:
-
-- Multi-language scripts (Python, Ruby, TypeScript, etc.)
-- Scripts with real logic — loops, conditionals, error handling
-- Projects where developers use different package managers
-
-Use `package.json` scripts for:
-
-- Simple one-liners that wrap a CLI tool
-- Commands that are already well-defined by a tool's own CLI
-
-## Executable Bit
-
-If you use a shebang and want to run the script directly (outside of miso), set the executable bit:
-
-```bash
-chmod +x scripts/deploy.sh
-```
-
-Extension-based scripts don't need it — miso invokes the interpreter directly regardless of file permissions.

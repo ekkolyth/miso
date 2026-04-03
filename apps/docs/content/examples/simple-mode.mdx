@@ -8,34 +8,25 @@ A package-manager-free `miso.json` for non-JavaScript projects. Uses miso as a p
 
 ```json
 {
-  "$schema": "https://misojs.dev/miso.schema.json",
-  "packageManager": false,
-  "scripts": "./scripts",
-  "shell": "bash",
-  "tui": "tabbed",
-  "repo": {
-    "tasks": {
-      "dev": { "concurrent": ["services"] }
+    "$schema": "https://misojs.dev/miso.schema.json",
+    "packageManager": false,
+    "scripts": "./scripts",
+    "shell": "bash",
+    "tui": "tabbed",
+    "repo": {
+        "tasks": {
+            "dev": { "concurrent": ["services"] }
+        }
+    },
+    "env": {
+        "path": ".env.local",
+        "variables": {
+            "PORT": "port",
+            "DATABASE_URL": "url"
+        }
     }
-  },
-  "env": {
-    "path": ".env.local",
-    "variables": {
-      "PORT": "port",
-      "DATABASE_URL": "url"
-    }
-  }
 }
 ```
-
-## What This Configures
-
-- **packageManager: false** — Disables all package manager features. No `install`, `add`, `remove`, or `misox`. Every command resolves as a [folder script](/scripting/scripts-folder). See [Simple Mode](/working-with-miso/simple-mode) for the full guide.
-- **scripts** — Custom scripts live in `./scripts` relative to the project root
-- **shell** — Scripts without a shebang or recognized extension default to `bash`
-- **tui** — [Tabbed mode](/tui/tabbed-mode) shows each concurrent task in its own tab
-- **repo.tasks** — Running `miso dev` also starts the `services` script concurrently
-- **env** — Validates `PORT` and `DATABASE_URL` from `.env.local`
 
 ## What's Different from a Normal Config
 

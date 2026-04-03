@@ -5,15 +5,19 @@ description: Run multiple scripts concurrently with a visual terminal interface
 
 # Terminal UI (TUI)
 
-Miso includes a built-in terminal UI for running multiple scripts concurrently — similar to Turborepo's TUI but with per-process restart and two display modes.
+Miso includes a built-in terminal UI for running multiple scripts concurrently.
 
 ## Two Modes
 
 ### Tabbed Mode
 
+[Tabbed Mode Docs →](/tui/tabbed-mode)
+
 A sidebar lists your workspaces/scripts with status indicators. Select one to see its full log output. Navigate with arrow keys, restart individual processes with `r`.
 
 ### Merged Mode
+
+[Merged Mode Docs →](/tui/merged-mode)
 
 All logs stream together in one view with color-coded labels per workspace. A filter bar lets you toggle which workspaces are visible.
 
@@ -22,17 +26,20 @@ All logs stream together in one view with color-coded labels per workspace. A fi
 - **Monorepo development** — run `dev` scripts across all workspaces simultaneously
 - **Single repo with multiple services** — run your app server and a backend like Convex side by side
 - **Build ordering** — run builds in dependency order across workspaces with `dependsOn`
-- **Turbo/Nx delegation** — use miso's UI while Turbo or Nx handles orchestration
+- **Turbo/Nx delegation** — use miso's TUI for development while letting Turbo or Nx handle build orchestration
 
 ## Quick Start
 
-Add `"tui": "tabbed"` (or `"merged"`) to your `miso.json`:
+Add `"tui": "tabbed"` or `"merged"` to your `miso.json`:
 
-```json
-{
-  "tui": "tabbed"
-}
-```
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"tui": "tabbed"
+}`}
+/>
 
 Then run any script from the project root:
 
@@ -46,33 +53,21 @@ Miso discovers all matching scripts and launches the TUI.
 
 For build commands that need to run in order, configure `dependsOn` in the `repo` field:
 
-```json
-{
-  "tui": "tabbed",
-  "repo": {
-    "mode": "mono",
-    "tasks": {
-      "build": { "dependsOn": ["^build"] }
-    }
-  }
-}
-```
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"tui": "tabbed",
+\t"repo": {
+\t\t"mode": "mono",
+\t\t"tasks": {
+\t\t\t"build": {
+\t\t\t\t"dependsOn": ["^build"]
+\t\t\t}
+\t\t}
+\t}
+}`}
+/>
 
-The `^` prefix means "run this task in upstream workspace dependencies first." Miso reads the dependency graph from each workspace's `package.json` and executes in topological order.
-
-## Working with Turbo / Nx
-
-You can delegate orchestration to Turborepo or Nx while still using miso's TUI:
-
-```json
-{
-  "tui": "tabbed",
-  "repo": "turbo"
-}
-```
-
-Set `"repo"` to `"turbo"` or `"nx"`. Miso spawns the underlying tool as a single process, parses its output, and displays it in the TUI with per-workspace tabs.
-
-## Auto-Exit
-
-When all processes complete, the TUI waits 2 seconds (so you can see final status) then exits automatically. If any process failed, a summary is printed to stderr.
+The `^` prefix means "before building this workspace, build everything it depends on first." For example, if `apps/web` lists `packages/ui` as a dependency in its `package.json`, then `^build` ensures `packages/ui` builds before `apps/web` starts. Miso walks the dependency graph automatically — you just declare the rule once.

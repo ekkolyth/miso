@@ -340,9 +340,12 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 			if proc.ExitCode != 0 {
 				statusText = fmt.Sprintf("✕ %d", proc.ExitCode)
 				statusFg = exitedColor
-			} else {
+			} else if !proc.StartedAt.IsZero() && time.Since(proc.StartedAt) < 5*time.Second {
 				statusText = "■"
 				statusFg = mutedColor
+			} else {
+				statusText = "✓"
+				statusFg = runningColor
 			}
 		} else {
 			statusText = "●"
