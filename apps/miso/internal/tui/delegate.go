@@ -56,7 +56,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	// Build the command
 	cmd := exec.Command(binary, delegateArgs...)
 	cmd.Dir = root
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcGroup(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -216,7 +216,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	// Kill the delegated process group
 	if cmd.Process != nil {
 		pgid := cmd.Process.Pid
-		_ = syscall.Kill(-pgid, syscall.SIGTERM)
+		_ = killGroup(pgid, syscall.SIGTERM)
 	}
 
 	failed := pm.FailedCount()

@@ -5,7 +5,7 @@
     "license": "MIT",
     "scripts": {
         "copy:schema": "cp ../miso/miso.schema.json public/miso.schema.json",
-        "prebuild": "cp ../miso/miso.schema.json public/miso.schema.json",
+        "prebuild": "cp ../miso/miso.schema.json public/miso.schema.json && cp ../../scripts/install.sh public/install.sh",
         "dev": "next dev --port 3000",
         "build": "next build",
         "start": "next start",
