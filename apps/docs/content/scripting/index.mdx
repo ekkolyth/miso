@@ -2,7 +2,7 @@
 
 ## Overview
 
-Miso provides a flexible scripting system that allows you to organize and execute project scripts easily. By default, Miso discovers and executes scripts from the `scripts/` directory, but it also integrates seamlessly with package.json scripts.
+Miso provides a semi-opinionated scripting system that allows you to organize and execute project scripts easily. By default, Miso discovers and executes scripts from the `scripts/` directory, but it also integrates seamlessly with package.json scripts.
 
 Scripts can be:
 
@@ -15,17 +15,24 @@ Scripts can be:
 
 Create a script in your `scripts/` directory:
 
-```bash
-# scripts/hello.sh
+<Terminal
+    title="scripts/hello.sh"
+    copy={false}
+    command='echo "Hello from Miso!"'
+    className="mt-4"
+/>
 
-echo "Hello from Miso!"
+run it:
+
+```bash
+miso hello
 ```
 
 ## Key Features
 
 ### Multi-Language Support
 
-Write scripts in your preferred language - shell, JavaScript, TypeScript, Python, Ruby, and more. Miso automatically detects the appropriate interpreter.
+Write scripts in your preferred language - shell, JavaScript, TypeScript, Python, Ruby, and more. Miso automatically detects the appropriate interpreter based on the file extension.
 
 ### Organized Structure
 
@@ -59,11 +66,3 @@ miso scripts
 ```
 
 This shows scripts from both the scripts folder and package.json, helping you understand what's available and identify any conflicts.
-
-## Next Steps
-
-- Learn about the [Scripts Folder](/scripting/scripts-folder) setup and configuration
-- Understand [Script Execution](/scripting/script-execution) and interpreters
-- Explore [Script Resolution](/scripting/script-resolution) order
-- Discover how to create [Script Overrides](/scripting/script-overrides)
-- See how [Package.json Integration](/scripting/package-json-integration) works

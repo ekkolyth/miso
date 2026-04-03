@@ -17,16 +17,24 @@ const FileName = "miso.json"
 // SchemaURL is the canonical URL for the miso.json JSON schema (IDE autocomplete/validation)
 const SchemaURL = "https://misojs.dev/miso.schema.json"
 
+// TaskConfig holds per-task configuration for dependency ordering and concurrent companions.
+type TaskConfig struct {
+	DependsOn  []string `json:"dependsOn,omitempty"`
+	Concurrent []string `json:"concurrent,omitempty"`
+}
+
 // persisted project metadata
 type Config struct {
-	Schema         string              `json:"$schema,omitempty"`
-	PackageManager string              `json:"package-manager,omitempty"`
-	ProjectName    string              `json:"name,omitempty"`
-	Scripts        string              `json:"scripts"`
-	Shell          string              `json:"shell,omitempty"`
-	Flags          map[string][]string `json:"flags,omitempty"`
-	Env            []*EnvEntry         `json:"env,omitempty"`
-	Repo           string              `json:"repo,omitempty"` // "single" (default) or "mono"
+	Schema         string                `json:"$schema,omitempty"`
+	PackageManager *bool                 `json:"packageManager,omitempty"`
+	Scripts        string                `json:"scripts"`
+	Shell          string                `json:"shell,omitempty"`
+	Flags          map[string][]string   `json:"flags,omitempty"`
+	Env            []*EnvEntry           `json:"env,omitempty"`
+	Repo           string                `json:"repo,omitempty"` // "single" (default), "mono", "turbo", or "nx"
+	Tasks          map[string]TaskConfig `json:"-"`              // populated from repo object form; not serialized directly
+	TuiMode        string                `json:"tui,omitempty"`  // "off" (default), "tabbed", or "merged"
+	TuiCleanExit   bool                  `json:"-"`              // populated from tui object form; not serialized directly
 }
 
 // EnvEntry holds a single env file path and its variable validation rules.
@@ -114,9 +122,65 @@ func (c *Config) EnsureDefaults() {
 	}
 }
 
-// IsMono returns true if the repo is configured as a monorepo
-func (c Config) IsMono() bool {
-	return c.Repo == "mono"
+// IsMonorepo returns true for repo modes that use workspace discovery.
+func (c Config) IsMonorepo() bool {
+	return c.Repo == "mono" || c.Repo == "turbo" || c.Repo == "nx"
+}
+
+// RepoMode returns the resolved repo mode string, defaulting to "single".
+func (c Config) RepoMode() string {
+	if c.Repo == "" {
+		return "single"
+	}
+	return c.Repo
+}
+
+// IsDelegated returns true when orchestration is delegated to turbo or nx.
+func (c Config) IsDelegated() bool {
+	return c.Repo == "turbo" || c.Repo == "nx"
+}
+
+// HasDependsOn returns true if the given command has a dependsOn entry with a ^ prefix
+// in the tasks configuration.
+func (c Config) HasDependsOn(command string) bool {
+	if c.Tasks == nil {
+		return false
+	}
+	task, ok := c.Tasks[command]
+	if !ok {
+		return false
+	}
+	for _, dep := range task.DependsOn {
+		if len(dep) > 0 && dep[0] == '^' {
+			return true
+		}
+	}
+	return false
+}
+
+// TaskConcurrent returns the concurrent task names for the given command, or nil.
+func (c Config) TaskConcurrent(command string) []string {
+	if c.Tasks == nil {
+		return nil
+	}
+	task, ok := c.Tasks[command]
+	if !ok {
+		return nil
+	}
+	if len(task.Concurrent) == 0 {
+		return nil
+	}
+	return task.Concurrent
+}
+
+// TuiEnabled returns true when the multi-terminal UI is active (tabbed or merged mode)
+func (c Config) TuiEnabled() bool {
+	return c.TuiMode == "tabbed" || c.TuiMode == "merged"
+}
+
+// SimpleMode returns true when package manager features are disabled.
+func (c Config) SimpleMode() bool {
+	return c.PackageManager != nil && !*c.PackageManager
 }
 
 // resolve config file path for project root
@@ -127,13 +191,13 @@ func Path(root string) string {
 // configLoad is used for two-phase unmarshaling (env can be string, object, or array)
 type configLoad struct {
 	Schema         string              `json:"$schema,omitempty"`
-	PackageManager string              `json:"package-manager,omitempty"`
-	ProjectName    string              `json:"name,omitempty"`
+	PackageManager *bool               `json:"packageManager,omitempty"`
 	Scripts        string              `json:"scripts"`
 	Shell          string              `json:"shell,omitempty"`
 	Flags          map[string][]string `json:"flags,omitempty"`
 	EnvRaw         json.RawMessage     `json:"env,omitempty"`
-	Repo           string              `json:"repo,omitempty"`
+	RepoRaw        json.RawMessage     `json:"repo,omitempty"`
+	TuiRaw         json.RawMessage     `json:"tui,omitempty"`
 }
 
 // read miso.json from disk
@@ -152,14 +216,33 @@ func Load(root string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
 
+	tuiMode := "off"
+	tuiCleanExit := false
+	if len(load.TuiRaw) > 0 {
+		var err error
+		tuiMode, tuiCleanExit, err = parseTuiField(load.TuiRaw)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse tui config: %w", err)
+		}
+	}
+
 	cfg := Config{
 		Schema:         load.Schema,
 		PackageManager: load.PackageManager,
-		ProjectName:    load.ProjectName,
 		Scripts:        load.Scripts,
 		Shell:          load.Shell,
 		Flags:          load.Flags,
-		Repo:           load.Repo,
+		TuiMode:        tuiMode,
+		TuiCleanExit:   tuiCleanExit,
+	}
+
+	if len(load.RepoRaw) > 0 {
+		repo, tasks, err := parseRepoField(load.RepoRaw)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse repo config: %w", err)
+		}
+		cfg.Repo = repo
+		cfg.Tasks = tasks
 	}
 
 	if len(load.EnvRaw) > 0 {
@@ -206,6 +289,54 @@ func parseEnvField(raw json.RawMessage) ([]*EnvEntry, error) {
 		return nil, err
 	}
 	return []*EnvEntry{entry}, nil
+}
+
+// parseRepoField handles the two accepted shapes for the "repo" field:
+//  1. string — "single", "mono", "turbo", "nx"
+//  2. object — { "mode": "mono", "tasks": { ... } }
+func parseRepoField(raw json.RawMessage) (string, map[string]TaskConfig, error) {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s, nil, nil
+	}
+
+	var obj struct {
+		Mode  string                `json:"mode"`
+		Tasks map[string]TaskConfig `json:"tasks,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return "", nil, fmt.Errorf("repo: expected string or object, got %s", string(raw))
+	}
+
+	return obj.Mode, obj.Tasks, nil
+}
+
+// parseTuiField handles the two accepted shapes for the "tui" field:
+//  1. string — "off", "tabbed", "merged"
+//  2. object — { "mode": "tabbed", "cleanExit": true }
+func parseTuiField(raw json.RawMessage) (string, bool, error) {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if s == "" {
+			s = "off"
+		}
+		return s, false, nil
+	}
+
+	var obj struct {
+		Mode      string `json:"mode"`
+		CleanExit bool   `json:"cleanExit"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return "", false, fmt.Errorf("tui: expected string or object, got %s", string(raw))
+	}
+
+	mode := obj.Mode
+	if mode == "" {
+		mode = "off"
+	}
+
+	return mode, obj.CleanExit, nil
 }
 
 // parseEnvEntry decodes a single EnvEntry from its raw JSON representation.
@@ -359,14 +490,101 @@ func LoadWorkspaces(root string) ([]string, error) {
 	return result, nil
 }
 
-// FindWorkspace matches a short name (e.g. "onboarding") against discovered
-// workspace paths and returns the full path of the matching workspace.
-// It matches against the final directory segment of each workspace path.
-func FindWorkspace(name string, workspaces []string) (string, bool) {
+// FindWorkspace matches a workspace identifier against discovered workspace paths.
+// The identifier is matched against three candidates per workspace, in order:
+//  1. Directory basename (e.g. "api" for /root/packages/api)
+//  2. Relative path from root (e.g. "packages/api")
+//  3. The "name" field in the workspace's package.json (e.g. "@myorg/api")
+//
+// If the identifier matches more than one workspace, an error is returned listing
+// the conflicting paths. If no match is found, an error is returned listing available
+// workspace basenames.
+func FindWorkspace(name string, workspaces []string, root string) (string, error) {
+	var matches []string
+
 	for _, ws := range workspaces {
-		if filepath.Base(ws) == name {
-			return ws, true
+		if matchesWorkspace(name, ws, root) {
+			matches = append(matches, ws)
 		}
 	}
-	return "", false
+
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", fmt.Errorf("workspace %q not found (available: %s)", name, joinWorkspaceNames(workspaces))
+	default:
+		var paths []string
+		for _, m := range matches {
+			rel, err := filepath.Rel(root, m)
+			if err != nil {
+				paths = append(paths, m)
+			} else {
+				paths = append(paths, rel)
+			}
+		}
+		return "", fmt.Errorf("workspace %q is ambiguous — matches multiple workspaces: %s (use a more specific identifier)", name, joinStrings(paths))
+	}
+}
+
+// matchesWorkspace returns true if name matches the given workspace path
+// by basename, relative path from root, or package.json name field.
+func matchesWorkspace(name string, ws string, root string) bool {
+	// 1. basename
+	if filepath.Base(ws) == name {
+		return true
+	}
+
+	// 2. relative path from root
+	rel, err := filepath.Rel(root, ws)
+	if err == nil && filepath.ToSlash(rel) == filepath.ToSlash(name) {
+		return true
+	}
+
+	// 3. package.json name field
+	pkgName := readPackageJSONName(ws)
+	if pkgName != "" && pkgName == name {
+		return true
+	}
+
+	return false
+}
+
+// readPackageJSONName reads the "name" field from a workspace's package.json.
+// Returns empty string if the file is missing or the field is absent.
+func readPackageJSONName(wsDir string) string {
+	data, err := os.ReadFile(filepath.Join(wsDir, "package.json"))
+	if err != nil {
+		return ""
+	}
+	var pkg struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return ""
+	}
+	return pkg.Name
+}
+
+// joinWorkspaceNames returns a comma-separated list of workspace basenames.
+// Defined here (config package) — also duplicated in scripting package; do NOT import across packages.
+func joinWorkspaceNames(workspaces []string) string {
+	names := make([]string, 0, len(workspaces))
+	for _, ws := range workspaces {
+		names = append(names, filepath.Base(ws))
+	}
+	return joinStrings(names)
+}
+
+// joinStrings joins a slice of strings with ", ".
+// Defined here (config package) — also duplicated in scripting package; do NOT import across packages.
+func joinStrings(ss []string) string {
+	result := ""
+	for i, s := range ss {
+		if i > 0 {
+			result += ", "
+		}
+		result += s
+	}
+	return result
 }

@@ -1,0 +1,36 @@
+---
+title: Agent Skills
+---
+
+# Agent Skills
+
+Skills are plain Markdown files that get injected into your AI agent's context (Claude Code, Cursor, OpenCode, etc). When the agent detects a relevant task, the matching skill loads automatically.
+
+<Callout type="info">
+Skills are installed as local files — they don't require an internet connection after installation and are safe to commit to version control.
+</Callout>
+
+### Available Skills
+
+| Skill | Loads when... | Covers |
+| --- | --- | --- |
+| `config` | Creating or editing `miso.json` | All top-level fields, types, defaults, annotated examples, common mistakes |
+| `scripting` | Working with the scripts folder, creating or debugging scripts | Extension dispatch, shebang rules, subdirectories, `@workspace/script` syntax, resolution order |
+| `tui` | Configuring multi-process TUI, task ordering, concurrent tasks | `tui` field, `repo` modes, `tasks.concurrent`, `tasks.dependsOn` |
+| `env` | Configuring env validation, debugging env injection | `env` config block, variable types, `--env` flag, injection behavior |
+
+### Install All Skills
+
+The fastest way to install all four skills at once is through the miso CLI:
+
+```bash
+miso skills --add
+```
+
+This installs skills for whichever AI agent miso detects in your project.
+
+### Remove Skills
+
+```bash
+miso skills --rm
+```

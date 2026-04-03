@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 // lipgloss styles used across cli
 type Styles struct {
@@ -10,6 +14,21 @@ type Styles struct {
 	Label   lipgloss.Style
 	Flavor  lipgloss.Style
 }
+
+// LabelColors is the palette used to color workspace/app labels (matches merged TUI view).
+var LabelColors = []color.Color{
+	lipgloss.Color("#7c3aed"), // purple
+	lipgloss.Color("#3b82f6"), // blue
+	lipgloss.Color("#f59e0b"), // amber
+	lipgloss.Color("#10b981"), // emerald
+	lipgloss.Color("#ef4444"), // red
+	lipgloss.Color("#ec4899"), // pink
+	lipgloss.Color("#06b6d4"), // cyan
+	lipgloss.Color("#f97316"), // orange
+}
+
+// WarningColor is used for warning-level highlights (e.g. variable names in validation errors).
+var WarningColor = lipgloss.Color("#f59e0b") // amber
 
 // return default miso theme
 func Default() Styles {

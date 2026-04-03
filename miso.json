@@ -1,8 +1,7 @@
 {
-	"$schema": "./apps/miso/miso.schema.json",
-	"package-manager": "bun",
-	"name": "miso",
+	"$schema": "apps/miso/miso.schema.json",
+	"tui": "tabbed",
+	"packageManager": false,
 	"scripts": "./scripts",
-	"shell": "sh",
-	"repo": "mono"
+	"repo": "single"
 }

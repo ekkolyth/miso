@@ -6,59 +6,76 @@ Run `miso init` to set up Miso in your project.
 
 This creates a `miso.json` configuration file in the current directory. Miso will try to assume its own default configuration, but will ask you to confirm during `miso init` to make sure you're both on the same page.
 
-## Choosing Your Repo Type
+### Choosing Your Repo Type
 
-During `miso init`, Miso will ask whether you're setting up a **single project** or a **monorepo**:
+Basic Setup:
 
-```
-? What type of repository is this?
-  ❯ Single project
-    Monorepo
-```
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`{
+      "repo": "single" | "mono" | "turbo" | "nx"
+}`}
+/>
+
+or, for more advanced setups:
+
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    config={`{
+  "repo": {
+    "mode": "single" | "mono" | "turbo" | "nx"
+    }
+}`}
+/>
 
 ### Single Project
 
-The default. Miso works exactly as you'd expect — one `miso.json` at the root, one `scripts/` folder, run commands from anywhere in the project.
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    command={`"repo": "single"`}
+/>
+
+Miso works exactly as you'd expect — one `miso.json` at the root, one `scripts/` folder, run commands from anywhere in the project, and they'll respond the same way npm, bun, pnpm, etc would.
 
 ### Monorepo
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    command={`"repo": "mono"`}
+/>
 
-If you select **Monorepo**, Miso will ask for your workspace glob patterns:
+During Init, If you select **Monorepo**, miso will ask for your workspace glob patterns. This defaults to `apps/*, packages/*` which covers the most common monorepo layouts. Miso will add a `workspaces` field to your root `package.json` using the patterns you provide, and create the base workspace directories for you (if they don't already exist)
 
-```
-? Workspace patterns
-  apps/*, packages/*
-```
 
-This defaults to `apps/*, packages/*` which covers the most common monorepo layouts. Miso will:
+### Simple Mode
+<Terminal
+    copy={false}
+    className="mt-4 border border-neutral-700 rounded-sm"
+    title="miso.json"
+    command={`"packageManager": false`}
+/>
 
-- Add a `workspaces` field to your root `package.json` using the patterns you provide
-- Create the base workspace directories (e.g. `apps/`, `packages/`)
-- Write `"repo": "mono"` to your `miso.json`
+If `miso init` doesn't detect an existing JavaScript project (no `package.json` or lockfile), it offers an additional option:
 
-Your `package.json` will look like:
+```md
+miso could not detect an existing javascript project.
 
-```json
-{
-  "name": "my-monorepo",
-  "packageManager": "pnpm",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ]
-}
-```
-
-And your `miso.json`:
-
-```json
-{
-  "$schema": "https://misojs.dev/miso.schema.json",
-  "scripts": "./scripts",
-  "repo": "mono"
-}
+  ❯ Create new project
+    Run in simple mode (scripts only, no package manager)
 ```
 
-## Running Commands from Anywhere
+Selecting `Run in simple mode` lets you use miso's script runner, TUI, env validation, and task orchestration in any project — Go, Python, Rust, or anything else, without passing through commands to a package manager like bun, pnpm, etc.
+
+See [Simple Mode](/working-with-miso/simple-mode) for the more details.
+
+### Running Commands from Anywhere
 
 You can run Miso commands from any subdirectory within your project. Miso walks up the directory tree to find your `miso.json` at the root.
 
@@ -67,7 +84,7 @@ my-monorepo/
 ├── miso.json
 ├── package.json
 ├── apps/
-│   ├── onboarding/
+│   ├── api/
 │   │   └── scripts/
 │   │       └── build.sh
 │   └── web/
@@ -81,12 +98,12 @@ my-monorepo/
 
 ### Running Workspace Scripts from Root
 
-In a monorepo, use `workspace:script` syntax to target a specific workspace's scripts folder from anywhere:
+In a monorepo, use `@workspace/script` syntax to target a specific workspace's scripts folder from anywhere:
 
 ```bash
-miso onboarding:build    # runs apps/onboarding/scripts/build.sh in apps/onboarding/
-miso web:build           # runs apps/web/scripts/build.sh in apps/web/
-miso ui:build            # runs packages/ui/scripts/build.sh in packages/ui/
+miso @api/build           # runs apps/api/scripts/build.sh in apps/onboarding/
+miso @web/build           # runs apps/web/scripts/build.sh in apps/web/
+miso @ui/build            # runs packages/ui/scripts/build.sh in packages/ui/
 ```
 
 ### Automatic Scoping from Inside a Workspace
@@ -94,12 +111,6 @@ miso ui:build            # runs packages/ui/scripts/build.sh in packages/ui/
 When you're already inside a workspace directory, Miso automatically scopes to that workspace — no special syntax needed:
 
 ```bash
-cd apps/onboarding
-miso build    # automatically resolves to apps/onboarding/scripts/build.sh
+cd apps/web
+miso build    # automatically resolves to apps/web/scripts/build.sh
 ```
-
-This matches the same behaviour you'd expect from tools like Turborepo's automatic package scoping.
-
-### Root-level Commands Still Work
-
-Running a plain `miso build` from the project root resolves against the root `scripts/` folder as normal — workspace scoping only activates when you're inside a known workspace directory.

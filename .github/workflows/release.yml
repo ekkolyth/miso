@@ -7,7 +7,7 @@ on:
 jobs:
     version:
         runs-on: ubuntu-latest
-        if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+        if: "!contains(github.event.head_commit.message, '[skip ci]')"
         outputs:
             version: ${{ steps.version.outputs.version }}
             text: ${{ steps.source.outputs.text }}
@@ -53,7 +53,7 @@ jobs:
               run: ./scripts/release/version/commit.sh
 
             - name: Setup Go
-              uses: actions/setup-go@v5
+              uses: actions/setup-go@v6
               with:
                   go-version-file: apps/miso/go.mod
 
@@ -61,7 +61,7 @@ jobs:
               run: ./scripts/release/build/npm.sh
 
             - name: Upload npm dist artifact
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v5
               with:
                   name: npm-dist
                   path: dist/
@@ -81,7 +81,7 @@ jobs:
                   token: ${{ secrets.RELEASE_TOKEN }}
 
             - name: Download npm dist artifact
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v5
               with:
                   name: npm-dist
                   path: dist
@@ -131,7 +131,7 @@ jobs:
                   token: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Download npm dist artifact
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v5
               with:
                   name: npm-dist
                   path: dist

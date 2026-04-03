@@ -1,0 +1,73 @@
+---
+title: Terminal UI (TUI)
+description: Run multiple scripts concurrently with a visual terminal interface
+---
+
+# Terminal UI (TUI)
+
+Miso includes a built-in terminal UI for running multiple scripts concurrently.
+
+## Two Modes
+
+### Tabbed Mode
+
+[Tabbed Mode Docs →](/tui/tabbed-mode)
+
+A sidebar lists your workspaces/scripts with status indicators. Select one to see its full log output. Navigate with arrow keys, restart individual processes with `r`.
+
+### Merged Mode
+
+[Merged Mode Docs →](/tui/merged-mode)
+
+All logs stream together in one view with color-coded labels per workspace. A filter bar lets you toggle which workspaces are visible.
+
+## When to Use
+
+- **Monorepo development** — run `dev` scripts across all workspaces simultaneously
+- **Single repo with multiple services** — run your app server and a backend like Convex side by side
+- **Build ordering** — run builds in dependency order across workspaces with `dependsOn`
+- **Turbo/Nx delegation** — use miso's TUI for development while letting Turbo or Nx handle build orchestration
+
+## Quick Start
+
+Add `"tui": "tabbed"` or `"merged"` to your `miso.json`:
+
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"tui": "tabbed"
+}`}
+/>
+
+Then run any script from the project root:
+
+```bash
+miso dev
+```
+
+Miso discovers all matching scripts and launches the TUI.
+
+## Dependency Ordering
+
+For build commands that need to run in order, configure `dependsOn` in the `repo` field:
+
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"tui": "tabbed",
+\t"repo": {
+\t\t"mode": "mono",
+\t\t"tasks": {
+\t\t\t"build": {
+\t\t\t\t"dependsOn": ["^build"]
+\t\t\t}
+\t\t}
+\t}
+}`}
+/>
+
+The `^` prefix means "before building this workspace, build everything it depends on first." For example, if `apps/web` lists `packages/ui` as a dependency in its `package.json`, then `^build` ensures `packages/ui` builds before `apps/web` starts. Miso walks the dependency graph automatically — you just declare the rule once.

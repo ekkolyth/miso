@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/turbo"
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
@@ -40,8 +41,16 @@ func List(cfg config.Config, root string, styles ui.Styles, logger *log.Logger) 
 	hasFolderScripts := len(folderScripts) > 0
 	hasPkgScripts := len(pkgScripts) > 0
 
-	if !hasFolderScripts && !hasPkgScripts {
-		logger.Info("no scripts found in scripts folder or package.json")
+	hasTurboTasks := false
+	if cfg.IsDelegated() && cfg.RepoMode() == "turbo" {
+		turboCfg, turboErr := turbo.LoadConfig(root)
+		if turboErr == nil && len(turboCfg.Tasks) > 0 {
+			hasTurboTasks = true
+		}
+	}
+
+	if !hasFolderScripts && !hasPkgScripts && !hasTurboTasks {
+		logger.Info("no scripts found in scripts folder, package.json, or turbo.json")
 		return nil
 	}
 
@@ -75,6 +84,34 @@ func List(cfg config.Config, root string, styles ui.Styles, logger *log.Logger) 
 		sort.Strings(pkgNames)
 		for _, name := range pkgNames {
 			fmt.Fprintf(os.Stdout, "  %s: %s\n", name, pkgScripts[name])
+		}
+	}
+
+	// show turbo.json tasks (only in turbo mode, deduplicated)
+	if cfg.IsDelegated() && cfg.RepoMode() == "turbo" {
+		turboCfg, turboErr := turbo.LoadConfig(root)
+		if turboErr == nil && len(turboCfg.Tasks) > 0 {
+			existingNames := make(map[string]bool)
+			for name := range folderScripts {
+				existingNames[name] = true
+			}
+			for name := range pkgScripts {
+				existingNames[name] = true
+			}
+
+			var turboNames []string
+			for _, name := range turboCfg.TaskNames() {
+				if !existingNames[name] {
+					turboNames = append(turboNames, name)
+				}
+			}
+
+			if len(turboNames) > 0 {
+				fmt.Fprintf(os.Stdout, "\nturbo.json:\n")
+				for _, name := range turboNames {
+					fmt.Fprintf(os.Stdout, "  %s\n", name)
+				}
+			}
 		}
 	}
 
@@ -115,6 +152,18 @@ func ListNames(root string, cfg config.Config) ([]string, error) {
 		if !seen[name] {
 			seen[name] = true
 			names = append(names, name)
+		}
+	}
+
+	if cfg.IsDelegated() && cfg.RepoMode() == "turbo" {
+		turboCfg, turboErr := turbo.LoadConfig(root)
+		if turboErr == nil {
+			for _, name := range turboCfg.TaskNames() {
+				if !seen[name] {
+					seen[name] = true
+					names = append(names, name)
+				}
+			}
 		}
 	}
 

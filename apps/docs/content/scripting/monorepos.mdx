@@ -1,35 +1,35 @@
 # Monorepos
 
-Miso has first-class support for monorepos. When configured, you can run workspace-scoped scripts using a clean `workspace:script` syntax, and Miso will automatically scope commands based on your current directory.
+Miso has first-class support for monorepos. When configured, you can run workspace-scoped scripts using the `@workspace/script` syntax, and Miso will automatically scope commands based on your current directory.
 
 ## Setup
 
-During `miso init`, select **Monorepo** when prompted for your repository type. Miso will ask for your workspace glob patterns and scaffold everything for you.
-
-If you're adding monorepo support to an existing project, make two changes:
-
 **1. Add `"repo": "mono"` to `miso.json`:**
 
-```json
-{
-  "$schema": "https://misojs.dev/miso.schema.json",
-  "scripts": "./scripts",
-  "repo": "mono"
-}
-```
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"repo": "mono"
+}`}
+/>
 
 **2. Add a `workspaces` field to your root `package.json`:**
 
-```json
-{
-  "name": "my-monorepo",
-  "packageManager": "pnpm",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ]
-}
-```
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="package.json"
+    config={`{
+\t"name": "my-monorepo",
+\t"packageManager": "pnpm",
+\t"workspaces": [
+\t\t"apps/*",
+\t\t"packages/*"
+\t]
+}`}
+/>
 
 The `workspaces` field uses standard glob patterns and is compatible with npm, yarn, pnpm, and bun — no extra tooling required.
 
@@ -46,7 +46,7 @@ my-monorepo/
 ├── scripts/               ← root-level scripts
 │   └── build.sh
 ├── apps/
-│   ├── onboarding/
+│   ├── api/
 │   │   └── scripts/       ← workspace-scoped scripts
 │   │       ├── build.sh
 │   │       └── deploy.sh
@@ -62,59 +62,54 @@ my-monorepo/
 
 ## Running Workspace Scripts
 
-### From the Root — `workspace:script` Syntax
+### From the Root — `@workspace/script` Syntax
 
-Target any workspace's scripts from the project root using the `workspace:script` syntax:
+Target any workspace's scripts from the project root using the `@workspace/script` syntax:
 
 ```bash
-miso onboarding:build    # runs apps/onboarding/scripts/build.sh
-miso web:dev             # runs apps/web/scripts/dev.sh
-miso ui:build            # runs packages/ui/scripts/build.sh
+miso @api/build    # runs apps/api/scripts/build.sh
+miso @web/dev             # runs apps/web/scripts/dev.sh
+miso @ui/build            # runs packages/ui/scripts/build.sh
 ```
 
-The workspace name is the final directory segment of the workspace path. For example, `apps/onboarding` → `onboarding`, `packages/ui` → `ui`.
+The workspace identifier is the part between `@` and the final `/`. By default this is the basename of the workspace directory — for example, `apps/api` → `api`, `packages/ui` → `ui`.
 
 ### From Inside a Workspace — Automatic Scoping
 
 When you're already inside a workspace directory, Miso automatically scopes to that workspace. No special syntax needed:
 
 ```bash
-cd apps/onboarding
-miso build    # resolves to apps/onboarding/scripts/build.sh
-miso deploy   # resolves to apps/onboarding/scripts/deploy.sh
+cd apps/api
+miso build    # resolves to apps/api/scripts/build.sh
+miso deploy   # resolves to apps/api/scripts/deploy.sh
 ```
 
 This matches the same behaviour you'd expect from tools like Turborepo's automatic package scoping.
 
-### Root Scripts Still Work
+## How Workspace Matching Works
 
-Running a plain command from the project root resolves against the root `scripts/` folder as normal. Workspace scoping only activates when you're inside a known workspace, or when you use the `workspace:script` syntax.
+The identifier in `@identifier/script` is matched against every discovered workspace using three strategies, checked in order:
 
-```bash
-# from project root
-miso build    # runs root scripts/build.sh
-```
+1. **Basename** — the final segment of the workspace directory path (e.g. `api` matches `packages/api`)
+2. **Relative path from root** — the full path from the repo root (e.g. `packages/api` matches `packages/api`)
+3. **`package.json` name** — the `name` field in the workspace's `package.json` (e.g. `@myorg/api`)
 
-## Working Directory
-
-A key benefit of workspace scripts is that the working directory is always set to the workspace root — not the project root, and not wherever you typed the command. This means relative paths in your scripts work exactly as expected:
+So for a workspace at `packages/api` with `"name": "@myorg/api"` in its `package.json`, all three of the following are equivalent:
 
 ```bash
-# apps/onboarding/scripts/build.sh
-# cwd is apps/onboarding/
-
-bun run build            # uses apps/onboarding/package.json
-cp -r dist/ ../../shared/
+miso @api/build            # matched by basename
+miso @packages/api/build   # matched by relative path
+miso @myorg/api/build      # matched by package.json name
 ```
 
-## Resolution Order in Mono Mode
+If the identifier matches more than one workspace, Miso exits with an error listing the conflicting paths so you can use a more specific form:
 
-When `"repo": "mono"` is set, workspace script resolution is inserted before the root scripts folder:
+```
+workspace "api" is ambiguous — matches multiple workspaces: apps/api, packages/api (use a more specific identifier)
+```
 
-1. Built-in commands
-2. Workspace script (explicit `workspace:script` or CWD-based automatic scoping)
-3. Root scripts folder
-4. Root `package.json` scripts
-5. Passthrough to package manager
+If no workspace matches, Miso exits with an error listing the available workspace names:
 
-If a workspace script is not found, Miso falls through to the root scripts folder and `package.json` as normal — nothing breaks.
+```
+workspace "typo" not found (available: api, web, ui)
+```

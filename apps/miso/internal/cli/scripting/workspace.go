@@ -8,9 +8,9 @@ import (
 )
 
 // ResolveWorkspaceScript resolves a script by name within a specific workspace.
-// workspaceName is the short name (e.g. "onboarding"), scriptName is the script
-// to find (e.g. "build"). Returns the resolved script and the workspace directory
-// that should be used as the working directory when executing.
+// workspaceName is matched against workspace paths by basename, relative path,
+// or package.json name field. scriptName is the script to find.
+// Returns the resolved script and the workspace directory as the working directory.
 func ResolveWorkspaceScript(workspaceName string, scriptName string, root string, cfg config.Config) (ResolvedScript, string, error) {
 	// load workspaces from package.json
 	workspaces, err := config.LoadWorkspaces(root)
@@ -22,10 +22,10 @@ func ResolveWorkspaceScript(workspaceName string, scriptName string, root string
 		return ResolvedScript{}, "", fmt.Errorf("no workspaces found in package.json — is this a monorepo?")
 	}
 
-	// find the workspace directory by short name
-	workspaceDir, ok := config.FindWorkspace(workspaceName, workspaces)
-	if !ok {
-		return ResolvedScript{}, "", fmt.Errorf("workspace %q not found (available: %s)", workspaceName, joinWorkspaceNames(workspaces))
+	// find the workspace directory — matches by basename, relative path, or package.json name
+	workspaceDir, err := config.FindWorkspace(workspaceName, workspaces, root)
+	if err != nil {
+		return ResolvedScript{}, "", err
 	}
 
 	// determine the scripts folder for this workspace
@@ -39,36 +39,46 @@ func ResolveWorkspaceScript(workspaceName string, scriptName string, root string
 		scriptsPath = filepath.Join(workspaceDir, scriptsPath)
 	}
 
-	// discover scripts in the workspace scripts folder
+	// 1. check workspace scripts/ folder
 	discovered, err := DiscoverScripts(scriptsPath)
 	if err != nil {
 		return ResolvedScript{}, "", fmt.Errorf("discover workspace scripts: %w", err)
 	}
 
 	scripts, ok := discovered[scriptName]
-	if !ok {
-		return ResolvedScript{Source: ScriptSourceNone}, workspaceDir, nil
-	}
-
-	if len(scripts) > 1 {
-		var paths []string
-		for _, s := range scripts {
-			paths = append(paths, s.RelativePath)
+	if ok {
+		if len(scripts) > 1 {
+			var paths []string
+			for _, s := range scripts {
+				paths = append(paths, s.RelativePath)
+			}
+			return ResolvedScript{}, "", fmt.Errorf("multiple scripts for %q exist in workspace %q: %s",
+				scriptName, workspaceName, joinStrings(paths))
 		}
-		return ResolvedScript{}, "", fmt.Errorf("multiple scripts for %q exist in workspace %q: %s",
-			scriptName, workspaceName, joinStrings(paths))
+		return ResolvedScript{
+			Source: ScriptSourceFolder,
+			Path:   scripts[0].Path,
+		}, workspaceDir, nil
 	}
 
-	return ResolvedScript{
-		Source: ScriptSourceFolder,
-		Path:   scripts[0].Path,
-	}, workspaceDir, nil
+	// 2. fall back to workspace package.json scripts
+	pkgScripts, err := ReadPackageJSONScripts(workspaceDir)
+	if err != nil {
+		return ResolvedScript{}, "", fmt.Errorf("read workspace package.json scripts: %w", err)
+	}
+	if command, ok := pkgScripts[scriptName]; ok {
+		return ResolvedScript{
+			Source: ScriptSourcePackageJSON,
+			Path:   command,
+		}, workspaceDir, nil
+	}
+
+	// not found in either
+	return ResolvedScript{Source: ScriptSourceNone}, workspaceDir, nil
 }
 
 // WorkspaceFromCWD checks whether the current working directory is inside a
-// known workspace and returns the workspace directory if so. This enables
-// automatic scoping: running "miso build" from inside apps/onboarding will
-// resolve against that workspace's scripts folder.
+// known workspace and returns the workspace directory if so.
 func WorkspaceFromCWD(cwd string, workspaces []string) (string, bool) {
 	for _, ws := range workspaces {
 		absWs, err := filepath.Abs(ws)
@@ -79,26 +89,15 @@ func WorkspaceFromCWD(cwd string, workspaces []string) (string, bool) {
 		if err != nil {
 			continue
 		}
-		// check if cwd is the workspace dir or nested inside it
 		rel, err := filepath.Rel(absWs, absCwd)
 		if err != nil {
 			continue
 		}
-		// rel will not start with ".." if cwd is inside ws
 		if rel == "." || (len(rel) > 0 && rel[0] != '.') {
 			return absWs, true
 		}
 	}
 	return "", false
-}
-
-// joinWorkspaceNames returns a comma-separated list of workspace short names.
-func joinWorkspaceNames(workspaces []string) string {
-	names := make([]string, 0, len(workspaces))
-	for _, ws := range workspaces {
-		names = append(names, filepath.Base(ws))
-	}
-	return joinStrings(names)
 }
 
 // joinStrings joins a slice of strings with ", ".

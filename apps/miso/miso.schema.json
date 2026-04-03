@@ -9,14 +9,10 @@
 			"type": "string",
 			"description": "Path or URL to this JSON schema for IDE support"
 		},
-		"package-manager": {
-			"type": "string",
-			"enum": ["bun", "npm", "pnpm", "yarn"],
-			"description": "The package manager to use"
-		},
-		"name": {
-			"type": "string",
-			"description": "Project name"
+		"packageManager": {
+			"type": "boolean",
+			"default": true,
+			"description": "Enable or disable package manager features. When false, miso operates as a pure script runner — no install/add/remove commands, no package.json script discovery. Default: true."
 		},
 		"scripts": {
 			"type": "string",
@@ -37,10 +33,74 @@
 			"description": "Default flags for package manager commands (add, remove, install, dev)"
 		},
 		"repo": {
-			"type": "string",
-			"enum": ["single", "mono"],
-			"default": "single",
-			"description": "Repository type. 'single' (default) for a standard project, 'mono' to enable monorepo workspace script execution. Requires a 'workspaces' field in your root package.json when set to 'mono'."
+			"oneOf": [
+				{
+					"type": "string",
+					"enum": ["single", "mono", "turbo", "nx"],
+					"description": "Repository type. 'single' for standard projects, 'mono' for miso-orchestrated monorepo, 'turbo' to delegate to Turborepo, 'nx' to delegate to Nx."
+				},
+				{
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": ["single", "mono", "turbo", "nx"],
+							"description": "Repository mode. Defaults to 'single' if omitted."
+						},
+						"tasks": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "object",
+								"properties": {
+									"dependsOn": {
+										"type": "array",
+										"items": { "type": "string" },
+										"description": "Task dependencies. Use '^taskName' prefix to run upstream workspace dependencies first."
+									},
+									"concurrent": {
+										"type": "array",
+										"items": { "type": "string" },
+										"description": "Additional tasks to discover and run in parallel alongside the main task."
+									}
+								},
+								"additionalProperties": false
+							},
+							"description": "Per-task configuration. Available in all repo modes. Defines dependency ordering (dependsOn) and companion tasks (concurrent). In turbo/nx mode, tasks listed here use miso's direct orchestration instead of delegation."
+						}
+				},
+				"additionalProperties": false
+			}
+		],
+		"default": "single",
+			"description": "Repository type and optional task configuration. String shorthand or object with mode and tasks."
+		},
+		"tui": {
+			"oneOf": [
+				{
+					"type": "string",
+					"enum": ["off", "tabbed", "merged"],
+					"description": "TUI mode shorthand. 'off' disables TUI (default), 'tabbed' shows panes in separate tabs, 'merged' shows all output in a single stream."
+				},
+				{
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": ["off", "tabbed", "merged"],
+							"description": "TUI display mode"
+						},
+						"cleanExit": {
+							"type": "boolean",
+							"default": false,
+							"description": "When true, suppress log dump on TUI exit. By default, all buffered output is printed to stdout when the TUI exits."
+						}
+					},
+					"required": ["mode"],
+					"additionalProperties": false
+				}
+			],
+			"default": "off",
+			"description": "Multi-terminal UI mode. String shorthand or object with mode and cleanExit option."
 		},
 		"env": {
 			"oneOf": [
@@ -61,7 +121,6 @@
 			"description": "Environment file path(s) and variable validation rules"
 		}
 	},
-	"required": ["package-manager"],
 	"additionalProperties": false,
 	"$defs": {
 		"envEntry": {

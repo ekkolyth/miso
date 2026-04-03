@@ -15,5 +15,5 @@ if git diff --staged --quiet; then
     exit 0
 fi
 
-git commit -m "chore: bump version to $VERSION"
+git commit -m "chore: bump version to $VERSION [skip ci]"
 git push

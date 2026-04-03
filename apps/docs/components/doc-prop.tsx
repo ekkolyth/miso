@@ -23,9 +23,9 @@ export function DocProp({ prop, className }: DocPropProps) {
     return (
         <span
             id={prop}
-            className={`mt-8 group inline-flex items-center gap-1.5 ${className ?? ''}`}
+            className={`mt-8 group inline-flex items-center gap-2 ${className ?? ''}`}
         >
-            <code className='text-base px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-200'>
+            <code className='text-sm px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-200'>
                 {prop}
             </code>
             <button
