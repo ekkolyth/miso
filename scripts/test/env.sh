@@ -69,6 +69,31 @@ run_fail() {
   fi
 }
 
+# run_fail_all <description> <expected_substring>...
+# expects miso env to exit non-zero and output to contain every given substring.
+# error output is colorized, so a reset code can sit between two words that read
+# as one phrase on screen — pass each side of the escape as its own substring.
+run_fail_all() {
+  desc="$1"
+  shift
+  out=$( cd "$FIXTURE" && "$BINARY" env 2>&1 ) && rc=0 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    fail "$desc  (expected failure, got success)"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  for expected in "$@"; do
+    if ! echo "$out" | grep -qF "$expected"; then
+      fail "$desc  (expected substring: '$expected')"
+      printf "     got: %s\n" "$out"
+      FAIL=$((FAIL + 1))
+      return
+    fi
+  done
+  pass "$desc"
+  PASS=$((PASS + 1))
+}
+
 # ── write a temporary miso.json into the fixture dir and clean up after ─────────
 write_config() { printf '%s' "$1" > "$FIXTURE/miso.json"; }
 restore_config() {
@@ -104,14 +129,14 @@ write_config '{
   "env":[{"label":"t","scope":"global","path":".env.bad","variables":{"PORT":"port"}}]
 }'
 printf 'PORT=banana\n' > "$FIXTURE/.env.bad"
-run_fail "port: rejects non-numeric value" "invalid port"
+run_fail "port: rejects non-numeric value" "expected port"
 
 write_config '{
   "package-manager":"bun","name":"env-test","scripts":"./scripts",
   "env":[{"label":"t","scope":"global","path":".env.bad","variables":{"N":"int"}}]
 }'
 printf 'N=3.14\n' > "$FIXTURE/.env.bad"
-run_fail "int: rejects float string" "invalid integer"
+run_fail "int: rejects float string" "expected integer"
 
 write_config '{
   "package-manager":"bun","name":"env-test","scripts":"./scripts",
@@ -125,7 +150,7 @@ write_config '{
   "env":[{"label":"t","scope":"global","path":".env.bad","variables":{"U":"url"}}]
 }'
 printf 'U=not-a-url\n' > "$FIXTURE/.env.bad"
-run_fail "url: rejects non-url string" "invalid url"
+run_fail "url: rejects non-url string" "expected url"
 
 write_config '{
   "package-manager":"bun","name":"env-test","scripts":"./scripts",
@@ -201,7 +226,7 @@ write_config '{
   "env":[{"label":"t","scope":"global","path":".env.req","variables":{"MISSING":"string"}}]
 }'
 printf '' > "$FIXTURE/.env.req"
-run_fail "required: missing variable is an error" "missing required variable: MISSING"
+run_fail_all "required: missing variable is an error" "MISSING:" "missing required variable"
 
 write_config '{
   "package-manager":"bun","name":"env-test","scripts":"./scripts",
@@ -229,7 +254,7 @@ write_config '{
   "env":[{"label":"t","scope":"global","path":".env.req","required":["NEED_THIS"],"variables":{"NEED_THIS":"string","OPTIONAL_EXTRA":"string"}}]
 }'
 printf 'OPTIONAL_EXTRA=here\n' > "$FIXTURE/.env.req"
-run_fail "required=[keys]: listed key missing is an error" "missing required variable: NEED_THIS"
+run_fail_all "required=[keys]: listed key missing is an error" "NEED_THIS:" "missing required variable"
 
 rm -f "$FIXTURE/.env.req"
 
@@ -256,7 +281,7 @@ write_config '{
     {"label":"worker","scope":"global","path":".env.b","variables":{"MISSING":"string"}}
   ]
 }'
-run_fail "multi-entry: error includes label of failing entry" "worker: missing required variable: MISSING"
+run_fail_all "multi-entry: error includes label of failing entry" "worker" "MISSING:" "missing required variable"
 
 rm -f "$FIXTURE/.env.a" "$FIXTURE/.env.b"
 
