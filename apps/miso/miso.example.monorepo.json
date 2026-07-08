@@ -4,7 +4,6 @@
 	"shell": "bash",
 	"tui": "tabbed",
 	"repo": {
-		"mode": "mono",
 		"tasks": {
 			"build": { "dependsOn": ["^build"] },
 			"dev": { "concurrent": ["services", "db:studio"] }

@@ -200,6 +200,7 @@ func TestRepoMode(t *testing.T) {
 		repo string
 		want string
 	}{
+		// direct-construction passthrough; Load rejects these values
 		{"single", "single"},
 		{"mono", "mono"},
 		{"turbo", "turbo"},
