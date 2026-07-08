@@ -15,6 +15,7 @@ title: Types & VarConfig
     config={`{
 \t"env": [
 \t\t{
+\t\t\t"scope": "web",
 \t\t\t"label": "web",
 \t\t\t"path": "apps/web/.env.local",
 \t\t\t"variables": {
@@ -132,6 +133,7 @@ Unknown `VarConfig` keys cause an error (strict mode).
     config={`{
 \t"env": [
 \t\t{
+\t\t\t"scope": "web",
 \t\t\t"label": "web",
 \t\t\t"path": "apps/web/.env.local",
 \t\t\t"variables": {
@@ -146,6 +148,7 @@ Unknown `VarConfig` keys cause an error (strict mode).
 \t\t\t}
 \t\t},
 \t\t{
+\t\t\t"scope": "api",
 \t\t\t"label": "api",
 \t\t\t"path": "apps/api/.env",
 \t\t\t"required": "all",

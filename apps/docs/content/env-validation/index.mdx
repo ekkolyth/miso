@@ -25,7 +25,7 @@ miso build --env
 
 ## Quick Start
 
-1. Add an `env` array to `miso.json`, with one entry per app or `.env` file:
+1. Add an `env` array to `miso.json`, with one entry per app or `.env` file. Each root entry needs a `scope` — a target name or `"global"`:
 
 <Terminal
     copy={false}
@@ -34,6 +34,7 @@ miso build --env
     config={`{
 \t"env": [
 \t\t{
+\t\t\t"scope": "web",
 \t\t\t"label": "web",
 \t\t\t"path": "apps/web/.env.local",
 \t\t\t"variables": {
@@ -42,6 +43,7 @@ miso build --env
 \t\t\t}
 \t\t},
 \t\t{
+\t\t\t"scope": "api",
 \t\t\t"label": "api",
 \t\t\t"path": "apps/api/.env",
 \t\t\t"variables": {
@@ -80,7 +82,13 @@ Even without an `env` block in `miso.json`, Miso automatically loads a `.env` fi
 
 Variables already set in the shell environment take precedence over values in the file — Miso never overrides a variable that is already present in the process environment.
 
-In a monorepo, auto-discovery searches the workspace root rather than the project root when you run a workspace-scoped script.
+In a monorepo, auto-discovery searches that member's own directory rather than the project root when you run a workspace-scoped script.
+
+## Scope & Resolution
+
+Once you add an `env` block, each root entry needs a `scope` — a target name or `"global"` — so miso knows which command it applies to. Resolving the env for a run target layers global entries, then entries scoped to that target, then (for a member target) the member's own `<member>/miso.json` entries, later winning on key conflict. The result still yields to anything already set in your shell.
+
+`miso env` enforces `scope` strictly and fails on a missing one; loading env into a running script is permissive and just skips entries that don't match. See [Configure](/env-validation/config#scope) for the full breakdown.
 
 ## Next Steps
 

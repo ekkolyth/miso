@@ -16,6 +16,7 @@
 	},
 	"env": [
 		{
+			"scope": "web",
 			"label": "web",
 			"path": "apps/web/.env.local",
 			"variables": {
@@ -32,6 +33,7 @@
 			}
 		},
 		{
+			"scope": "api",
 			"label": "api",
 			"path": "apps/api/.env",
 			"required": "all",

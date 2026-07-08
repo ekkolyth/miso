@@ -36,16 +36,16 @@
 			"oneOf": [
 				{
 					"type": "string",
-					"enum": ["single", "mono", "turbo", "nx"],
-					"description": "Repository type. 'single' for standard projects, 'mono' for miso-orchestrated monorepo, 'turbo' to delegate to Turborepo, 'nx' to delegate to Nx."
+					"enum": ["miso", "turbo", "nx"],
+					"description": "Orchestration mode. 'miso' (default) discovers workspace members from package.json workspaces or pnpm-workspace.yaml and fans out task execution; 'turbo' delegates to Turborepo; 'nx' delegates to Nx. Workspace membership is detected independently of this setting."
 				},
 				{
 					"type": "object",
 					"properties": {
 						"mode": {
 							"type": "string",
-							"enum": ["single", "mono", "turbo", "nx"],
-							"description": "Repository mode. Defaults to 'single' if omitted."
+							"enum": ["miso", "turbo", "nx"],
+							"description": "Orchestration mode. Defaults to 'miso' if omitted."
 						},
 						"tasks": {
 							"type": "object",
@@ -71,8 +71,8 @@
 				"additionalProperties": false
 			}
 		],
-		"default": "single",
-			"description": "Repository type and optional task configuration. String shorthand or object with mode and tasks."
+		"default": "miso",
+			"description": "Orchestration mode and optional task configuration. String shorthand or object with mode and tasks. Workspace membership is auto-detected from package.json workspaces or pnpm-workspace.yaml, independent of this setting."
 		},
 		"tui": {
 			"oneOf": [
@@ -127,6 +127,10 @@
 			"type": "object",
 			"description": "A single env file and its validation rules",
 			"properties": {
+				"scope": {
+					"type": "string",
+					"description": "Target name this entry applies to, or \"global\". Required on root config entries; member configs scope by file location."
+				},
 				"label": {
 					"type": "string",
 					"description": "Human-readable name for this env entry (e.g. 'web', 'api'). Used in log and error output."

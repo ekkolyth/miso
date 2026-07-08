@@ -13,6 +13,7 @@ Configure the `env` key in `miso.json` as an array of entries — one per app or
     config={`{
   "env": [
     {
+      "scope": "web",
       "label": "web",
       "path": "apps/web/.env.local",
       "required": "all",
@@ -27,6 +28,7 @@ Configure the `env` key in `miso.json` as an array of entries — one per app or
       }
     },
     {
+      "scope": "api",
       "label": "api",
       "path": "apps/api/.env",
       "required": "all",
@@ -42,6 +44,37 @@ Configure the `env` key in `miso.json` as an array of entries — one per app or
 />
 
 Miso validates each entry in order, stopping at the first failure and including the entry's label in the error message.
+
+### `scope`
+
+Which target this entry applies to: a workspace member name, a configured task/script name, or the reserved value `"global"`.
+
+**Required on root `miso.json` entries.** `miso env` rejects any root entry with no `scope`:
+
+```
+env entry ".env.local" has no scope (set a target name or "global")
+```
+
+Member `miso.json` files (nested at `<member>/miso.json`) don't set `scope` at all — they scope by file location. Every entry inside a member's own config applies only to that member.
+
+#### Resolution order
+
+When miso resolves the env for a run target `T`, it layers, later winning on key conflict:
+
+1. Root entries scoped to `"global"`
+2. Root entries scoped to `T` (or, for a member target, to the member's directory basename)
+3. The member's own `<member>/miso.json` entries, if `T` is a member
+
+The merged result is gap-filled under the ambient shell environment — a variable already set in your shell is never overridden, at any layer.
+
+`"global"` is reserved: it can't be used as a workspace, task, or script name, so it never collides with a real target.
+
+#### Validation vs. injection
+
+`scope` is enforced differently depending on what's using it:
+
+- **Validation** (`miso env`, `--env`) is strict — every root entry must declare a `scope`, or the command fails. It also warns if a `scope` doesn't match any discovered workspace member.
+- **Injection** (loading `.env` values into a running script) is permissive — an entry whose `scope` doesn't match the current target is silently skipped, no error. This lets a root `miso.json` carry entries for members that aren't relevant to the command you're currently running.
 
 ### `label`
 
@@ -132,6 +165,7 @@ If you only have one `.env` file, you still use an array — just with a single 
     config={`{
   "env": [
     {
+      "scope": "global",
       "path": ".env.local",
       "variables": {
         "PORT": "port",

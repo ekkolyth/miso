@@ -10,6 +10,7 @@
 		}
 	},
 	"env": {
+		"scope": "global",
 		"path": ".env.local",
 		"variables": {
 			"PORT": "port",

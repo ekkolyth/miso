@@ -1,21 +1,10 @@
 # Monorepos
 
-Miso has first-class support for monorepos. When configured, you can run workspace-scoped scripts using the `@workspace/script` syntax, and Miso will automatically scope commands based on your current directory.
+Miso has first-class support for monorepos. Workspace membership is auto-detected — independent of the `repo` setting — from a `pnpm-workspace.yaml` (checked first) or a `workspaces` field in your root `package.json`. When members are found, you can run workspace-scoped scripts using the `@workspace/script` syntax, and Miso will automatically scope commands based on your current directory.
 
 ## Setup
 
-**1. Add `"repo": "mono"` to `miso.json`:**
-
-<Terminal
-    copy={false}
-    className="mt-4"
-    title="miso.json"
-    config={`{
-\t"repo": "mono"
-}`}
-/>
-
-**2. Add a `workspaces` field to your root `package.json`:**
+**1. Add a `workspaces` field to your root `package.json`:**
 
 <Terminal
     copy={false}
@@ -32,6 +21,19 @@ Miso has first-class support for monorepos. When configured, you can run workspa
 />
 
 The `workspaces` field uses standard glob patterns and is compatible with npm, yarn, pnpm, and bun — no extra tooling required.
+
+Alternatively, a `pnpm-workspace.yaml` with a `packages:` list works the same way and takes priority when both are present:
+
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="pnpm-workspace.yaml"
+    config={`packages:
+\t- "apps/*"
+\t- "packages/*"`}
+/>
+
+**2. Leave `repo` unset (or set it to `"miso"`).** Discovery and fan-out happen automatically — no monorepo-specific `repo` mode is required. Set `repo` to `"turbo"` or `"nx"` only if you want to delegate orchestration to one of those tools instead.
 
 ## Workspace Scripts
 
