@@ -67,33 +67,64 @@ func TestResolveTarget_GlobalReserved(t *testing.T) {
 	}
 }
 
-func TestFindWorkspace_ByRelativePath(t *testing.T) {
+func TestResolveTarget_AmbiguousMember(t *testing.T) {
 	root := t.TempDir()
-	got, err := FindWorkspace("apps/web", members(root), root)
+	dupes := []Member{
+		{Name: "one", Dir: filepath.Join(root, "apps", "api")},
+		{Name: "two", Dir: filepath.Join(root, "packages", "api")},
+	}
+	_, err := ResolveTarget("api", dupes, root, config.Config{})
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("expected ambiguous error, got: %v", err)
+	}
+}
+
+func TestFind_ByRelativePath(t *testing.T) {
+	root := t.TempDir()
+	got, err := Find("apps/web", members(root), root)
 	if err != nil {
-		t.Fatalf("FindWorkspace() error: %v", err)
+		t.Fatalf("Find() error: %v", err)
 	}
 	if got.Name != "@org/web" {
 		t.Errorf("got %q, want @org/web", got.Name)
 	}
 }
 
-func TestFindWorkspace_Ambiguous(t *testing.T) {
+func TestFind_Ambiguous(t *testing.T) {
 	root := t.TempDir()
 	dupes := []Member{
 		{Name: "one", Dir: filepath.Join(root, "apps", "api")},
 		{Name: "two", Dir: filepath.Join(root, "packages", "api")},
 	}
-	_, err := FindWorkspace("api", dupes, root)
+	_, err := Find("api", dupes, root)
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Errorf("expected ambiguous error, got: %v", err)
 	}
 }
 
-func TestFindWorkspace_NotFound(t *testing.T) {
+func TestFind_NotFound(t *testing.T) {
 	root := t.TempDir()
-	_, err := FindWorkspace("nope", members(root), root)
+	_, err := Find("nope", members(root), root)
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("expected not-found error, got: %v", err)
+	}
+}
+
+func TestFromCWD_Found(t *testing.T) {
+	root := t.TempDir()
+	got, ok := FromCWD(filepath.Join(root, "apps", "web", "src"), members(root))
+	if !ok {
+		t.Fatal("expected FromCWD to find the containing member")
+	}
+	if got.Name != "@org/web" {
+		t.Errorf("got %q, want @org/web", got.Name)
+	}
+}
+
+func TestFromCWD_NotFound(t *testing.T) {
+	root := t.TempDir()
+	_, ok := FromCWD(filepath.Join(root, "other"), members(root))
+	if ok {
+		t.Error("expected FromCWD to report no containing member")
 	}
 }

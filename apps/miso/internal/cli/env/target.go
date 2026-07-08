@@ -9,9 +9,9 @@ import (
 	"github.com/ekkolyth/miso/internal/workspace"
 )
 
-// BuildTargetEnv resolves the env for a run target: global, then root entries scoped
-// to the target, then member-local (member targets only). Later layers win on key
-// conflict. Result is gap-filled under os.Environ() so the ambient shell wins.
+// order: global, then root entries scoped to the target, then member-local (member
+// targets only). Later layers win on key conflict. Result is gap-filled under
+// os.Environ() so the ambient shell wins.
 func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Target) ([]string, error) {
 	vars := make(map[string]string)
 	loaded := false

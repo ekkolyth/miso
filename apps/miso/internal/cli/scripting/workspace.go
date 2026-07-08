@@ -24,7 +24,7 @@ func ResolveWorkspaceScript(workspaceName string, scriptName string, root string
 		return ResolvedScript{}, "", "", fmt.Errorf("no workspaces found — is this a monorepo?")
 	}
 
-	member, err := workspace.FindWorkspace(workspaceName, members, root)
+	member, err := workspace.Find(workspaceName, members, root)
 	if err != nil {
 		return ResolvedScript{}, "", "", err
 	}

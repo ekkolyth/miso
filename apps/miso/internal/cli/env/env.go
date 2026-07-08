@@ -76,7 +76,10 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 		return nil
 	}
 
-	members, _ := workspace.DiscoverMembers(projectRoot, cfg)
+	members, err := workspace.DiscoverMembers(projectRoot, cfg)
+	if err != nil {
+		return fmt.Errorf("discover members: %w", err)
+	}
 	memberNames := make(map[string]bool, len(members))
 	for _, member := range members {
 		if member.Name == "global" {
@@ -102,6 +105,26 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 				label: entryLabel(entry),
 				errs:  errs,
 			})
+		}
+	}
+
+	// Member-local entries scope by location, not by declared scope field.
+	for _, member := range members {
+		if member.ConfigPath == "" {
+			continue
+		}
+		memberCfg, err := config.Load(member.Dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range memberCfg.Env {
+			errs := runEntry(member.Dir, entry, logger)
+			if len(errs) > 0 {
+				failures = append(failures, entryErrors{
+					label: member.Name + ": " + entryLabel(entry),
+					errs:  errs,
+				})
+			}
 		}
 	}
 

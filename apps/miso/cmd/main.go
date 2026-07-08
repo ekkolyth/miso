@@ -219,7 +219,7 @@ func main() {
 	// script from the current member's scripts folder first.
 	if members, _ := workspace.DiscoverMembers(projectRoot, cfg); len(members) > 0 &&
 		originalWorkDir != projectRoot && parsed.Action == cli.ActionScriptPackageJSON {
-		if member, inWs := workspace.WorkspaceFromCWD(originalWorkDir, members); inWs {
+		if member, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
 			resolved, _, _, resolveErr := scripting.ResolveWorkspaceScript(
 				member.Name, parsed.ScriptName, projectRoot, cfg,
 			)
@@ -256,7 +256,7 @@ func main() {
 		// Only intercept when running from project root (not workspace subdirectory)
 		isRoot := true
 		if members, _ := workspace.DiscoverMembers(projectRoot, cfg); len(members) > 0 {
-			if _, inWs := workspace.WorkspaceFromCWD(originalWorkDir, members); inWs {
+			if _, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
 				isRoot = false
 			}
 		}

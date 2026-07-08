@@ -21,7 +21,7 @@ type Target struct {
 	Dir  string
 }
 
-// ResolveTarget classifies a bare token: member, then configured task, else script.
+// classifies a bare token: member, then configured task, else script.
 // "global" is reserved and never resolves.
 func ResolveTarget(token string, members []Member, root string, cfg config.Config) (Target, error) {
 	if token == "global" {
@@ -49,8 +49,8 @@ func ResolveTarget(token string, members []Member, root string, cfg config.Confi
 	return Target{Kind: TargetScript, Name: token}, nil
 }
 
-// FindWorkspace resolves a member by basename, relative path, or package.json name.
-func FindWorkspace(name string, members []Member, root string) (Member, error) {
+// matches a member by basename, relative path, or package.json name.
+func Find(name string, members []Member, root string) (Member, error) {
 	var matched []Member
 	for _, member := range members {
 		if matchesMember(name, member, root) {
@@ -67,8 +67,8 @@ func FindWorkspace(name string, members []Member, root string) (Member, error) {
 	}
 }
 
-// WorkspaceFromCWD returns the member whose directory contains cwd.
-func WorkspaceFromCWD(cwd string, members []Member) (Member, bool) {
+// the member whose directory contains cwd.
+func FromCWD(cwd string, members []Member) (Member, bool) {
 	absCwd, err := filepath.Abs(cwd)
 	if err != nil {
 		return Member{}, false

@@ -226,6 +226,122 @@ func TestRun_EmptyScopeIsError(t *testing.T) {
 	}
 }
 
+func TestRun_MemberLocalEnvEntry_MissingFileReported(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	memberDir := filepath.Join(dir, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	memberConfig := `{"scripts":"./scripts","env":[{"label":"member","path":".env.missing"}]}`
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"), []byte(memberConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{Label: "root", Path: ".env", Scope: "global"},
+		},
+	}
+	logger := log.New(io.Discard)
+
+	if err := Run(dir, cfg, logger); err == nil {
+		t.Fatal("expected error for member env entry pointing at a missing file")
+	}
+}
+
+func TestRun_ReservedGlobalMemberName_IsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberDir := filepath.Join(dir, "apps", "global")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "package.json"), []byte(`{"name":"global"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{Label: "root", Path: ".env", Scope: "global"},
+		},
+	}
+	logger := log.New(io.Discard)
+
+	err := Run(dir, cfg, logger)
+	if err == nil {
+		t.Fatal(`expected error for member named "global"`)
+	}
+	if !strings.Contains(err.Error(), "reserved") {
+		t.Errorf("expected reserved-name error, got: %s", err.Error())
+	}
+}
+
+func TestRun_UnknownScope_WarnsNotError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberDir := filepath.Join(dir, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{Label: "root", Path: ".env", Scope: "nonexistent-member"},
+		},
+	}
+	var buf strings.Builder
+	logger := log.NewWithOptions(&buf, log.Options{})
+
+	if err := Run(dir, cfg, logger); err != nil {
+		t.Fatalf("expected no error for unknown scope (warn-only), got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "scope matches no known member") {
+		t.Errorf("expected warn log for unknown scope, got: %s", buf.String())
+	}
+}
+
+func TestRun_DiscoverMembersError_ReturnsWrappedError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte("{not valid json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{Label: "root", Path: ".env", Scope: "global"},
+		},
+	}
+	logger := log.New(io.Discard)
+
+	err := Run(dir, cfg, logger)
+	if err == nil {
+		t.Fatal("expected error for malformed package.json")
+	}
+	if !strings.Contains(err.Error(), "discover members") {
+		t.Errorf("expected wrapped discover members error, got: %s", err.Error())
+	}
+}
+
 // envSliceToMap converts []string{"KEY=VALUE",...} to map[string]string
 func envSliceToMap(environ []string) map[string]string {
 	m := make(map[string]string)

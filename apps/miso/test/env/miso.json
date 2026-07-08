@@ -4,6 +4,7 @@
 	"env": [
 		{
 			"label": "fixture",
+			"scope": "global",
 			"path": ".env",
 			"variables": {
 				"APP_NAME": {

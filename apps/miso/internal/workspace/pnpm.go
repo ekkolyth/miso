@@ -12,7 +12,7 @@ type pnpmWorkspaceFile struct {
 	Packages []string `yaml:"packages"`
 }
 
-// ReadPnpmWorkspace returns the raw package patterns from pnpm-workspace.yaml.
+// the raw package patterns from pnpm-workspace.yaml.
 // "!"-prefixed patterns (pnpm exclusions) are returned verbatim. nil when absent.
 func ReadPnpmWorkspace(root string) ([]string, error) {
 	data, err := os.ReadFile(filepath.Join(root, "pnpm-workspace.yaml"))

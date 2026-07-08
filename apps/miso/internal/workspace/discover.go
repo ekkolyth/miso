@@ -16,8 +16,8 @@ type Member struct {
 	ConfigPath string
 }
 
-// DiscoverMembers resolves the PM-native workspace member list. pnpm-workspace.yaml
-// wins when present; otherwise package.json "workspaces". Independent of repo mode.
+// pnpm-workspace.yaml wins when present; otherwise package.json "workspaces".
+// Independent of repo mode.
 func DiscoverMembers(root string, cfg config.Config) ([]Member, error) {
 	patterns, err := workspacePatterns(root)
 	if err != nil {
@@ -62,7 +62,7 @@ func DiscoverMembers(root string, cfg config.Config) ([]Member, error) {
 	return members, nil
 }
 
-// workspacePatterns prefers pnpm-workspace.yaml; falls back to package.json workspaces.
+// prefers pnpm-workspace.yaml; falls back to package.json workspaces.
 func workspacePatterns(root string) ([]string, error) {
 	if patterns, err := ReadPnpmWorkspace(root); err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func readPackageJSONWorkspaces(root string) ([]string, error) {
 	return pkg.Workspaces, nil
 }
 
-// excluded reports whether dir matches any "!"-exclusion (filepath.Match; no "**").
+// matches any "!"-exclusion (filepath.Match; no "**").
 func excluded(dir, root string, excludes []string) bool {
 	rel, err := filepath.Rel(root, dir)
 	if err != nil {

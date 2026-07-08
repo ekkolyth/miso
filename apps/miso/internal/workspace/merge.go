@@ -2,7 +2,7 @@ package workspace
 
 import "github.com/ekkolyth/miso/internal/config"
 
-// EffectiveConfig overlays a member's miso.json onto root for non-env fields.
+// overlays a member's miso.json onto root for non-env fields.
 // Env is resolved per-target elsewhere; member Repo is ignored (members are leaves).
 func EffectiveConfig(root config.Config, m Member) config.Config {
 	if m.ConfigPath == "" {
