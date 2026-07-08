@@ -1,13 +1,4 @@
----
-name: miso-tui
-description: Reference for configuring miso's TUI display modes, task ordering, and concurrent tasks
----
-
-# miso-tui
-
-**Use this skill** when configuring multi-process TUI display, task ordering, or concurrent tasks.
-
----
+# TUI
 
 ## `tui` Field
 
@@ -26,15 +17,16 @@ Controls the terminal UI mode. Set at the top level of `miso.json`.
 
 ## `repo` Field
 
-Controls how miso discovers and orchestrates workspaces or pipeline tasks.
+Controls **orchestration** — who runs the processes. Workspace membership is detected automatically from the package manager (`pnpm-workspace.yaml` or `package.json` `workspaces`), independent of this field.
 
 | Value | Behavior |
 |---|---|
-| `"single"` | Default. One project, no workspace awareness. |
-| `"mono"` | Miso-native monorepo orchestration. Discovers workspaces from `workspaces` in root `package.json`. |
+| `"miso"` | Default. Miso orchestrates natively — auto-discovers workspace members and fans out one process each, or runs a single process if there are none. |
 | `"turbo"` | Delegates to Turborepo. Parses Turborepo output into TUI tabs. |
 | `"nx"` | Delegates to Nx (`nx run-many --target=<script>`). Parses output into TUI tabs. |
-| Object form | Use when you need `tasks` config: `{ "mode": "turbo", "tasks": { ... } }` |
+| Object form | Use when you need `tasks` config: `{ "mode": "turbo", "tasks": { ... } }` (`mode` defaults to `"miso"`). |
+
+`"single"` and `"mono"` are removed — both are now `"miso"`; using either is a load-time config error.
 
 ---
 
@@ -48,7 +40,7 @@ Run upstream tasks before this one (topological order):
 
 ```json
 "repo": {
-  "mode": "mono",
+  "mode": "miso",
   "tasks": {
     "build": {
       "dependsOn": ["^build"]
@@ -77,7 +69,7 @@ Launch additional tasks alongside this one in the TUI:
 
 Running `miso dev` will also launch `studio` as a TUI tab alongside it. `concurrent` tasks are always run by miso directly — they are **not** passed to turbo/nx even when `mode` is `"turbo"`.
 
-In `"mono"` mode, `concurrent` launches extra scripts from the root `scripts/` folder alongside the workspace-distributed task.
+In `"miso"` mode, `concurrent` launches extra scripts from the root `scripts/` folder alongside the workspace-distributed task.
 In `"turbo"` mode, `concurrent` launches extra scripts from the root `scripts/` folder alongside miso's native `dev` orchestration (not turbo's).
 
 ---

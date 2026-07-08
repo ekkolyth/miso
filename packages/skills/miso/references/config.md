@@ -1,13 +1,4 @@
----
-name: miso-config
-description: Reference for creating and modifying miso.json configuration files
----
-
-# miso-config
-
-**Use this skill** any time you need to create or modify `miso.json`.
-
----
+# miso.json configuration
 
 ## `miso.json` Field Reference
 
@@ -58,15 +49,28 @@ Fallback interpreter used when a script has no shebang and no recognized extensi
 ---
 
 ### `repo`
-**Type:** `"single" | "mono" | "turbo" | "nx" | object`
-**Default:** `"single"`
+**Type:** `"miso" | "turbo" | "nx" | object`
+**Default:** `"miso"`
 
-Controls monorepo orchestration:
-- `"single"` — one project, no workspace awareness
-- `"mono"` — miso-native orchestration; requires `workspaces` array in root `package.json`
-- `"turbo"` — delegates to Turborepo; parses output into TUI tabs
-- `"nx"` — delegates to Nx (`nx run-many --target=<script>`); parses output into TUI tabs
-- Object form: `{ "mode": "turbo", "tasks": { ... } }` — use when you need `tasks` config. `mode` is optional in object form (defaults to `"single"` if omitted). Write `{ "tasks": { ... } }` when you want task config in a standard single project.
+Controls **orchestration** — who runs the processes. Workspace *membership* is detected separately and automatically (see Workspace discovery below), so this field never gates whether workspaces are found.
+
+- `"miso"` (default) — miso orchestrates natively. Discovers workspace members and fans out one process per member; with no members it runs a single root process. Full tooling, including per-process restart.
+- `"turbo"` — delegates to Turborepo; miso wraps the TUI + tooling. Turbo owns process lifecycle, so no per-process restart.
+- `"nx"` — delegates to Nx (`nx run-many --target=<script>`); same wrap as turbo.
+- Object form: `{ "mode": "turbo", "tasks": { ... } }` — use when you need `tasks` config. `mode` is optional (defaults to `"miso"`). Write `{ "tasks": { ... } }` for task config in a non-delegated project.
+
+Recognized values are exactly `miso`, `turbo`, `nx` (empty → `miso`). The legacy `"single"` and `"mono"` values are **removed** — always-on discovery made them behave identically to `"miso"`, so both collapse into it. Setting `repo` to `"single"`, `"mono"`, or any other unrecognized value is a **load-time config error**.
+
+---
+
+### Workspace discovery
+
+Workspace members are auto-detected from the package manager's own config — always on, independent of `repo`:
+
+- **pnpm** → `pnpm-workspace.yaml` (`packages:`)
+- **bun / npm / yarn** → `workspaces` in `package.json`
+
+There is no miso-specific workspace list. A member may carry its own `<member>/miso.json`, whose `scripts`, `shell`, `flags`, `tui`, and `tasks` fields override the root per-field for that member. A member's own `repo` is ignored (members are leaves), and `env` is handled by scope rather than the generic merge (see `miso-env`).
 
 ---
 
@@ -149,7 +153,7 @@ Persistent flags injected into specific commands. Useful for CI or project-wide 
 
 Env file paths and validation rules. When not set, miso auto-discovers `.env.local` → `.env.production` → `.env.development` → `.env` (first found per variable).
 
-See `miso-env` for full env configuration including variable types and validation.
+Each **root** `env` entry requires a `scope` — the target it applies to, or the reserved `"global"`. Scoping keeps one workspace's variables out of another's. See `miso-env` for scopes, variable types, and validation.
 
 ---
 
@@ -186,6 +190,7 @@ See `miso-env` for full env configuration including variable types and validatio
   },
   "env": [
     {
+      "scope": "global",
       "path": ".env.local",
       "required": "all",
       "variables": {
@@ -203,7 +208,8 @@ See `miso-env` for full env configuration including variable types and validatio
 ## Common Mistakes
 
 - **`"package-manager"` (hyphenated)** — the field is `"packageManager"` (camelCase)
-- **`repo: "mono"` without `workspaces`** — miso reads `workspaces` from root `package.json` to discover workspace directories; if it's missing, mono mode won't find any workspaces
+- **`repo: "single"` or `"mono"`** — both are removed; use `"miso"` (the default). Any legacy value is a load error.
+- **Root `env` entry without `scope`** — every root `env` entry needs a `scope` (a target name or `"global"`); a missing scope is a config error. See `miso-env`.
 - **`tui` inside `repo`** — `tui` is a top-level field, not nested under `repo`
 - **String flags** — `"flags": { "install": "--frozen-lockfile" }` is wrong; must be an array: `["--frozen-lockfile"]`
 - **`"scripts"` as an object** — `"scripts": { "build": "tsc" }` is invalid; `scripts` is a path string like `"./scripts"`. Inline script strings go in `package.json`. Miso discovers runnable files from the folder at that path.

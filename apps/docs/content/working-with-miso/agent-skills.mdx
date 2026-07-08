@@ -10,27 +10,39 @@ Skills are plain Markdown files that get injected into your AI agent's context (
 Skills are installed as local files — they don't require an internet connection after installation and are safe to commit to version control.
 </Callout>
 
-### Available Skills
+### The `miso` Skill
 
-| Skill | Loads when... | Covers |
-| --- | --- | --- |
-| `config` | Creating or editing `miso.json` | All top-level fields, types, defaults, annotated examples, common mistakes |
-| `scripting` | Working with the scripts folder, creating or debugging scripts | Extension dispatch, shebang rules, subdirectories, `@workspace/script` syntax, resolution order |
-| `tui` | Configuring multi-process TUI, task ordering, concurrent tasks | `tui` field, `repo` modes, `tasks.concurrent`, `tasks.dependsOn` |
-| `env` | Configuring env validation, debugging env injection | `env` config block, variable types, `--env` flag, injection behavior |
+`miso skills --add` installs a single **`miso`** skill — a router that loads the right reference on demand as you work:
 
-### Install All Skills
+| When you're working on... | It loads |
+| --- | --- |
+| Creating or editing `miso.json` | config reference |
+| The scripts folder — creating, organizing, or debugging scripts | scripting reference |
+| Multi-process TUI, task ordering, concurrent tasks | tui reference |
+| Env validation, debugging env injection | env reference |
 
-The fastest way to install all four skills at once is through the miso CLI:
+### Install
 
 ```bash
 miso skills --add
 ```
 
-This installs skills for whichever AI agent miso detects in your project.
+Miso detects the AI agents installed on your system and prompts you to choose which ones to install the skill for. Confirm the selection and the `miso` skill lands in each.
 
-### Remove Skills
+Skip the prompt and install for every detected agent with `--yes`:
+
+```bash
+miso skills --add --yes
+```
+
+<Callout type="info">
+Miso runs the installer through your project's package manager (`bunx`, `pnpm dlx`, `yarn dlx`, or `npx`). On an npm project whose `package.json` has an `overrides` field, npm's installer crashes — an npm bug — so miso stops with a clear message. Use bun or pnpm, or remove `overrides`.
+</Callout>
+
+### Remove
 
 ```bash
 miso skills --rm
 ```
+
+Same agent picker as install — choose which agents to remove the `miso` skill from.

@@ -1,13 +1,4 @@
----
-name: miso-scripting
-description: Reference for creating, organizing, and debugging scripts in a miso scripts/ folder
----
-
-# miso-scripting
-
-**Use this skill** any time you need to create, organize, name, or debug scripts in a miso `scripts/` folder.
-
----
+# Scripts
 
 ## Scripts Folder
 
@@ -89,7 +80,7 @@ Invoke with path syntax: `miso build/docs`, `miso test/e2e`.
 
 ## Workspace-Scoped Scripts (Monorepos)
 
-In a monorepo (`repo: "mono"`), run a script in a specific workspace using the `@workspace/script` syntax:
+In a repo with workspaces (auto-detected from your package manager), run a script in a specific workspace using the `@workspace/script` syntax:
 
 ```bash
 miso @api/build           # run "build" in the workspace identified as "api"

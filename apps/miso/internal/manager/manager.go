@@ -20,7 +20,7 @@ type Manager interface {
 	BuildRemove(packageNames []string) ExecSpec
 	BuildRun(scriptName string, scriptArgs []string) ExecSpec
 	BuildVersion() ExecSpec
-	BuildMisox(packageName string, args []string) ExecSpec
+	BuildDlx(packageName string, args []string) ExecSpec
 }
 
 func Exec(spec ExecSpec, workDir string) error {

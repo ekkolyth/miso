@@ -1,13 +1,4 @@
----
-name: miso-env
-description: Reference for configuring env validation and understanding miso's .env file loading
----
-
-# miso-env
-
-**Use this skill** when configuring env validation, debugging env injection, or understanding which `.env` files miso loads.
-
----
+# Env validation
 
 ## Auto-Discovery (No `env` Config)
 
@@ -27,6 +18,7 @@ First found per variable wins. Shell-exported variables always take precedence o
 
 ```json
 "env": {
+  "scope": "global",
   "path": ".env.local",
   "required": "all",
   "variables": {
@@ -41,6 +33,7 @@ First found per variable wins. Shell-exported variables always take precedence o
 ```json
 "env": [
   {
+    "scope": "global",
     "path": ".env.local",
     "label": "Local",
     "required": "all",
@@ -50,6 +43,7 @@ First found per variable wins. Shell-exported variables always take precedence o
     }
   },
   {
+    "scope": "api",
     "path": ".env.secrets",
     "required": ["API_KEY"],
     "variables": {
@@ -65,6 +59,7 @@ When you only need to verify that variables exist (no type checking), use an arr
 
 ```json
 "env": {
+  "scope": "global",
   "path": ".env.local",
   "required": "all",
   "variables": ["DATABASE_URL", "API_KEY", "PORT"]
@@ -79,10 +74,54 @@ This checks that each named variable is present in the env file but does not val
 
 | Field | Type | Description |
 |---|---|---|
+| `scope` | `string` | **Required on every root entry.** The target this env applies to — a workspace/member name, or the reserved `"global"`. Omit only inside a member's own `<member>/miso.json`, where scope is implicit by location. |
 | `path` | `string` | Path to the `.env` file, relative to `miso.json` |
 | `label` | `string` | Optional. Display name used in validation output |
 | `required` | `"all" \| "none" \| string[]` | Which variables must be present. `"all"` = all defined variables. Array = specific keys only. |
 | `variables` | `object \| string[]` | Variable name → type validator (object), or list of variable names for presence-only checking (array) |
+
+---
+
+## Env Scoping
+
+Every **root** `env` entry declares a `scope` — the target it applies to, or the reserved `"global"`. Scoping keeps one workspace's variables out of another's.
+
+- `"global"` — injected into every target. No workspace/member may be named `global`.
+- A **target name** — injected only when running that target (a workspace member, or a root script/task by that name).
+
+Member workspaces can carry their own env in `<member>/miso.json`. Those entries need **no** `scope` key — their scope is implicit by location (the member they live in).
+
+```json
+// root miso.json
+"env": [
+  { "scope": "global", "path": ".env",               "variables": { "LOG_COLORS": "bool" } },
+  { "scope": "web",    "path": "apps/web/.env.local", "variables": { "CONVEX_DEPLOYMENT": "string" } }
+]
+
+// apps/web/miso.json  (scope implicit by location)
+"env": [
+  { "path": ".env.local", "variables": { "CONVEX_DEPLOYMENT": "string" } }
+]
+```
+
+### Resolution
+
+For a run target `T`, the injected env is:
+
+```
+global entries  ⊕  root entries scoped to T  ⊕  T's member-local entries (if T is a member)
+```
+
+Later layers win on key conflict: **member-local > target-scoped > global**. Finally the shell environment gap-fills — exported shell variables always win.
+
+Fan-out (`miso dev` across members) resolves each member's env independently, so root variables never bleed between members.
+
+### Validation vs injection
+
+- `miso env` (and `--env`) **validates every scope** — global, every target-scoped, and every member-local entry — so a pre-build validation gate stays whole.
+- **Injection** uses only the resolved subset above.
+
+A scope that names no known member isn't a hard error (it may name a root script or task) — miso surfaces it as a warning.
 
 ---
 
@@ -167,7 +206,7 @@ Run `miso env` to validate without executing any script.
 
 - Shell environment variables take precedence over `.env` file values
 - `.env` files only fill in variables not already set in the shell environment
-- In monorepos, each workspace receives env from its own directory only — no cross-workspace variable bleed
+- Each target receives only its resolved scopes (global + its target-scoped + its member-local); root variables never bleed across workspaces. See **Env Scoping** above.
 
 ---
 
@@ -177,3 +216,5 @@ Run `miso env` to validate without executing any script.
 - **`"type": "enum"` without `values`** — will fail validation; `values` array is required for enum type
 - **Expecting `--env` to inject variables** — `--env` only triggers validation; injection is automatic for all scripts
 - **Assuming `.env` wins over shell** — shell-exported variables always win; `.env` only fills gaps
+- **Root `env` entry without `scope`** — every root entry needs `scope` (a target name or `"global"`); a missing or empty scope is a config error
+- **Naming a workspace `global`** — `global` is reserved for env scope; no member or target may use it
