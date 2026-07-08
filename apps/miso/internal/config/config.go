@@ -40,6 +40,7 @@ type Config struct {
 // EnvEntry holds a single env file path and its variable validation rules.
 // label is optional but recommended in multi-app setups.
 type EnvEntry struct {
+	Scope     string       `json:"scope,omitempty"`
 	Label     string       `json:"label,omitempty"`
 	Path      string       `json:"path,omitempty"`
 	Required  EnvRequired  `json:"required,omitempty"`
@@ -351,6 +352,7 @@ func parseTuiField(raw json.RawMessage) (string, bool, error) {
 // and use the first element (later elements were loaded together anyway).
 func parseEnvEntry(raw json.RawMessage) (*EnvEntry, error) {
 	var obj struct {
+		Scope     string          `json:"scope,omitempty"`
 		Label     string          `json:"label,omitempty"`
 		Path      json.RawMessage `json:"path,omitempty"`
 		Required  json.RawMessage `json:"required,omitempty"`
@@ -360,7 +362,7 @@ func parseEnvEntry(raw json.RawMessage) (*EnvEntry, error) {
 		return nil, err
 	}
 
-	entry := &EnvEntry{Label: obj.Label}
+	entry := &EnvEntry{Scope: obj.Scope, Label: obj.Label}
 
 	// path: accept string or legacy []string
 	if len(obj.Path) > 0 {

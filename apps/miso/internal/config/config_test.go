@@ -550,3 +550,25 @@ func TestFindWorkspaceNotFound(t *testing.T) {
 		t.Errorf("expected error to contain %q, got: %v", "not found", err)
 	}
 }
+
+func TestLoad_ParsesEnvScope(t *testing.T) {
+	dir := t.TempDir()
+	body := `{"scripts":"./scripts","env":[{"scope":"web","path":"apps/web/.env.local"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "miso.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Env) != 1 || cfg.Env[0].Scope != "web" {
+		t.Fatalf("Scope = %q, want web (entries: %+v)", scopeOf(cfg), cfg.Env)
+	}
+}
+
+func scopeOf(cfg Config) string {
+	if len(cfg.Env) == 0 {
+		return ""
+	}
+	return cfg.Env[0].Scope
+}
