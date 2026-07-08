@@ -145,8 +145,13 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			return err
 		}
 		var workspacePatterns []string
+		var orchestration string
 		if repoType == "mono" {
 			workspacePatterns, err = askWorkspacePatterns(styles)
+			if err != nil {
+				return err
+			}
+			orchestration, err = askOrchestration(styles)
 			if err != nil {
 				return err
 			}
@@ -169,6 +174,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			Scripts: "./scripts",
 			Flags:   make(map[string][]string),
 		}
+		cfg.Repo = RepoFieldForOrchestration(orchestration)
 		if err := config.Save(root, cfg); err != nil {
 			return err
 		}
@@ -184,8 +190,13 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			return err
 		}
 		var workspacePatterns []string
+		var orchestration string
 		if repoType == "mono" {
 			workspacePatterns, err = askWorkspacePatterns(styles)
+			if err != nil {
+				return err
+			}
+			orchestration, err = askOrchestration(styles)
 			if err != nil {
 				return err
 			}
@@ -223,6 +234,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			Scripts: "./scripts",
 			Flags:   make(map[string][]string),
 		}
+		cfg.Repo = RepoFieldForOrchestration(orchestration)
 		if err := config.Save(root, cfg); err != nil {
 			return err
 		}
@@ -277,8 +289,13 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		}
 
 		var workspacePatterns []string
+		var orchestration string
 		if repoType == "mono" {
 			workspacePatterns, err = askWorkspacePatterns(styles)
+			if err != nil {
+				return err
+			}
+			orchestration, err = askOrchestration(styles)
 			if err != nil {
 				return err
 			}
@@ -342,6 +359,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			Scripts: "./scripts",
 			Flags:   make(map[string][]string),
 		}
+		cfg.Repo = RepoFieldForOrchestration(orchestration)
 		if err := config.Save(root, cfg); err != nil {
 			return err
 		}
@@ -372,6 +390,41 @@ func askRepoType(styles ui.Styles) (string, error) {
 		return "", err
 	}
 	return repoType, nil
+}
+
+// RepoFieldForOrchestration maps a monorepo's chosen orchestration engine to
+// the miso.json "repo" field: empty (omitted, defaults to miso) for miso or
+// an unset choice, the engine name for turbo/nx.
+func RepoFieldForOrchestration(orchestration string) string {
+	if orchestration == "turbo" || orchestration == "nx" {
+		return orchestration
+	}
+	return ""
+}
+
+// askOrchestration prompts a monorepo for its task-orchestration engine: miso
+// itself (default), or delegating to an existing turbo/nx setup.
+func askOrchestration(styles ui.Styles) (string, error) {
+	var orchestration string
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title(styles.Heading.Render("How should tasks be orchestrated?")).
+				Description(styles.Muted.Render("Press ↑/↓ to move, Enter to confirm • ctrl+c to bail")).
+				Options(
+					huh.NewOption("miso (default)", "miso"),
+					huh.NewOption("turbo", "turbo"),
+					huh.NewOption("nx", "nx"),
+				).
+				Value(&orchestration),
+		),
+	).WithTheme(huh.ThemeFunc(huh.ThemeCharm))
+
+	if err := form.Run(); err != nil {
+		return "", err
+	}
+	return orchestration, nil
 }
 
 // askWorkspacePatterns prompts the user to enter workspace glob patterns.

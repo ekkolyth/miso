@@ -430,8 +430,9 @@ func TestSaveOmitsPackageManagerWhenNil(t *testing.T) {
 	}
 }
 
-// mirrors what init writes: Repo left unset regardless of the single/mono
-// scaffolding choice, so the saved config must load back as miso mode.
+// mirrors what init writes for a single project, or a monorepo where the
+// user picks miso orchestration: Repo left unset, so the saved config must
+// load back as miso mode.
 func TestSaveOmitsRepoWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	cfg := Config{
@@ -457,6 +458,41 @@ func TestSaveOmitsRepoWhenUnset(t *testing.T) {
 	}
 	if got := loaded.RepoMode(); got != "miso" {
 		t.Errorf("RepoMode() after round-trip = %q, want miso", got)
+	}
+}
+
+// mirrors what init writes for a monorepo where the user picks turbo/nx
+// orchestration: Repo set explicitly, so the saved config must load back
+// as the delegated mode.
+func TestSaveWritesRepoWhenDelegated(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		Schema:  SchemaURL,
+		Scripts: "./scripts",
+		Flags:   make(map[string][]string),
+		Repo:    "turbo",
+	}
+	if err := Save(dir, cfg); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, FileName))
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if !strings.Contains(string(data), `"repo": "turbo"`) {
+		t.Errorf("saved config = %s, want it to contain repo: turbo", data)
+	}
+
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() after Save() error: %v", err)
+	}
+	if got := loaded.RepoMode(); got != "turbo" {
+		t.Errorf("RepoMode() after round-trip = %q, want turbo", got)
+	}
+	if !loaded.IsDelegated() {
+		t.Error("IsDelegated() after round-trip = false, want true")
 	}
 }
 
