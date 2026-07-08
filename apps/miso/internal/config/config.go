@@ -31,7 +31,7 @@ type Config struct {
 	Shell          string                `json:"shell,omitempty"`
 	Flags          map[string][]string   `json:"flags,omitempty"`
 	Env            []*EnvEntry           `json:"env,omitempty"`
-	Repo           string                `json:"repo,omitempty"` // "single" (default), "mono", "turbo", or "nx"
+	Repo           string                `json:"repo,omitempty"` // "miso" (default), "turbo", or "nx"
 	Tasks          map[string]TaskConfig `json:"-"`              // populated from repo object form; not serialized directly
 	TuiMode        string                `json:"tui,omitempty"`  // "off" (default), "tabbed", or "merged"
 	TuiCleanExit   bool                  `json:"-"`              // populated from tui object form; not serialized directly
@@ -122,15 +122,16 @@ func (c *Config) EnsureDefaults() {
 	}
 }
 
-// mono, turbo, or nx
+// IsMonorepo is retained only until callers migrate to workspace discovery (Task 10).
+// After the collapse the native path branches on discovered members, not this flag.
 func (c Config) IsMonorepo() bool {
-	return c.Repo == "mono" || c.Repo == "turbo" || c.Repo == "nx"
+	return c.IsDelegated()
 }
 
-// defaults to "single"
+// defaults to "miso"
 func (c Config) RepoMode() string {
 	if c.Repo == "" {
-		return "single"
+		return "miso"
 	}
 	return c.Repo
 }
@@ -288,23 +289,33 @@ func parseEnvField(raw json.RawMessage) ([]*EnvEntry, error) {
 }
 
 // parseRepoField handles the two accepted shapes for the "repo" field:
-//  1. string — "single", "mono", "turbo", "nx"
-//  2. object — { "mode": "mono", "tasks": { ... } }
+//  1. string — "miso", "turbo", "nx"
+//  2. object — { "mode": "turbo", "tasks": { ... } }
 func parseRepoField(raw json.RawMessage) (string, map[string]TaskConfig, error) {
+	var mode string
+	var tasks map[string]TaskConfig
+
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		return s, nil, nil
+		mode = s
+	} else {
+		var obj struct {
+			Mode  string                `json:"mode"`
+			Tasks map[string]TaskConfig `json:"tasks,omitempty"`
+		}
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return "", nil, fmt.Errorf("repo: expected string or object, got %s", string(raw))
+		}
+		mode = obj.Mode
+		tasks = obj.Tasks
 	}
 
-	var obj struct {
-		Mode  string                `json:"mode"`
-		Tasks map[string]TaskConfig `json:"tasks,omitempty"`
+	switch mode {
+	case "", "miso", "turbo", "nx":
+		return mode, tasks, nil
+	default:
+		return "", nil, fmt.Errorf("repo: unknown mode %q (use miso, turbo, or nx)", mode)
 	}
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return "", nil, fmt.Errorf("repo: expected string or object, got %s", string(raw))
-	}
-
-	return obj.Mode, obj.Tasks, nil
 }
 
 // parseTuiField handles the two accepted shapes for the "tui" field:

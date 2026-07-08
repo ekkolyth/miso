@@ -90,8 +90,7 @@ func TestLoadRepoStringValues(t *testing.T) {
 		mono bool
 		dele bool
 	}{
-		{"single", `{"repo":"single"}`, "single", false, false},
-		{"mono", `{"repo":"mono"}`, "mono", true, false},
+		{"miso", `{"repo":"miso"}`, "miso", false, false},
 		{"turbo", `{"repo":"turbo"}`, "turbo", true, true},
 		{"nx", `{"repo":"nx"}`, "nx", true, true},
 		{"empty", `{}`, "", false, false},
@@ -119,7 +118,7 @@ func TestLoadRepoStringValues(t *testing.T) {
 func TestLoadRepoObject(t *testing.T) {
 	dir := writeTempConfig(t, `{
 		"repo": {
-			"mode": "mono",
+			"mode": "turbo",
 			"tasks": {
 				"build": { "dependsOn": ["^build"] },
 				"dev": {}
@@ -131,8 +130,8 @@ func TestLoadRepoObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
-	if cfg.Repo != "mono" {
-		t.Errorf("Repo = %q, want %q", cfg.Repo, "mono")
+	if cfg.Repo != "turbo" {
+		t.Errorf("Repo = %q, want %q", cfg.Repo, "turbo")
 	}
 	if cfg.Tasks == nil {
 		t.Fatal("Tasks is nil, want populated map")
@@ -179,10 +178,10 @@ func TestLoadRepoObjectTurboWithTasks(t *testing.T) {
 	}
 }
 
-func TestLoadRepoObjectSingleWithDependsOn(t *testing.T) {
+func TestLoadRepoObjectMisoWithDependsOn(t *testing.T) {
 	dir := writeTempConfig(t, `{
 		"repo": {
-			"mode": "single",
+			"mode": "miso",
 			"tasks": { "build": { "dependsOn": ["^build"] } }
 		}
 	}`)
@@ -205,7 +204,7 @@ func TestRepoMode(t *testing.T) {
 		{"mono", "mono"},
 		{"turbo", "turbo"},
 		{"nx", "nx"},
-		{"", "single"},
+		{"", "miso"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.repo, func(t *testing.T) {
@@ -243,10 +242,10 @@ func TestLoadRepoObjectWithConcurrent(t *testing.T) {
 	}
 }
 
-func TestLoadRepoObjectSingleWithTasks(t *testing.T) {
+func TestLoadRepoObjectMisoWithTasks(t *testing.T) {
 	dir := writeTempConfig(t, `{
 		"repo": {
-			"mode": "single",
+			"mode": "miso",
 			"tasks": {
 				"dev": { "concurrent": ["frontend", "backend"] }
 			}
@@ -257,8 +256,8 @@ func TestLoadRepoObjectSingleWithTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error: %v, want success (tasks valid in all modes)", err)
 	}
-	if cfg.Repo != "single" {
-		t.Errorf("Repo = %q, want %q", cfg.Repo, "single")
+	if cfg.Repo != "miso" {
+		t.Errorf("Repo = %q, want %q", cfg.Repo, "miso")
 	}
 	if cfg.Tasks == nil {
 		t.Fatal("Tasks is nil, want populated map")
@@ -506,6 +505,31 @@ func TestFindWorkspaceAmbiguous(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ambiguous") {
 		t.Errorf("expected error to contain %q, got: %v", "ambiguous", err)
+	}
+}
+
+func TestRepoMode_DefaultsToMiso(t *testing.T) {
+	cfg := Config{}
+	if got := cfg.RepoMode(); got != "miso" {
+		t.Errorf("RepoMode() = %q, want miso", got)
+	}
+}
+
+func TestLoad_RejectsLegacyRepoValue(t *testing.T) {
+	dir := writeTempConfig(t, `{"repo":"single","scripts":"./scripts"}`)
+	if _, err := Load(dir); err == nil {
+		t.Error("expected load error for legacy repo value \"single\"")
+	}
+}
+
+func TestLoad_AcceptsMisoMode(t *testing.T) {
+	dir := writeTempConfig(t, `{"repo":"turbo","scripts":"./scripts"}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.IsDelegated() || cfg.RepoMode() != "turbo" {
+		t.Errorf("got mode %q delegated=%v, want turbo delegated", cfg.RepoMode(), cfg.IsDelegated())
 	}
 }
 
