@@ -58,7 +58,10 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 		}
 
 		// Build env scoped to this member target
-		target := workspace.Target{Kind: workspace.TargetMember, Name: entry.Label, Dir: dir}
+		target := workspace.Target{Kind: workspace.TargetScript, Name: entry.ScriptName}
+		if entry.WorkspaceName != "" {
+			target = workspace.Target{Kind: workspace.TargetMember, Name: entry.WorkspaceName, Dir: dir}
+		}
 		processEnv, envErr := env.BuildTargetEnv(root, cfg, target)
 		if envErr != nil {
 			return false, fmt.Errorf("build env for %s: %w", entry.Label, envErr)

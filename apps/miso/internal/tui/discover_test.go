@@ -123,6 +123,35 @@ func TestDiscoverEntries_CarriesScopedMemberName(t *testing.T) {
 	}
 }
 
+// TestDiscoverWorkspaceScripts_WorkspaceNameSurvivesLabelDedup verifies that a
+// member with two matching scripts carries the member name in WorkspaceName
+// even though Label is rewritten to "member:scriptName".
+func TestDiscoverWorkspaceScripts_WorkspaceNameSurvivesLabelDedup(t *testing.T) {
+	wsDir := t.TempDir()
+	writePackageJSON(t, wsDir, map[string]string{
+		"dev":      "next dev",
+		"dev:next": "next dev --turbo",
+	})
+
+	ws := WorkspaceInfo{Name: "web", Dir: wsDir}
+	entries, err := discoverWorkspaceScripts("dev", ws, "./scripts")
+	if err != nil {
+		t.Fatalf("discoverWorkspaceScripts: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %v", len(entries), labelsOf(entries))
+	}
+	for _, e := range entries {
+		if e.Label == ws.Name {
+			t.Errorf("Label = %q, want deduped (multiple matches in this member)", e.Label)
+		}
+		if e.WorkspaceName != ws.Name {
+			t.Errorf("WorkspaceName = %q, want %q (label = %q)", e.WorkspaceName, ws.Name, e.Label)
+		}
+	}
+}
+
 func TestResolveSingleRepoScripts(t *testing.T) {
 	root := t.TempDir()
 	writePackageJSON(t, root, map[string]string{

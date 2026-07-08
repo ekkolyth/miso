@@ -90,6 +90,47 @@ func TestBuildTargetEnv_AmbientWins(t *testing.T) {
 	}
 }
 
+func TestBuildTargetEnv_MemberMatchesByBasename(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".env"), "LOG_COLORS=true\n")
+	write(t, filepath.Join(root, "apps", "web", ".env.local"), "CONVEX_DEPLOYMENT=web-only\n")
+
+	target := workspace.Target{Kind: workspace.TargetMember, Name: "@org/web", Dir: filepath.Join(root, "apps", "web")}
+	got := envSliceToMap(mustEnv(t, root, rootCfg(), target))
+	if got["CONVEX_DEPLOYMENT"] != "web-only" {
+		t.Errorf("CONVEX_DEPLOYMENT = %q, want web-only (matched by basename)", got["CONVEX_DEPLOYMENT"])
+	}
+	if got["LOG_COLORS"] != "true" {
+		t.Errorf("LOG_COLORS = %q, want true (global)", got["LOG_COLORS"])
+	}
+}
+
+func TestBuildTargetEnv_ZeroConfig_DiscoversRootDotEnv(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".env"), "ROOT_VAR=root-value\n")
+
+	target := workspace.Target{Kind: workspace.TargetScript, Name: "dev"}
+	got := envSliceToMap(mustEnv(t, root, config.Config{}, target))
+	if got["ROOT_VAR"] != "root-value" {
+		t.Errorf("ROOT_VAR = %q, want root-value (zero-config discovery)", got["ROOT_VAR"])
+	}
+}
+
+func TestBuildTargetEnv_ZeroConfig_MemberDiscoversInMemberDir(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".env"), "ROOT_ONLY=root-value\n")
+	write(t, filepath.Join(root, "apps", "web", ".env"), "WEB_VAR=web-value\n")
+
+	target := workspace.Target{Kind: workspace.TargetMember, Name: "web", Dir: filepath.Join(root, "apps", "web")}
+	got := envSliceToMap(mustEnv(t, root, config.Config{}, target))
+	if got["WEB_VAR"] != "web-value" {
+		t.Errorf("WEB_VAR = %q, want web-value (member-dir discovery)", got["WEB_VAR"])
+	}
+	if got["ROOT_ONLY"] != "" {
+		t.Errorf("ROOT_ONLY = %q, want empty (member discovery scoped to member dir)", got["ROOT_ONLY"])
+	}
+}
+
 func mustEnv(t *testing.T, root string, cfg config.Config, target workspace.Target) []string {
 	t.Helper()
 	environ, err := BuildTargetEnv(root, cfg, target)

@@ -16,11 +16,12 @@ type WorkspaceInfo struct {
 }
 
 type TuiScriptEntry struct {
-	Label        string
-	ScriptName   string
-	WorkspaceDir string
-	ScriptSource string // "folder" or "packagejson"
-	ScriptPath   string
+	Label         string
+	WorkspaceName string
+	ScriptName    string
+	WorkspaceDir  string
+	ScriptSource  string // "folder" or "packagejson"
+	ScriptPath    string
 }
 
 // DiscoverTuiScripts finds all scripts matching the given command prefix across
@@ -120,11 +121,12 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 			label = ws.Name + ":" + m.name
 		}
 		entries = append(entries, TuiScriptEntry{
-			Label:        label,
-			ScriptName:   m.name,
-			WorkspaceDir: ws.Dir,
-			ScriptSource: m.source,
-			ScriptPath:   m.path,
+			Label:         label,
+			WorkspaceName: ws.Name,
+			ScriptName:    m.name,
+			WorkspaceDir:  ws.Dir,
+			ScriptSource:  m.source,
+			ScriptPath:    m.path,
 		})
 	}
 

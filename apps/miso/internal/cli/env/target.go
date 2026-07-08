@@ -16,6 +16,21 @@ func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Targ
 	vars := make(map[string]string)
 	loaded := false
 
+	if len(cfg.Env) == 0 {
+		searchDir := projectRoot
+		if target.Kind == workspace.TargetMember && target.Dir != "" {
+			searchDir = target.Dir
+		}
+		if path, err := discoverEnvFile(searchDir); err == nil {
+			if fileVars, err := loadEnvFile(path); err == nil {
+				loaded = true
+				for key, value := range fileVars {
+					vars[key] = value
+				}
+			}
+		}
+	}
+
 	apply := func(entry *config.EnvEntry, baseDir string) {
 		if entry.Path == "" {
 			return
@@ -40,7 +55,14 @@ func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Targ
 		}
 	}
 	for _, entry := range cfg.Env {
-		if entry.Scope != "global" && entry.Scope == target.Name {
+		if entry.Scope == "global" {
+			continue
+		}
+		if entry.Scope == target.Name {
+			apply(entry, projectRoot)
+			continue
+		}
+		if target.Kind == workspace.TargetMember && target.Dir != "" && entry.Scope == filepath.Base(target.Dir) {
 			apply(entry, projectRoot)
 		}
 	}
