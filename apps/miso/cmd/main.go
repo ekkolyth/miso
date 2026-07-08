@@ -220,7 +220,7 @@ func main() {
 	if members, _ := workspace.DiscoverMembers(projectRoot, cfg); len(members) > 0 &&
 		originalWorkDir != projectRoot && parsed.Action == cli.ActionScriptPackageJSON {
 		if member, inWs := workspace.WorkspaceFromCWD(originalWorkDir, members); inWs {
-			resolved, _, resolveErr := scripting.ResolveWorkspaceScript(
+			resolved, _, _, resolveErr := scripting.ResolveWorkspaceScript(
 				member.Name, parsed.ScriptName, projectRoot, cfg,
 			)
 			if resolveErr == nil && (resolved.Source == scripting.ScriptSourceFolder || resolved.Source == scripting.ScriptSourcePackageJSON) {
@@ -322,7 +322,7 @@ func main() {
 	switch parsed.Action {
 	case cli.ActionWorkspaceScript:
 		// @workspace/script syntax — resolve and execute in the workspace directory
-		resolved, workDir, err := scripting.ResolveWorkspaceScript(
+		resolved, workDir, shell, err := scripting.ResolveWorkspaceScript(
 			parsed.WorkspaceName, parsed.ScriptName, projectRoot, cfg,
 		)
 		if err != nil {
@@ -335,7 +335,7 @@ func main() {
 			if envErr != nil {
 				cli.Fail(logger, envErr, false)
 			}
-			if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, cfg.Shell, processEnv); err != nil {
+			if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, shell, processEnv); err != nil {
 				cli.Fail(logger, err, false)
 			}
 		case scripting.ScriptSourcePackageJSON:

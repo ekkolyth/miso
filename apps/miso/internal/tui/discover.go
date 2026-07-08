@@ -13,6 +13,10 @@ import (
 type WorkspaceInfo struct {
 	Name string
 	Dir  string
+	// per-member scripts folder; empty falls back to the default passed to DiscoverTuiScripts
+	ScriptsFolder string
+	// per-member effective shell; empty falls back at spawn time
+	Shell string
 }
 
 type TuiScriptEntry struct {
@@ -22,6 +26,8 @@ type TuiScriptEntry struct {
 	WorkspaceDir  string
 	ScriptSource  string // "folder" or "packagejson"
 	ScriptPath    string
+	// effective shell for spawning folder scripts; empty falls back to cfg.Shell then sh
+	Shell string
 }
 
 // DiscoverTuiScripts finds all scripts matching the given command prefix across
@@ -56,6 +62,11 @@ func DiscoverTuiScripts(command string, workspaces []WorkspaceInfo, scriptsFolde
 
 // discoverWorkspaceScripts finds matching scripts within a single workspace.
 func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder string) ([]TuiScriptEntry, error) {
+	// member's own scripts folder wins over the passed default
+	if ws.ScriptsFolder != "" {
+		scriptsFolder = ws.ScriptsFolder
+	}
+
 	// resolve scripts path
 	scriptsPath := scriptsFolder
 	if !filepath.IsAbs(scriptsPath) {
@@ -127,6 +138,7 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 			WorkspaceDir:  ws.Dir,
 			ScriptSource:  m.source,
 			ScriptPath:    m.path,
+			Shell:         ws.Shell,
 		})
 	}
 

@@ -34,7 +34,7 @@ func TestResolveWorkspaceScriptFromFolder(t *testing.T) {
 	}
 	cfg := config.Config{Scripts: "./scripts", Repo: "mono"}
 
-	resolved, workDir, err := ResolveWorkspaceScript("api", "build", root, cfg)
+	resolved, workDir, _, err := ResolveWorkspaceScript("api", "build", root, cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestResolveWorkspaceScriptFromPackageJSON(t *testing.T) {
 	}
 	cfg := config.Config{Scripts: "./scripts", Repo: "mono"}
 
-	resolved, workDir, err := ResolveWorkspaceScript("api", "test:unit", root, cfg)
+	resolved, workDir, _, err := ResolveWorkspaceScript("api", "test:unit", root, cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestResolveWorkspaceScriptNotFound(t *testing.T) {
 	root, wsDir := setupWorkspace(t)
 	cfg := config.Config{Scripts: "./scripts", Repo: "mono"}
 
-	resolved, workDir, err := ResolveWorkspaceScript("api", "nonexistent", root, cfg)
+	resolved, workDir, _, err := ResolveWorkspaceScript("api", "nonexistent", root, cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,6 +86,37 @@ func TestResolveWorkspaceScriptNotFound(t *testing.T) {
 	}
 	if workDir != wsDir {
 		t.Errorf("workDir = %q, want %q", workDir, wsDir)
+	}
+}
+
+func TestResolveWorkspaceScript_HonorsMemberScriptsAndShell(t *testing.T) {
+	root, wsDir := setupWorkspace(t)
+	// member overrides scripts folder to ./tasks and shell to zsh
+	if err := os.WriteFile(filepath.Join(wsDir, "miso.json"),
+		[]byte(`{"scripts":"./tasks","shell":"zsh"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tasksDir := filepath.Join(wsDir, "tasks")
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tasksDir, "build.sh"), []byte("#!/bin/sh\necho build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Scripts: "./scripts", Shell: "bash", Repo: "mono"}
+
+	resolved, workDir, shell, err := ResolveWorkspaceScript("api", "build", root, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.Source != ScriptSourceFolder {
+		t.Errorf("Source = %v, want ScriptSourceFolder (found in member tasks folder)", resolved.Source)
+	}
+	if workDir != wsDir {
+		t.Errorf("workDir = %q, want %q", workDir, wsDir)
+	}
+	if shell != "zsh" {
+		t.Errorf("shell = %q, want zsh (member override)", shell)
 	}
 }
 
@@ -98,7 +129,7 @@ func TestResolveWorkspaceScriptByPackageName(t *testing.T) {
 	}
 	cfg := config.Config{Scripts: "./scripts", Repo: "mono"}
 
-	resolved, _, err := ResolveWorkspaceScript("@myorg/api", "build", root, cfg)
+	resolved, _, _, err := ResolveWorkspaceScript("@myorg/api", "build", root, cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

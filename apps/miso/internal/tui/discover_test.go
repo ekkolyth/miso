@@ -245,6 +245,75 @@ func TestDiscoverTuiScripts_ScriptsFolder(t *testing.T) {
 	}
 }
 
+// TestDiscoverEntries_HonorsMemberScriptsFolder verifies a member whose miso.json
+// sets scripts:"./tasks" has its scripts discovered from <member>/tasks, not the
+// root default of ./scripts.
+func TestDiscoverEntries_HonorsMemberScriptsFolder(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	tasksDir := filepath.Join(webDir, "tasks")
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "miso.json"),
+		[]byte(`{"scripts":"./tasks"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	scriptPath := writeScript(t, tasksDir, "dev")
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d: %v", len(entries), labelsOf(entries))
+	}
+	e := entries[0]
+	if e.ScriptSource != "folder" {
+		t.Errorf("ScriptSource = %q, want folder", e.ScriptSource)
+	}
+	if e.ScriptPath != scriptPath {
+		t.Errorf("ScriptPath = %q, want %q (member tasks folder)", e.ScriptPath, scriptPath)
+	}
+}
+
+// TestDiscoverEntries_HonorsMemberShell verifies a member whose miso.json sets
+// shell:"zsh" produces an entry stamped with that shell, overriding the root shell.
+func TestDiscoverEntries_HonorsMemberShell(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	scriptsDir := filepath.Join(webDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "miso.json"),
+		[]byte(`{"shell":"zsh"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, scriptsDir, "dev")
+
+	cfg := config.Config{Scripts: "./scripts", Shell: "bash"}
+	entries, err := discoverEntries(cfg, "dev", root)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d: %v", len(entries), labelsOf(entries))
+	}
+	if entries[0].Shell != "zsh" {
+		t.Errorf("Shell = %q, want zsh (member override)", entries[0].Shell)
+	}
+}
+
 func TestDeduplicateLabels(t *testing.T) {
 	entries := []TuiScriptEntry{
 		{Label: "app", ScriptName: "dev", WorkspaceDir: "/ws/app"},

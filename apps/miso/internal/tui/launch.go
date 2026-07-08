@@ -40,8 +40,11 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 		dir := entry.WorkspaceDir
 
 		if entry.ScriptSource == "folder" {
-			// Run via shell
-			shell := cfg.Shell
+			// Run via shell — member's effective shell wins, then root, then sh
+			shell := entry.Shell
+			if shell == "" {
+				shell = cfg.Shell
+			}
 			if shell == "" {
 				shell = "sh"
 			}
@@ -207,9 +210,12 @@ func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiSc
 
 		var wsInfos []WorkspaceInfo
 		for _, member := range members {
+			effective := workspace.EffectiveConfig(cfg, member)
 			wsInfos = append(wsInfos, WorkspaceInfo{
-				Name: member.Name,
-				Dir:  member.Dir,
+				Name:          member.Name,
+				Dir:           member.Dir,
+				ScriptsFolder: effective.Scripts,
+				Shell:         effective.Shell,
 			})
 		}
 
