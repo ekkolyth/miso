@@ -21,6 +21,6 @@ func (Bun) BuildRun(script string, scriptArgs []string) manager.ExecSpec {
 func (Bun) BuildVersion() manager.ExecSpec {
 	return manager.ExecSpec{Command: "bun", Args: []string{"--version"}}
 }
-func (Bun) BuildMisox(packageName string, args []string) manager.ExecSpec {
+func (Bun) BuildDlx(packageName string, args []string) manager.ExecSpec {
 	return manager.ExecSpec{Command: "bunx", Args: append([]string{packageName}, args...)}
 }

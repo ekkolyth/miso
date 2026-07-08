@@ -21,6 +21,6 @@ func (Pnpm) BuildRun(script string, scriptArgs []string) manager.ExecSpec {
 func (Pnpm) BuildVersion() manager.ExecSpec {
 	return manager.ExecSpec{Command: "pnpm", Args: []string{"--version"}}
 }
-func (Pnpm) BuildMisox(packageName string, args []string) manager.ExecSpec {
+func (Pnpm) BuildDlx(packageName string, args []string) manager.ExecSpec {
 	return manager.ExecSpec{Command: "pnpm", Args: append([]string{"dlx", packageName}, args...)}
 }

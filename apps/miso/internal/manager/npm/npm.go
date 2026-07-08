@@ -26,6 +26,6 @@ func (Npm) BuildRun(script string, scriptArgs []string) manager.ExecSpec {
 func (Npm) BuildVersion() manager.ExecSpec {
 	return manager.ExecSpec{Command: "npm", Args: []string{"--version"}}
 }
-func (Npm) BuildMisox(packageName string, args []string) manager.ExecSpec {
+func (Npm) BuildDlx(packageName string, args []string) manager.ExecSpec {
 	return manager.ExecSpec{Command: "npx", Args: append([]string{packageName}, args...)}
 }
