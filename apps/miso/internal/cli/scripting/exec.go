@@ -5,8 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
+
+	"github.com/ekkolyth/miso/internal/proc"
 )
 
 // execute script file with shebang detection and extension-based interpreter selection
@@ -78,7 +83,29 @@ func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShe
 	if environ != nil {
 		cmd.Env = environ
 	}
-	return cmd.Run()
+	proc.SetGroup(cmd)
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start script: %w", err)
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	select {
+	case sig := <-sigCh:
+		pid := cmd.Process.Pid
+		_ = proc.KillGroup(pid, syscall.SIGTERM)
+		time.AfterFunc(2*time.Second, func() { _ = proc.KillGroup(pid, syscall.SIGKILL) })
+		<-done
+		return fmt.Errorf("interrupted by signal %v", sig)
+	case err := <-done:
+		return err
+	}
 }
 
 func isShell(interpreter string) bool {
