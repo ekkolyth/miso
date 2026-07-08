@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseSkillsFlags_AddOnly(t *testing.T) {
-	add, rm := commands.ParseSkillsFlags([]string{"--add"})
+	add, rm, _ := commands.ParseSkillsFlags([]string{"--add"})
 	if !add {
 		t.Error("expected add=true")
 	}
@@ -18,7 +18,7 @@ func TestParseSkillsFlags_AddOnly(t *testing.T) {
 }
 
 func TestParseSkillsFlags_RmOnly(t *testing.T) {
-	add, rm := commands.ParseSkillsFlags([]string{"--rm"})
+	add, rm, _ := commands.ParseSkillsFlags([]string{"--rm"})
 	if add {
 		t.Error("expected add=false")
 	}
@@ -28,7 +28,7 @@ func TestParseSkillsFlags_RmOnly(t *testing.T) {
 }
 
 func TestParseSkillsFlags_Both(t *testing.T) {
-	add, rm := commands.ParseSkillsFlags([]string{"--add", "--rm"})
+	add, rm, _ := commands.ParseSkillsFlags([]string{"--add", "--rm"})
 	if !add {
 		t.Error("expected add=true")
 	}
@@ -38,7 +38,7 @@ func TestParseSkillsFlags_Both(t *testing.T) {
 }
 
 func TestParseSkillsFlags_Neither(t *testing.T) {
-	add, rm := commands.ParseSkillsFlags([]string{"add", "lodash"})
+	add, rm, _ := commands.ParseSkillsFlags([]string{"add", "lodash"})
 	if add {
 		t.Error("expected add=false")
 	}
@@ -48,7 +48,7 @@ func TestParseSkillsFlags_Neither(t *testing.T) {
 }
 
 func TestParseSkillsFlags_Empty(t *testing.T) {
-	add, rm := commands.ParseSkillsFlags([]string{})
+	add, rm, _ := commands.ParseSkillsFlags([]string{})
 	if add {
 		t.Error("expected add=false")
 	}
@@ -58,12 +58,33 @@ func TestParseSkillsFlags_Empty(t *testing.T) {
 }
 
 func TestParseSkillsFlags_ExtraArgs(t *testing.T) {
-	add, rm := commands.ParseSkillsFlags([]string{"--add", "--verbose"})
+	add, rm, _ := commands.ParseSkillsFlags([]string{"--add", "--verbose"})
 	if !add {
 		t.Error("expected add=true")
 	}
 	if rm {
 		t.Error("expected rm=false")
+	}
+}
+
+func TestParseSkillsFlags_YesLong(t *testing.T) {
+	add, _, yes := commands.ParseSkillsFlags([]string{"--add", "--yes"})
+	if !add || !yes {
+		t.Errorf("expected add=true yes=true, got add=%v yes=%v", add, yes)
+	}
+}
+
+func TestParseSkillsFlags_YesShort(t *testing.T) {
+	_, rm, yes := commands.ParseSkillsFlags([]string{"--rm", "-y"})
+	if !rm || !yes {
+		t.Errorf("expected rm=true yes=true, got rm=%v yes=%v", rm, yes)
+	}
+}
+
+func TestParseSkillsFlags_NoYes(t *testing.T) {
+	_, _, yes := commands.ParseSkillsFlags([]string{"--add"})
+	if yes {
+		t.Error("expected yes=false")
 	}
 }
 

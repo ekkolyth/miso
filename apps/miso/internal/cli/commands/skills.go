@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -66,34 +67,40 @@ func guardNpmOverrides(managerName, workDir string) error {
 	return nil
 }
 
-// ParseSkillsFlags scans args for --add and --rm flags.
-// Returns (add, rm) booleans. Does not modify args.
-func ParseSkillsFlags(args []string) (add bool, rm bool) {
+// ParseSkillsFlags scans args for --add, --rm, and --yes/-y. Does not modify args.
+func ParseSkillsFlags(args []string) (add, rm, yes bool) {
 	for _, arg := range args {
 		switch arg {
 		case "--add":
 			add = true
 		case "--rm":
 			rm = true
+		case "--yes", "-y":
+			yes = true
 		}
 	}
 	return
 }
 
-// RunSkillsAdd runs: npx skills add "<repo-url>" --skill '*' --yes
-func RunSkillsAdd() error {
-	spec := manager.ExecSpec{
-		Command: "npx",
-		Args:    []string{"skills", "add", "https://github.com/ekkolyth/miso/tree/main/packages/skills", "--skill", "*", "--yes"},
-	}
-	return manager.Exec(spec, "")
+// RunSkillsAdd installs the miso skill for the given harnesses via the detected
+// manager's dlx runner.
+func RunSkillsAdd(managerName, workDir string, harnesses []string) error {
+	return runSkills("add", managerName, workDir, harnesses)
 }
 
-// RunSkillsRemove runs: npx skills remove miso-config miso-scripting miso-tui miso-env
-func RunSkillsRemove() error {
-	spec := manager.ExecSpec{
-		Command: "npx",
-		Args:    []string{"skills", "remove", "miso-config", "miso-scripting", "miso-tui", "miso-env"},
+// RunSkillsRemove uninstalls the miso skill from the given harnesses.
+func RunSkillsRemove(managerName, workDir string, harnesses []string) error {
+	return runSkills("remove", managerName, workDir, harnesses)
+}
+
+func runSkills(op, managerName, workDir string, harnesses []string) error {
+	if err := guardNpmOverrides(managerName, workDir); err != nil {
+		return err
 	}
-	return manager.Exec(spec, "")
+	driver, ok := manager.GetManager(managerName)
+	if !ok {
+		return fmt.Errorf("unsupported manager: %s", managerName)
+	}
+	spec := driver.BuildDlx("skills", buildSkillsArgs(op, skillName, harnesses))
+	return manager.Exec(spec, workDir)
 }

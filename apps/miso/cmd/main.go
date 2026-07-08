@@ -13,6 +13,7 @@ import (
 	"github.com/ekkolyth/miso/internal/cli/env"
 	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/harness"
 	"github.com/ekkolyth/miso/internal/manager"
 	"github.com/ekkolyth/miso/internal/manager/bun"
 	"github.com/ekkolyth/miso/internal/manager/npm"
@@ -94,24 +95,50 @@ func main() {
 			}
 			return
 		case "skills":
-			add, rm := commands.ParseSkillsFlags(args[1:])
+			add, rm, yes := commands.ParseSkillsFlags(args[1:])
 			if add && rm {
 				cli.Fail(logger, fmt.Errorf("--add and --rm are mutually exclusive"), false)
 				return
 			}
-			if add {
-				if err := commands.RunSkillsAdd(); err != nil {
+			if add || rm {
+				managerName := "npm"
+				if detected, derr := manager.DetectManager(originalWorkDir); derr == nil {
+					managerName = detected
+				}
+				installed := harness.Detect()
+				if len(installed) == 0 {
+					cli.Fail(logger, fmt.Errorf("no supported harness found on PATH; install one of: Claude Code, OpenCode, Codex, Gemini CLI, Cursor"), false)
+					return
+				}
+				var chosen []string
+				if yes {
+					for _, entry := range installed {
+						chosen = append(chosen, entry.Agent)
+					}
+				} else {
+					selected, serr := harness.Select(installed)
+					if serr != nil {
+						cli.Fail(logger, serr, false)
+						return
+					}
+					chosen = selected
+				}
+				if len(chosen) == 0 {
+					fmt.Fprintln(os.Stderr, "no harness selected; nothing to do")
+					return
+				}
+				if add {
+					if err := commands.RunSkillsAdd(managerName, originalWorkDir, chosen); err != nil {
+						cli.Fail(logger, err, false)
+					}
+					return
+				}
+				if err := commands.RunSkillsRemove(managerName, originalWorkDir, chosen); err != nil {
 					cli.Fail(logger, err, false)
 				}
 				return
 			}
-			if rm {
-				if err := commands.RunSkillsRemove(); err != nil {
-					cli.Fail(logger, err, false)
-				}
-				return
-			}
-			// Neither --add nor --rm: fall through to normal routing (PM passthrough)
+			// neither --add nor --rm: fall through to normal routing (PM passthrough)
 		case "misox":
 			// only the standalone misox binary dispatches; typed `miso misox` falls through to passthrough
 			if !invokedAsMisox {
