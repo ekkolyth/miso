@@ -1,8 +1,4 @@
-# miso-env
-
-**Use this skill** when configuring env validation, debugging env injection, or understanding which `.env` files miso loads.
-
----
+# Env validation
 
 ## Auto-Discovery (No `env` Config)
 

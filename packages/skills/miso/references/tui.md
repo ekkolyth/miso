@@ -1,8 +1,4 @@
-# miso-tui
-
-**Use this skill** when configuring multi-process TUI display, task ordering, or concurrent tasks.
-
----
+# TUI
 
 ## `tui` Field
 

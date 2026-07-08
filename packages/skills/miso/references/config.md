@@ -1,8 +1,4 @@
-# miso-config
-
-**Use this skill** any time you need to create or modify `miso.json`.
-
----
+# miso.json configuration
 
 ## `miso.json` Field Reference
 

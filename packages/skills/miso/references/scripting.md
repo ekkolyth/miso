@@ -1,8 +1,4 @@
-# miso-scripting
-
-**Use this skill** any time you need to create, organize, name, or debug scripts in a miso `scripts/` folder.
-
----
+# Scripts
 
 ## Scripts Folder
 

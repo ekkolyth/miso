@@ -5,7 +5,6 @@ import (
 	"os/exec"
 )
 
-// Harness is a supported agent target for the skills tool.
 type Harness struct {
 	Agent string   // skills-tool -a identifier
 	Label string   // display name in the selector
@@ -25,7 +24,7 @@ var errNotFound = errors.New("not found")
 // seam for tests
 var lookPath = exec.LookPath
 
-// Detect returns the installed harnesses, in table order.
+// installed harnesses, in table order
 func Detect() []Harness {
 	var found []Harness
 	for _, entry := range table {

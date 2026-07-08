@@ -82,13 +82,11 @@ func ParseSkillsFlags(args []string) (add, rm, yes bool) {
 	return
 }
 
-// RunSkillsAdd installs the miso skill for the given harnesses via the detected
-// manager's dlx runner.
+// via the detected manager's dlx runner
 func RunSkillsAdd(managerName, workDir string, harnesses []string) error {
 	return runSkills("add", managerName, workDir, harnesses)
 }
 
-// RunSkillsRemove uninstalls the miso skill from the given harnesses.
 func RunSkillsRemove(managerName, workDir string, harnesses []string) error {
 	return runSkills("remove", managerName, workDir, harnesses)
 }
