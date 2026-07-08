@@ -11,7 +11,7 @@ import (
 
 // BuiltinCommands is the list of Miso built-in commands for completion.
 var BuiltinCommands = []string{
-	"add", "dev", "i", "init", "install", "misox", "remove", "rm", "run",
+	"add", "dev", "i", "init", "install", "remove", "rm", "run",
 	"scripts", "upgrade", "v", "version",
 }
 
@@ -20,7 +20,7 @@ var upgradeFlags = []string{"--local"}
 
 // builtinSet: commands that take package names (no completion for now).
 var builtinSet = map[string]bool{
-	"add": true, "remove": true, "rm": true, "misox": true,
+	"add": true, "remove": true, "rm": true,
 }
 
 // Complete receives completion args and outputs matching completions to stdout, one per line.
@@ -79,7 +79,7 @@ func getCandidates(prev string, cur string, cwd string) []string {
 		return candidates
 	}
 
-	// add, remove, misox: no package name completion (deferred)
+	// add, remove: no package name completion (deferred)
 	if builtinSet[prev] {
 		return nil
 	}

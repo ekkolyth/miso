@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/charmbracelet/log"
 
@@ -36,7 +35,8 @@ func main() {
 	args := os.Args[1:]
 
 	// if misox prepend "misox"
-	if baseName := filepath.Base(os.Args[0]); baseName == "misox" || strings.HasPrefix(baseName, "misox-") {
+	invokedAsMisox := cli.InvokedAsMisox(os.Args[0])
+	if invokedAsMisox {
 		args = append([]string{"misox"}, args...)
 	}
 
@@ -113,8 +113,12 @@ func main() {
 			}
 			// Neither --add nor --rm: fall through to normal routing (PM passthrough)
 		case "misox":
+			// only the standalone misox binary dispatches; typed `miso misox` falls through to passthrough
+			if !invokedAsMisox {
+				break
+			}
 			if len(args) < 2 {
-				fmt.Fprintln(os.Stderr, "usage: miso misox <package> [args...]")
+				fmt.Fprintln(os.Stderr, "usage: misox <package> [args...]")
 				os.Exit(1)
 			}
 			misoxManager := "npm"

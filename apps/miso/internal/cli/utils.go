@@ -154,7 +154,6 @@ Usage:
   miso remove <pkg>
   miso run <script> <args>
   miso dev <args>
-  miso misox <package> [args...]
   miso <command> [args...]
 
   - Automatically detects bun, npm, pnpm, or yarn.

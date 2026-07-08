@@ -94,3 +94,18 @@ func TestParseColonScriptNotWorkspaceRoutedInMono(t *testing.T) {
 		t.Errorf("Action = ActionWorkspaceScript, want anything else (colon-named script should not be workspace-routed)")
 	}
 }
+
+func TestParseMisoxFallsThroughToPassthrough(t *testing.T) {
+	// typed `miso misox foo` is not a miso command — the standalone misox binary
+	// dispatches via argv[0], so here it must route to passthrough, not misox.
+	parsed, err := ParseCLI([]string{"misox", "foo"}, singleCfg(), t.TempDir())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if parsed.Action != ActionPassthrough {
+		t.Errorf("Action = %v, want ActionPassthrough", parsed.Action)
+	}
+	if parsed.Command != "misox" {
+		t.Errorf("Command = %q, want %q", parsed.Command, "misox")
+	}
+}
