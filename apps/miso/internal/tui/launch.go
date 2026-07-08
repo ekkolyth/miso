@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/ekkolyth/miso/internal/cli/env"
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 // Launch starts the TUI with the given config, script name, and manager.
@@ -57,8 +57,9 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 			args = spec.Args
 		}
 
-		// Build env for this process (scoped to workspace dir)
-		processEnv, envErr := env.BuildProcessEnv(root, cfg, dir)
+		// Build env scoped to this member target
+		target := workspace.Target{Kind: workspace.TargetMember, Name: entry.Label, Dir: dir}
+		processEnv, envErr := env.BuildTargetEnv(root, cfg, target)
 		if envErr != nil {
 			return false, fmt.Errorf("build env for %s: %w", entry.Label, envErr)
 		}
@@ -190,23 +191,22 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 }
 
 func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiScriptEntry, error) {
-	// Simple mode does not support monorepo workspace discovery
-	if cfg.IsMonorepo() && cfg.SimpleMode() {
-		return nil, nil
+	members, err := workspace.DiscoverMembers(root, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("discover members: %w", err)
 	}
 
-	if cfg.IsMonorepo() {
-		wsDirs, err := config.LoadWorkspaces(root)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load workspaces: %w", err)
+	if len(members) > 0 {
+		// Simple mode does not support monorepo workspace discovery
+		if cfg.SimpleMode() {
+			return nil, nil
 		}
 
 		var wsInfos []WorkspaceInfo
-		for _, dir := range wsDirs {
-			name := filepath.Base(dir)
+		for _, member := range members {
 			wsInfos = append(wsInfos, WorkspaceInfo{
-				Name: name,
-				Dir:  dir,
+				Name: member.Name,
+				Dir:  member.Dir,
 			})
 		}
 

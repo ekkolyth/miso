@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/config"
@@ -63,5 +64,36 @@ func TestResolveTarget_GlobalReserved(t *testing.T) {
 	root := t.TempDir()
 	if _, err := ResolveTarget("global", members(root), root, config.Config{}); err == nil {
 		t.Error("expected error for reserved 'global'")
+	}
+}
+
+func TestFindWorkspace_ByRelativePath(t *testing.T) {
+	root := t.TempDir()
+	got, err := FindWorkspace("apps/web", members(root), root)
+	if err != nil {
+		t.Fatalf("FindWorkspace() error: %v", err)
+	}
+	if got.Name != "@org/web" {
+		t.Errorf("got %q, want @org/web", got.Name)
+	}
+}
+
+func TestFindWorkspace_Ambiguous(t *testing.T) {
+	root := t.TempDir()
+	dupes := []Member{
+		{Name: "one", Dir: filepath.Join(root, "apps", "api")},
+		{Name: "two", Dir: filepath.Join(root, "packages", "api")},
+	}
+	_, err := FindWorkspace("api", dupes, root)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("expected ambiguous error, got: %v", err)
+	}
+}
+
+func TestFindWorkspace_NotFound(t *testing.T) {
+	root := t.TempDir()
+	_, err := FindWorkspace("nope", members(root), root)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected not-found error, got: %v", err)
 	}
 }

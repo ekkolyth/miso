@@ -96,6 +96,33 @@ func TestDiscoverTuiScripts_PrefixMatching(t *testing.T) {
 	}
 }
 
+// TestDiscoverEntries_CarriesScopedMemberName verifies a member whose package.json
+// name is scoped (@org/web) surfaces as label "@org/web", not the dir basename.
+func TestDiscoverEntries_CarriesScopedMemberName(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(webDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "package.json"),
+		[]byte(`{"name":"@org/web","scripts":{"dev":"vite"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) == 0 || entries[0].Label != "@org/web" {
+		t.Fatalf("label = %v, want @org/web", labelsOf(entries))
+	}
+}
+
 func TestResolveSingleRepoScripts(t *testing.T) {
 	root := t.TempDir()
 	writePackageJSON(t, root, map[string]string{

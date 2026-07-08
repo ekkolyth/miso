@@ -87,13 +87,12 @@ func TestLoadRepoStringValues(t *testing.T) {
 		name string
 		json string
 		repo string
-		mono bool
 		dele bool
 	}{
-		{"miso", `{"repo":"miso"}`, "miso", false, false},
-		{"turbo", `{"repo":"turbo"}`, "turbo", true, true},
-		{"nx", `{"repo":"nx"}`, "nx", true, true},
-		{"empty", `{}`, "", false, false},
+		{"miso", `{"repo":"miso"}`, "miso", false},
+		{"turbo", `{"repo":"turbo"}`, "turbo", true},
+		{"nx", `{"repo":"nx"}`, "nx", true},
+		{"empty", `{}`, "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -104,9 +103,6 @@ func TestLoadRepoStringValues(t *testing.T) {
 			}
 			if cfg.Repo != tt.repo {
 				t.Errorf("Repo = %q, want %q", cfg.Repo, tt.repo)
-			}
-			if cfg.IsMonorepo() != tt.mono {
-				t.Errorf("IsMonorepo() = %v, want %v", cfg.IsMonorepo(), tt.mono)
 			}
 			if cfg.IsDelegated() != tt.dele {
 				t.Errorf("IsDelegated() = %v, want %v", cfg.IsDelegated(), tt.dele)
@@ -434,81 +430,6 @@ func TestSaveOmitsPackageManagerWhenNil(t *testing.T) {
 	}
 }
 
-func TestFindWorkspaceByBasename(t *testing.T) {
-	root := t.TempDir()
-	wsDir := filepath.Join(root, "packages", "api")
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	workspaces := []string{wsDir}
-
-	got, err := FindWorkspace("api", workspaces, root)
-	if err != nil {
-		t.Fatalf("FindWorkspace() error: %v", err)
-	}
-	if got != wsDir {
-		t.Errorf("got %q, want %q", got, wsDir)
-	}
-}
-
-func TestFindWorkspaceByRelativePath(t *testing.T) {
-	root := t.TempDir()
-	wsDir := filepath.Join(root, "packages", "api")
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	workspaces := []string{wsDir}
-
-	got, err := FindWorkspace("packages/api", workspaces, root)
-	if err != nil {
-		t.Fatalf("FindWorkspace() error: %v", err)
-	}
-	if got != wsDir {
-		t.Errorf("got %q, want %q", got, wsDir)
-	}
-}
-
-func TestFindWorkspaceByPackageName(t *testing.T) {
-	root := t.TempDir()
-	wsDir := filepath.Join(root, "packages", "api")
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	pkgJSON := `{"name": "@myorg/api"}`
-	if err := os.WriteFile(filepath.Join(wsDir, "package.json"), []byte(pkgJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	workspaces := []string{wsDir}
-
-	got, err := FindWorkspace("@myorg/api", workspaces, root)
-	if err != nil {
-		t.Fatalf("FindWorkspace() error: %v", err)
-	}
-	if got != wsDir {
-		t.Errorf("got %q, want %q", got, wsDir)
-	}
-}
-
-func TestFindWorkspaceAmbiguous(t *testing.T) {
-	root := t.TempDir()
-	ws1 := filepath.Join(root, "apps", "api")
-	ws2 := filepath.Join(root, "packages", "api")
-	for _, d := range []string{ws1, ws2} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	workspaces := []string{ws1, ws2}
-
-	_, err := FindWorkspace("api", workspaces, root)
-	if err == nil {
-		t.Error("expected error for ambiguous match, got nil")
-	}
-	if !strings.Contains(err.Error(), "ambiguous") {
-		t.Errorf("expected error to contain %q, got: %v", "ambiguous", err)
-	}
-}
-
 func TestRepoMode_DefaultsToMiso(t *testing.T) {
 	cfg := Config{}
 	if got := cfg.RepoMode(); got != "miso" {
@@ -531,23 +452,6 @@ func TestLoad_AcceptsMisoMode(t *testing.T) {
 	}
 	if !cfg.IsDelegated() || cfg.RepoMode() != "turbo" {
 		t.Errorf("got mode %q delegated=%v, want turbo delegated", cfg.RepoMode(), cfg.IsDelegated())
-	}
-}
-
-func TestFindWorkspaceNotFound(t *testing.T) {
-	root := t.TempDir()
-	wsDir := filepath.Join(root, "packages", "api")
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	workspaces := []string{wsDir}
-
-	_, err := FindWorkspace("web", workspaces, root)
-	if err == nil {
-		t.Error("expected error for not found, got nil")
-	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("expected error to contain %q, got: %v", "not found", err)
 	}
 }
 

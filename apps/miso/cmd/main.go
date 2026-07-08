@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/charmbracelet/log"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/ekkolyth/miso/internal/tui"
 	"github.com/ekkolyth/miso/internal/turbo"
 	"github.com/ekkolyth/miso/internal/ui"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 func init() {
@@ -198,7 +198,8 @@ func main() {
 			}
 		}
 
-		processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, originalWorkDir)
+		target, _ := workspace.ResolveTarget(cmd, nil, projectRoot, cfg)
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
@@ -213,21 +214,18 @@ func main() {
 		cli.Fail(logger, err, true)
 	}
 
-	// CWD-aware mono scoping: if repo is "mono" and we're inside a workspace,
-	// and the parsed action is a plain script (not already workspace-scoped),
-	// try to resolve the script from the current workspace's scripts folder first.
-	if cfg.IsMonorepo() && originalWorkDir != projectRoot &&
-		parsed.Action == cli.ActionScriptPackageJSON {
-		workspaces, wsErr := config.LoadWorkspaces(projectRoot)
-		if wsErr == nil && len(workspaces) > 0 {
-			if wsDir, inWs := scripting.WorkspaceFromCWD(originalWorkDir, workspaces); inWs {
-				resolved, _, resolveErr := scripting.ResolveWorkspaceScript(
-					filepath.Base(wsDir), parsed.ScriptName, projectRoot, cfg,
-				)
-				if resolveErr == nil && (resolved.Source == scripting.ScriptSourceFolder || resolved.Source == scripting.ScriptSourcePackageJSON) {
-					parsed.Action = cli.ActionWorkspaceScript
-					parsed.WorkspaceName = filepath.Base(wsDir)
-				}
+	// CWD-aware workspace scoping: when inside a discovered member and the parsed
+	// action is a plain script (not already workspace-scoped), try to resolve the
+	// script from the current member's scripts folder first.
+	if members, _ := workspace.DiscoverMembers(projectRoot, cfg); len(members) > 0 &&
+		originalWorkDir != projectRoot && parsed.Action == cli.ActionScriptPackageJSON {
+		if member, inWs := workspace.WorkspaceFromCWD(originalWorkDir, members); inWs {
+			resolved, _, resolveErr := scripting.ResolveWorkspaceScript(
+				member.Name, parsed.ScriptName, projectRoot, cfg,
+			)
+			if resolveErr == nil && (resolved.Source == scripting.ScriptSourceFolder || resolved.Source == scripting.ScriptSourcePackageJSON) {
+				parsed.Action = cli.ActionWorkspaceScript
+				parsed.WorkspaceName = member.Name
 			}
 		}
 	}
@@ -257,12 +255,9 @@ func main() {
 	if cfg.TuiEnabled() {
 		// Only intercept when running from project root (not workspace subdirectory)
 		isRoot := true
-		if cfg.IsMonorepo() {
-			workspaces, wsErr := config.LoadWorkspaces(projectRoot)
-			if wsErr == nil && len(workspaces) > 0 {
-				if _, inWs := scripting.WorkspaceFromCWD(originalWorkDir, workspaces); inWs {
-					isRoot = false
-				}
+		if members, _ := workspace.DiscoverMembers(projectRoot, cfg); len(members) > 0 {
+			if _, inWs := workspace.WorkspaceFromCWD(originalWorkDir, members); inWs {
+				isRoot = false
 			}
 		}
 
@@ -335,7 +330,8 @@ func main() {
 		}
 		switch resolved.Source {
 		case scripting.ScriptSourceFolder:
-			processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, workDir)
+			target := workspace.Target{Kind: workspace.TargetMember, Name: parsed.WorkspaceName, Dir: workDir}
+			processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
 			if envErr != nil {
 				cli.Fail(logger, envErr, false)
 			}
@@ -361,7 +357,8 @@ func main() {
 		}
 		return
 	case cli.ActionScriptOverride:
-		processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, originalWorkDir)
+		target := workspace.Target{Kind: workspace.TargetScript, Name: parsed.ScriptName}
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
@@ -370,7 +367,8 @@ func main() {
 		}
 		return
 	case cli.ActionScriptFolder:
-		processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, originalWorkDir)
+		target := workspace.Target{Kind: workspace.TargetScript, Name: parsed.ScriptName}
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
