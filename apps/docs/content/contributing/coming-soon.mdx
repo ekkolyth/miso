@@ -33,7 +33,7 @@ The main development branch is `dev`. Base your branches off `dev`, not `main`.
 | `apps/docs` | This documentation site (Next.js + Nextra) |
 | `packages/skills` | AI agent skills for Claude Code / Cursor |
 
-The repo root uses miso in simple mode (`"packageManager": false`) with `"repo": "mono"`, so all workspace scripts are available via `miso @workspace/script`.
+The repo root uses miso in simple mode (`"packageManager": false`). Workspace membership is auto-detected from the root `package.json` `workspaces` field, so all workspace scripts are available via `miso @workspace/script` without any `repo` setting.
 
 ---
 

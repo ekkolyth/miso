@@ -64,7 +64,7 @@ Configure how miso orchestrates task execution:
 
 <DocProp prop='"miso"' /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default</Badge>
 
-Miso orchestrates directly. Workspace membership is auto-detected — independent of this setting — from a `workspaces` field in your root `package.json` or a `pnpm-workspace.yaml`. When members are found, miso fans out workspace-scoped script execution using the `@workspace/script` syntax and automatic CWD-based scoping; when none are found, it runs as a single project against the root `scripts/` folder.
+Miso orchestrates directly. Workspace membership is auto-detected — independent of this setting — from a `pnpm-workspace.yaml` (checked first), otherwise a `workspaces` field in your root `package.json`. When members are found, miso fans out workspace-scoped script execution using the `@workspace/script` syntax and automatic CWD-based scoping; when none are found, it runs as a single project against the root `scripts/` folder.
 
 <Terminal
     copy={false}

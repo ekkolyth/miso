@@ -64,10 +64,10 @@ Controls how miso discovers and orchestrates workspaces.
     copy={false}
     className="mt-4"
     title="miso.json"
-    config={`"repo": "single" | "mono" | "turbo" | "nx"`}
+    config={`"repo": "miso" | "turbo" | "nx"`}
 />
 
-<DocProp prop='"single"' />
+<DocProp prop='"miso"' />
 <Badge
     variant="default"
     className="bg-primary-900 font-bold text-primary-400 border-primary-400"
@@ -75,19 +75,15 @@ Controls how miso discovers and orchestrates workspaces.
     Default
 </Badge>
 
-Standard project. Uses `concurrent` in task config for companion scripts.
-
-<DocProp prop='"mono"' />
-
-Monorepo. Miso discovers workspaces and orchestrates scripts directly.
+Miso orchestrates directly. Workspace membership is auto-detected — independent of this setting — from a `pnpm-workspace.yaml` (checked first) or a `workspaces` field in your root `package.json`. Uses `concurrent` in task config for companion scripts.
 
 <DocProp prop='"turbo"' />
 
-Monorepo. Delegates orchestration to Turborepo, miso provides the TUI. `turbo` must be available in your PATH.
+Delegates orchestration to Turborepo, miso provides the TUI. `turbo` must be available in your PATH.
 
 <DocProp prop='"nx"' />
 
-Monorepo. Delegates orchestration to Nx, miso provides the TUI. `nx` must be available in your PATH.
+Delegates orchestration to Nx, miso provides the TUI. `nx` must be available in your PATH.
 
 You can also use the object form to configure per-task behaviour:
 
@@ -97,7 +93,7 @@ You can also use the object form to configure per-task behaviour:
     title="miso.json"
     config={`{
   "repo": {
-    "mode": "mono",
+    "mode": "miso",
     "tasks": {
       "build": {
         "dependsOn": ["^build"]
