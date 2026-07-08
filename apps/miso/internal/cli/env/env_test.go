@@ -1,6 +1,7 @@
 package env
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,6 +110,7 @@ func TestRun_GroupedErrors_MultipleEntries(t *testing.T) {
 			{
 				Label: "alpha",
 				Path:  "a.env",
+				Scope: "global",
 				Variables: config.EnvVariables{
 					Array: []string{"MISSING_ONE", "MISSING_TWO"},
 				},
@@ -116,6 +118,7 @@ func TestRun_GroupedErrors_MultipleEntries(t *testing.T) {
 			{
 				Label: "beta",
 				Path:  "b.env",
+				Scope: "global",
 				Variables: config.EnvVariables{
 					Object: map[string]config.VarConfigOrString{
 						"BAD_PORT": {IsShorthand: true, Type: "port"},
@@ -145,6 +148,7 @@ func TestRun_SuccessfulEntries_StillPass(t *testing.T) {
 			{
 				Label: "good",
 				Path:  "good.env",
+				Scope: "global",
 				Variables: config.EnvVariables{
 					Object: map[string]config.VarConfigOrString{
 						"PORT": {IsShorthand: true, Type: "port"},
@@ -173,6 +177,7 @@ func TestRun_PassingEntryLogsInfo_WhenSiblingFails(t *testing.T) {
 			{
 				Label: "good",
 				Path:  "good.env",
+				Scope: "global",
 				Variables: config.EnvVariables{
 					Object: map[string]config.VarConfigOrString{
 						"PORT": {IsShorthand: true, Type: "port"},
@@ -183,6 +188,7 @@ func TestRun_PassingEntryLogsInfo_WhenSiblingFails(t *testing.T) {
 			{
 				Label: "bad",
 				Path:  "bad.env",
+				Scope: "global",
 				Variables: config.EnvVariables{
 					Array: []string{"MISSING_VAR"},
 				},
@@ -203,6 +209,20 @@ func TestRun_PassingEntryLogsInfo_WhenSiblingFails(t *testing.T) {
 	logOutput := buf.String()
 	if !strings.Contains(logOutput, "good") {
 		t.Errorf("expected INFO log for passing entry 'good', got: %s", logOutput)
+	}
+}
+
+func TestRun_EmptyScopeIsError(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644)
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{Path: ".env"}, // no scope
+		},
+	}
+	logger := log.New(io.Discard)
+	if err := Run(dir, cfg, logger); err == nil {
+		t.Error("expected error for entry with empty scope")
 	}
 }
 

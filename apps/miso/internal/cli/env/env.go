@@ -13,6 +13,7 @@ import (
 
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/ui"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 const EnvFlag = "--env"
@@ -74,6 +75,23 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 		}
 		logger.Info("env loaded", "path", path)
 		return nil
+	}
+
+	members, _ := workspace.DiscoverMembers(projectRoot, cfg)
+	memberNames := make(map[string]bool, len(members))
+	for _, member := range members {
+		if member.Name == "global" {
+			return fmt.Errorf("member %q uses the reserved name \"global\"", member.Dir)
+		}
+		memberNames[member.Name] = true
+	}
+	for _, entry := range cfg.Env {
+		if entry.Scope == "" {
+			return fmt.Errorf("env entry %q has no scope (set a target name or \"global\")", entry.Path)
+		}
+		if entry.Scope != "global" && !memberNames[entry.Scope] {
+			logger.Warn("env entry scope matches no known member", "scope", entry.Scope, "path", entry.Path)
+		}
 	}
 
 	var failures []entryErrors
