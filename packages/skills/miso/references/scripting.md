@@ -80,7 +80,7 @@ Invoke with path syntax: `miso build/docs`, `miso test/e2e`.
 
 ## Workspace-Scoped Scripts (Monorepos)
 
-In a monorepo (`repo: "mono"`), run a script in a specific workspace using the `@workspace/script` syntax:
+In a repo with workspaces (auto-detected from your package manager), run a script in a specific workspace using the `@workspace/script` syntax:
 
 ```bash
 miso @api/build           # run "build" in the workspace identified as "api"
