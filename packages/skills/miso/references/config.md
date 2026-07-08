@@ -1,8 +1,3 @@
----
-name: miso-config
-description: Reference for creating and modifying miso.json configuration files
----
-
 # miso-config
 
 **Use this skill** any time you need to create or modify `miso.json`.

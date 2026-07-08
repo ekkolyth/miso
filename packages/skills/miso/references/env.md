@@ -1,8 +1,3 @@
----
-name: miso-env
-description: Reference for configuring env validation and understanding miso's .env file loading
----
-
 # miso-env
 
 **Use this skill** when configuring env validation, debugging env injection, or understanding which `.env` files miso loads.

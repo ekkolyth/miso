@@ -1,8 +1,3 @@
----
-name: miso-scripting
-description: Reference for creating, organizing, and debugging scripts in a miso scripts/ folder
----
-
 # miso-scripting
 
 **Use this skill** any time you need to create, organize, name, or debug scripts in a miso `scripts/` folder.
