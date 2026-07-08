@@ -168,7 +168,6 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			Schema:  config.SchemaURL,
 			Scripts: "./scripts",
 			Flags:   make(map[string][]string),
-			Repo:    repoType,
 		}
 		if err := config.Save(root, cfg); err != nil {
 			return err
@@ -223,7 +222,6 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			Schema:  config.SchemaURL,
 			Scripts: "./scripts",
 			Flags:   make(map[string][]string),
-			Repo:    repoType,
 		}
 		if err := config.Save(root, cfg); err != nil {
 			return err
@@ -343,7 +341,6 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			Schema:  config.SchemaURL,
 			Scripts: "./scripts",
 			Flags:   make(map[string][]string),
-			Repo:    repoType,
 		}
 		if err := config.Save(root, cfg); err != nil {
 			return err

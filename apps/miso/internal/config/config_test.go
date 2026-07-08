@@ -430,6 +430,36 @@ func TestSaveOmitsPackageManagerWhenNil(t *testing.T) {
 	}
 }
 
+// mirrors what init writes: Repo left unset regardless of the single/mono
+// scaffolding choice, so the saved config must load back as miso mode.
+func TestSaveOmitsRepoWhenUnset(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		Schema:  SchemaURL,
+		Scripts: "./scripts",
+		Flags:   make(map[string][]string),
+	}
+	if err := Save(dir, cfg); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, FileName))
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if strings.Contains(string(data), `"repo"`) {
+		t.Error("saved config contains repo, want it omitted when unset")
+	}
+
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() after Save() error: %v", err)
+	}
+	if got := loaded.RepoMode(); got != "miso" {
+		t.Errorf("RepoMode() after round-trip = %q, want miso", got)
+	}
+}
+
 func TestRepoMode_DefaultsToMiso(t *testing.T) {
 	cfg := Config{}
 	if got := cfg.RepoMode(); got != "miso" {
