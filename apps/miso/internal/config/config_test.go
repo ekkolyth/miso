@@ -603,3 +603,21 @@ func TestLoadEnv_VariablesArrayForm(t *testing.T) {
 		t.Errorf("variables array = %v, want [A B]", arr)
 	}
 }
+
+func TestParseEnvEntry_Override(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"env": [
+			{"scope": "web", "path": ".env.local", "override": ".env.infra", "variables": ["API_URL"]}
+		]
+	}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Env) != 1 {
+		t.Fatalf("env entries = %d, want 1", len(cfg.Env))
+	}
+	if cfg.Env[0].Override != ".env.infra" {
+		t.Errorf("Override = %q, want %q", cfg.Env[0].Override, ".env.infra")
+	}
+}

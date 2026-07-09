@@ -43,6 +43,7 @@ type EnvEntry struct {
 	Scope     string       `json:"scope,omitempty"`
 	Label     string       `json:"label,omitempty"`
 	Path      string       `json:"path,omitempty"`
+	Override  string       `json:"override,omitempty"`
 	Required  EnvRequired  `json:"required,omitempty"`
 	Variables EnvVariables `json:"variables,omitempty"`
 }
@@ -349,6 +350,7 @@ func parseEnvEntry(raw json.RawMessage) (*EnvEntry, error) {
 		Scope     string          `json:"scope,omitempty"`
 		Label     string          `json:"label,omitempty"`
 		Path      json.RawMessage `json:"path,omitempty"`
+		Override  string          `json:"override,omitempty"`
 		Required  json.RawMessage `json:"required,omitempty"`
 		Variables json.RawMessage `json:"variables,omitempty"`
 	}
@@ -356,7 +358,7 @@ func parseEnvEntry(raw json.RawMessage) (*EnvEntry, error) {
 		return nil, err
 	}
 
-	entry := &EnvEntry{Scope: obj.Scope, Label: obj.Label}
+	entry := &EnvEntry{Scope: obj.Scope, Label: obj.Label, Override: obj.Override}
 
 	// path: accept string or legacy []string
 	if len(obj.Path) > 0 {
