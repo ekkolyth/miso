@@ -41,7 +41,7 @@ type ParsedCLI struct {
 	WorkspaceName string // For @workspace/script syntax
 }
 
-// resolveScript honors simple mode: folder-only resolution (no package.json fallback).
+// simple mode: folder scripts only, no package.json fallback
 func resolveScript(name, root string, cfg config.Config) (scripting.ResolvedScript, error) {
 	if cfg.SimpleMode() {
 		return scripting.ResolveScriptFolderOnly(name, root, cfg)
