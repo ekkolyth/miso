@@ -189,7 +189,7 @@ jobs:
                   path: dist
 
             - name: Restore binary permissions
-              run: chmod +x dist/bin/miso-* dist/bin/misox-* && chmod -x dist/bin/*.exe
+              run: chmod +x dist/bin/miso-* dist/bin/misox-*
 
             - name: Setup Node.js
               uses: actions/setup-node@v6
