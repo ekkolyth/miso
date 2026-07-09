@@ -14,8 +14,8 @@ import (
 	"github.com/ekkolyth/miso/internal/proc"
 )
 
-// ResolveInterpreter picks the interpreter for a script: shebang, then extension
-// (manager-aware for .ts), then defaultShell (or sh). Shell interpreters get -e.
+// shebang, then extension (manager-aware for .ts), then defaultShell (or sh);
+// shell interpreters get -e
 func ResolveInterpreter(scriptPath, defaultShell, managerName string) (string, []string, error) {
 	file, err := os.Open(scriptPath)
 	if err != nil {
@@ -69,8 +69,7 @@ func ResolveInterpreter(scriptPath, defaultShell, managerName string) (string, [
 	return interpreter, interpreterArgs, nil
 }
 
-// execute script file with shebang detection and extension-based interpreter selection
-// defaultShell: used when no shebang or known extension; empty means "sh"
+// spawn the resolved interpreter in its own process group, reaping it on signal
 func ExecScriptFile(scriptPath string, args []string, workDir, defaultShell, managerName string, environ []string) error {
 	interpreter, interpreterArgs, err := ResolveInterpreter(scriptPath, defaultShell, managerName)
 	if err != nil {
