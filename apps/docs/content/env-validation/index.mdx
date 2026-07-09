@@ -97,6 +97,7 @@ Once you add an `env` block, each root entry needs a `scope` — a target name o
 - `-g` / `--generate` — write `.env.generated` with every variable declared for that scope, values blank.
 - `-p` / `--populate` — fill values from each entry's baseline file (its `path`).
 - `-o` / `--override` — layer each entry's declared `override` file on top (override wins).
+- `-x` / `--example` — write `.env.example` with a **type-valid fake** for every variable (a valid port, URL, UUID, …). It passes `miso env` validation, so it doubles as a committable example and as a way to rule env out as the cause of a crash. Prompts before overwriting an existing `.env.example`.
 
 Combine them for a full production build:
 
@@ -104,6 +105,7 @@ Combine them for a full production build:
 miso env -g          # keys-only template(s)
 miso env -g -p       # filled from local baselines
 miso env -g -p -o    # baselines + overrides, validated
+miso env -x          # .env.example with fake-but-valid values
 ```
 
 Files follow the scope, not the declaration site: `scope: global` writes `<root>/.env.generated`; `scope: web` writes `apps/web/.env.generated` even if declared in the root `miso.json`. With `-p`/`-o`, the resolved values are validated against your declared types and required keys — a missing required value fails the command and writes nothing.

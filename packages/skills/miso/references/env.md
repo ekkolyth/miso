@@ -212,6 +212,7 @@ Run `miso env` to validate without executing any script.
 - `-g` / `--generate` — write `.env.generated` per scope, keys only (from each scope's declared `variables`).
 - `-p` / `--populate` — fill values from each entry's `path` baseline.
 - `-o` / `--override` — layer each entry's `override` file on top (override wins).
+- `-x` / `--example` — write `.env.example` per scope with type-valid fake values (valid port/url/uuid/…). Passes `miso env` validation — use it as a committable example or to rule env out as a crash cause. Prompts before overwriting an existing file. Can't combine with `-p`/`-o`.
 
 File location follows the scope: `global` → repo root; `<member>` → that member's dir. With `-p`/`-o` the resolved values are validated (type + required) and nothing is written for any scope if one fails.
 
