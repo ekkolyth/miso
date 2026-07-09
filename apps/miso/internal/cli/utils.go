@@ -160,7 +160,7 @@ func UsageText() string {
 		"dev <args>",
 		"<command> [args...]",
 	} {
-		b.WriteString("  " + s.Accent.Render("miso") + " " + sub + "\n")
+		b.WriteString("  " + s.Flavor.Render("miso") + " " + sub + "\n")
 	}
 	b.WriteString("\n")
 	for _, note := range []string{
