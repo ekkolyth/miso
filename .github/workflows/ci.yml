@@ -10,11 +10,11 @@ jobs:
     lint:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@v7
             - uses: actions/setup-go@v6
               with:
                   go-version-file: apps/miso/go.mod
-            - uses: golangci/golangci-lint-action@v6
+            - uses: golangci/golangci-lint-action@v9
               with:
                   version: latest
                   working-directory: apps/miso
@@ -29,7 +29,7 @@ jobs:
             run:
                 working-directory: apps/miso
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@v7
             - uses: actions/setup-go@v6
               with:
                   go-version-file: apps/miso/go.mod
@@ -43,7 +43,7 @@ jobs:
               run: gotestsum --junitfile ../../test-results-windows.xml -- ./...
             - name: Upload test results
               if: always()
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v7
               with:
                   name: test-results-${{ matrix.os }}
                   path: test-results-*.xml
@@ -54,7 +54,7 @@ jobs:
             run:
                 working-directory: apps/miso
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@v7
             - uses: actions/setup-go@v6
               with:
                   go-version-file: apps/miso/go.mod
