@@ -5,6 +5,7 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -54,9 +55,11 @@ type Process struct {
 	StartedAt time.Time
 	Buffer    *RingBuffer
 
-	cmd  *exec.Cmd
-	done chan struct{}
-	mu   sync.Mutex
+	cmd        *exec.Cmd
+	stdin      io.Writer // writable child stdin (pty master on unix, pipe on Windows)
+	closeSpawn func()
+	done       chan struct{}
+	mu         sync.Mutex
 }
 
 // ProcessManager owns the set of managed processes and dispatches tea messages.
@@ -110,35 +113,12 @@ func (pm *ProcessManager) Start(p *Process) error {
 	if p.Environ != nil {
 		p.cmd.Env = p.Environ
 	}
-	// Create a new process group so we can kill the entire tree on stop.
-	proc.SetGroup(p.cmd)
+	cmd := p.cmd
 	p.mu.Unlock()
 
-	cmd := p.cmd
-
-	stdoutPipe, err := cmd.StdoutPipe()
+	// A pty (unix) or pipes (Windows) — gives children a TTY + live stdin.
+	res, err := spawnProcess(cmd, 0, 0)
 	if err != nil {
-		p.mu.Lock()
-		p.State = StateExited
-		p.ExitCode = -1
-		close(p.done)
-		p.mu.Unlock()
-		pm.sendState(p, StateExited, -1)
-		return err
-	}
-
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		p.mu.Lock()
-		p.State = StateExited
-		p.ExitCode = -1
-		close(p.done)
-		p.mu.Unlock()
-		pm.sendState(p, StateExited, -1)
-		return err
-	}
-
-	if err := cmd.Start(); err != nil {
 		p.mu.Lock()
 		p.State = StateExited
 		p.ExitCode = -1
@@ -149,22 +129,25 @@ func (pm *ProcessManager) Start(p *Process) error {
 	}
 
 	p.mu.Lock()
+	p.stdin = res.stdin
+	p.closeSpawn = res.closer
 	p.State = StateRunning
 	p.StartedAt = time.Now()
 	p.mu.Unlock()
 	pm.sendState(p, StateRunning, 0)
 
 	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go pm.captureOutput(p, stdoutPipe, &wg)
-	go pm.captureOutput(p, stderrPipe, &wg)
+	wg.Add(len(res.readers))
+	for _, r := range res.readers {
+		go pm.captureOutput(p, r, &wg)
+	}
 
 	go func() {
-		// Wait for both capture goroutines to finish draining the pipes.
 		wg.Wait()
-		// Now it is safe to call cmd.Wait() — the pipes are drained.
 		exitErr := cmd.Wait()
+		if res.closer != nil {
+			res.closer()
+		}
 
 		code := 0
 		if exitErr != nil {
@@ -214,6 +197,18 @@ func (pm *ProcessManager) Stop(p *Process) {
 	}
 }
 
+// WriteStdin forwards bytes to the process's stdin. Used by interactive mode.
+func (p *Process) WriteStdin(b []byte) error {
+	p.mu.Lock()
+	w := p.stdin
+	p.mu.Unlock()
+	if w == nil {
+		return nil
+	}
+	_, err := w.Write(b)
+	return err
+}
+
 // Restart stops the process and starts it again.
 func (pm *ProcessManager) Restart(p *Process) error {
 	pm.Stop(p)
@@ -253,7 +248,7 @@ func (pm *ProcessManager) StopAll() {
 
 // captureOutput reads lines from r, strips non-color ANSI sequences, writes
 // them to the process buffer, and sends ProcessOutputMsg messages.
-func (pm *ProcessManager) captureOutput(p *Process, r interface{ Read([]byte) (int, error) }, wg *sync.WaitGroup) {
+func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	scanner := bufio.NewScanner(r)
@@ -262,7 +257,7 @@ func (pm *ProcessManager) captureOutput(p *Process, r interface{ Read([]byte) (i
 	scanner.Buffer(buf, maxTokenSize)
 
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := strings.TrimSuffix(scanner.Text(), "\r")
 		line = stripNonColorANSI(line)
 		p.Buffer.Write(line)
 		pm.sendOutput(p, line)
