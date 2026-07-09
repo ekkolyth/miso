@@ -2,6 +2,8 @@ package tui
 
 import (
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestSidebarStartIdx(t *testing.T) {
@@ -79,6 +81,35 @@ func TestCopyAllText(t *testing.T) {
 	m.selected = 5
 	if m.copyAllText() != "" {
 		t.Error("copyAllText() with out-of-range selected should return empty string")
+	}
+}
+
+func TestTabbedSelectedTextBySeq(t *testing.T) {
+	rb := NewRingBuffer(100)
+	rb.Write("alpha")
+	rb.Write("bravo")
+	rb.Write("charlie")
+	pm := &ProcessManager{Processes: []*Process{{Buffer: rb, Entry: TuiScriptEntry{Label: "x"}}}}
+	m := TabbedModel{pm: pm, selected: 0, width: 80, height: 10}
+	m.sel = SelectionState{active: true, startSeq: 0, endSeq: 1}
+
+	want := "alpha\nbravo"
+	if got := m.selectedText(); got != want {
+		t.Errorf("selectedText() = %q, want %q", got, want)
+	}
+
+	// new output must not shift the selection off its logical lines
+	rb.Write("delta")
+	if got := m.selectedText(); got != want {
+		t.Errorf("selection drifted after append: %q, want %q", got, want)
+	}
+
+	// #26 regression: a resize re-wraps the panel but copy reads raw buffer
+	// lines by sequence, so the selection must not drift.
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 10})
+	m = next.(TabbedModel)
+	if got := m.selectedText(); got != want {
+		t.Errorf("selection drifted after resize: %q, want %q", got, want)
 	}
 }
 
