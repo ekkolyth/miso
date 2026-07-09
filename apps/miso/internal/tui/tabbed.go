@@ -63,6 +63,7 @@ type TabbedModel struct {
 	delegated        bool
 	allExitedPending bool
 	sel              SelectionState
+	interactive      bool
 	copyFlash        bool // true during the 150ms invert flash
 	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
 }
@@ -88,7 +89,23 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.interactive {
+			if msg.String() == "ctrl+z" {
+				m.interactive = false
+				return m, nil
+			}
+			if !m.delegated && m.selected < len(m.pm.Processes) {
+				if b := keyToBytes(msg.Key()); b != nil {
+					_ = m.pm.Processes[m.selected].WriteStdin(b)
+				}
+			}
+			return m, nil
+		}
 		switch {
+		case msg.String() == "i":
+			if !m.delegated && m.selected < len(m.pm.Processes) {
+				m.interactive = true
+			}
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Up):
@@ -406,10 +423,13 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	}
 
 	var hintText string
-	if m.delegated {
+	switch {
+	case m.interactive:
+		hintText = "interactive — ctrl+z to exit"
+	case m.delegated:
 		hintText = "c copy · R restart"
-	} else {
-		hintText = "c copy · r restart · R restart all"
+	default:
+		hintText = "i interactive · c copy · r restart · R restart all"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 

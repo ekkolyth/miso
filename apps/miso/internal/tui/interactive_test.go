@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -34,5 +35,33 @@ func TestKeyToBytes(t *testing.T) {
 				t.Errorf("keyToBytes(%v) = %v, want %v", tt.key, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTabbedInteractiveRouting(t *testing.T) {
+	var sink bytes.Buffer
+	proc := &Process{stdin: &sink, State: StateRunning, Buffer: NewRingBuffer(10)}
+	pm := &ProcessManager{Processes: []*Process{proc}}
+	m := TabbedModel{pm: pm, keys: DefaultTabbedKeyMap()}
+
+	// 'i' enters interactive mode
+	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "i", Code: 'i'}))
+	m = next.(TabbedModel)
+	if !m.interactive {
+		t.Fatal("expected interactive mode after 'i'")
+	}
+
+	// 'r' forwards to the child instead of restarting
+	next, _ = m.Update(tea.KeyPressMsg(tea.Key{Text: "r", Code: 'r'}))
+	m = next.(TabbedModel)
+	if sink.String() != "r" {
+		t.Errorf("expected 'r' forwarded to stdin, got %q", sink.String())
+	}
+
+	// ctrl+z exits interactive mode
+	next, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: 'z', Mod: tea.ModCtrl}))
+	m = next.(TabbedModel)
+	if m.interactive {
+		t.Error("expected interactive mode off after ctrl+z")
 	}
 }
