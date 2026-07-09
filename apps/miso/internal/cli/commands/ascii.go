@@ -48,8 +48,8 @@ var misoASCII = []string{
 	"                                                          ",
 }
 
-// display miso ASCII art with welcome message
-func printMisoWelcome(_ ui.Styles) {
+// RenderMisoLogo returns the colored miso ASCII logo.
+func RenderMisoLogo() string {
 	// color styles matching logo
 	purpleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c3aed"))
 	orangeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f0a343"))
@@ -108,9 +108,12 @@ func printMisoWelcome(_ ui.Styles) {
 		rendered.WriteString("\n")
 	}
 
-	asciiArt := rendered.String()
+	return rendered.String()
+}
 
-	_, _ = fmt.Fprint(os.Stdout, asciiArt)
+// display miso ASCII art with welcome message
+func printMisoWelcome(_ ui.Styles) {
+	_, _ = fmt.Fprint(os.Stdout, RenderMisoLogo())
 
 	welcomeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c3aed")).Bold(true)
 	welcomeMsg := welcomeStyle.Render("Welcome to Miso! Let's get started:")

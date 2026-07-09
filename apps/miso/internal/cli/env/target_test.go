@@ -3,6 +3,7 @@ package env
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/config"
@@ -138,4 +139,60 @@ func mustEnv(t *testing.T, root string, cfg config.Config, target workspace.Targ
 		t.Fatalf("BuildTargetEnv() error: %v", err)
 	}
 	return environ
+}
+
+func pathEntries(environ []string) []string {
+	m := envSliceToMap(environ)
+	if m["PATH"] == "" {
+		return nil
+	}
+	return strings.Split(m["PATH"], string(os.PathListSeparator))
+}
+
+func TestBuildTargetEnv_PrependsMemberBinNearestFirst(t *testing.T) {
+	root := t.TempDir()
+	memberBin := filepath.Join(root, "apps", "web", "node_modules", ".bin")
+	rootBin := filepath.Join(root, "node_modules", ".bin")
+	if err := os.MkdirAll(memberBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(rootBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	target := workspace.Target{Kind: workspace.TargetMember, Name: "web", Dir: filepath.Join(root, "apps", "web")}
+	environ := mustEnv(t, root, config.Config{}, target)
+	entries := pathEntries(environ)
+	if len(entries) < 2 || entries[0] != memberBin || entries[1] != rootBin {
+		t.Errorf("PATH prefix = %v, want [%s %s ...]", entries, memberBin, rootBin)
+	}
+}
+
+func TestBuildTargetEnv_NoEnvFilesButBinsStillReturns(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "node_modules", ".bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := workspace.Target{Kind: workspace.TargetScript, Name: "dev"}
+	environ, err := BuildTargetEnv(root, config.Config{}, target)
+	if err != nil {
+		t.Fatalf("BuildTargetEnv() error: %v", err)
+	}
+	if environ == nil {
+		t.Fatal("expected augmented environ (bins present), got nil")
+	}
+	if pathEntries(environ)[0] != filepath.Join(root, "node_modules", ".bin") {
+		t.Errorf("PATH[0] = %q, want root .bin", pathEntries(environ)[0])
+	}
+}
+
+func TestBuildTargetEnv_NoFilesNoBinsReturnsNil(t *testing.T) {
+	target := workspace.Target{Kind: workspace.TargetScript, Name: "dev"}
+	environ, err := BuildTargetEnv(t.TempDir(), config.Config{}, target)
+	if err != nil {
+		t.Fatalf("BuildTargetEnv() error: %v", err)
+	}
+	if environ != nil {
+		t.Errorf("got %v, want nil (no env, no bins)", environ)
+	}
 }

@@ -34,12 +34,12 @@ type ProcessStateMsg struct {
 	Code  int
 }
 
-// spawnResult holds the streams wired to a spawned process. On unix the pty
-// master is both the merged-output reader and the stdin writer; on Windows the
-// readers are separate stdout/stderr pipes and stdin is a pipe.
+// streams wired to a spawned process — unix: pty master is both reader and
+// stdin writer; windows: separate stdout/stderr pipes + stdin pipe
 type spawnResult struct {
 	readers []io.Reader
 	stdin   io.Writer
+	resize  func(rows, cols int)
 	closer  func()
 }
 
@@ -55,11 +55,11 @@ type Process struct {
 	StartedAt time.Time
 	Buffer    *RingBuffer
 
-	cmd        *exec.Cmd
-	stdin      io.Writer // writable child stdin (pty master on unix, pipe on Windows)
-	closeSpawn func()
-	done       chan struct{}
-	mu         sync.Mutex
+	cmd    *exec.Cmd
+	stdin  io.Writer // writable child stdin (pty master on unix, pipe on Windows)
+	resize func(rows, cols int)
+	done   chan struct{}
+	mu     sync.Mutex
 }
 
 // ProcessManager owns the set of managed processes and dispatches tea messages.
@@ -130,7 +130,7 @@ func (pm *ProcessManager) Start(p *Process) error {
 
 	p.mu.Lock()
 	p.stdin = res.stdin
-	p.closeSpawn = res.closer
+	p.resize = res.resize
 	p.State = StateRunning
 	p.StartedAt = time.Now()
 	p.mu.Unlock()
@@ -197,7 +197,7 @@ func (pm *ProcessManager) Stop(p *Process) {
 	}
 }
 
-// WriteStdin forwards bytes to the process's stdin. Used by interactive mode.
+// no-op when stdin is unset; used by interactive mode
 func (p *Process) WriteStdin(b []byte) error {
 	p.mu.Lock()
 	w := p.stdin
@@ -207,6 +207,16 @@ func (p *Process) WriteStdin(b []byte) error {
 	}
 	_, err := w.Write(b)
 	return err
+}
+
+// no-op until the process is spawned
+func (p *Process) Resize(rows, cols int) {
+	p.mu.Lock()
+	fn := p.resize
+	p.mu.Unlock()
+	if fn != nil {
+		fn(rows, cols)
+	}
 }
 
 // Restart stops the process and starts it again.
@@ -225,6 +235,18 @@ func (pm *ProcessManager) RestartAll() {
 
 	for _, p := range procs {
 		_ = pm.Restart(p)
+	}
+}
+
+// ResizeAll forwards a terminal size change to every process's pty.
+func (pm *ProcessManager) ResizeAll(rows, cols int) {
+	pm.mu.Lock()
+	procs := make([]*Process, len(pm.Processes))
+	copy(procs, pm.Processes)
+	pm.mu.Unlock()
+
+	for _, p := range procs {
+		p.Resize(rows, cols)
 	}
 }
 

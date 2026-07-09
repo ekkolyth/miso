@@ -73,6 +73,13 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.pm.ResizeAll(msg.Height, msg.Width)
+		return m, nil
+
+	case tea.PasteMsg:
+		if m.interactive && !m.delegated && m.cursor < len(m.pm.Processes) {
+			_ = m.pm.Processes[m.cursor].WriteStdin([]byte(msg.Content))
+		}
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -108,10 +115,12 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.cursor < len(m.pm.Processes) {
 				m.allExitedPending = false
+				m.sel = SelectionState{}
 				go func() { _ = m.pm.Restart(m.pm.Processes[m.cursor]) }()
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
+			m.sel = SelectionState{}
 			go m.pm.RestartAll()
 		case key.Matches(msg, m.keys.CopyKey):
 			if m.sel.active {
@@ -447,7 +456,7 @@ func (m MergedModel) mouseToLogRow(_, y int) int {
 	return row
 }
 
-// selectedText returns the selected log lines (visible processes only) as raw text.
+// selected visible-process log lines as raw text
 func (m MergedModel) selectedText() string {
 	if !m.sel.active {
 		return ""

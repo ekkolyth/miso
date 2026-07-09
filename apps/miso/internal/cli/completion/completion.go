@@ -9,12 +9,6 @@ import (
 	"github.com/ekkolyth/miso/internal/scripts"
 )
 
-// BuiltinCommands is the list of Miso built-in commands for completion.
-var BuiltinCommands = []string{
-	"add", "dev", "i", "init", "install", "remove", "rm", "run",
-	"scripts", "upgrade", "v", "version",
-}
-
 // upgradeFlags are flags for the upgrade command.
 var upgradeFlags = []string{"--local"}
 
@@ -55,8 +49,7 @@ func Complete(args []string, cwd string) {
 func getCandidates(prev string, _ string, cwd string) []string {
 	// Completing first word after "miso" (prev is "miso" or empty)
 	if prev == "miso" || prev == "" {
-		candidates := make([]string, 0, len(BuiltinCommands))
-		candidates = append(candidates, BuiltinCommands...)
+		candidates := cli.BuiltinNames()
 
 		// Add project scripts when in a project
 		if root, err := cli.FindProjectRoot(cwd); err == nil {

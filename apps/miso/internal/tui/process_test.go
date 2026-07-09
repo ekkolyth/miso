@@ -167,6 +167,38 @@ func TestCaptureOutputTrimsCarriageReturn(t *testing.T) {
 	}
 }
 
+func TestProcessManager_ResizeAll(t *testing.T) {
+	type call struct{ rows, cols int }
+	var calls []call
+
+	spy := func(rows, cols int) {
+		calls = append(calls, call{rows: rows, cols: cols})
+	}
+
+	pm := &ProcessManager{
+		Processes: []*Process{
+			{resize: spy},
+			{resize: spy},
+		},
+	}
+
+	pm.ResizeAll(30, 100)
+
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 resize calls, got %d", len(calls))
+	}
+	for _, c := range calls {
+		if c.rows != 30 || c.cols != 100 {
+			t.Errorf("resize call = (rows=%d, cols=%d), want (rows=30, cols=100)", c.rows, c.cols)
+		}
+	}
+}
+
+func TestProcessResizeNilSafe(_ *testing.T) {
+	p := &Process{}
+	p.Resize(10, 20) // must not panic
+}
+
 func TestStripNonColorANSI(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -11,6 +11,27 @@ In [simple mode](/working-with-miso/simple-mode) (`"packageManager": false`), th
 </Callout>
 
 
+### Help
+
+Print the full list of built-in commands. Works from anywhere — a project is not required.
+
+```bash
+miso help
+
+# equivalent
+miso --help
+miso -h
+
+# bare `miso` prints the same screen
+miso
+```
+
+The output shows miso's logo, then two groups — package-management commands (`install`, `add`, `remove`, `run`, `dev`, `scripts`, `env`) and miso's own commands (`init`, `upgrade`, `skills`, `completion`, `version`, `help`) — followed by a link to these docs.
+
+<Callout type="info">
+`misox` is a separate binary, not a `miso` subcommand, so it does not appear in `miso help`. See [misox](#misox) below.
+</Callout>
+
 ### Install Dependencies
 
 Install all dependencies from your lockfile:

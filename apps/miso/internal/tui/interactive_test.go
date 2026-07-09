@@ -26,7 +26,19 @@ func TestKeyToBytes(t *testing.T) {
 		{"left", tea.Key{Code: tea.KeyLeft}, []byte("\x1b[D")},
 		{"ctrl+c", tea.Key{Code: 'c', Mod: tea.ModCtrl}, []byte{0x03}},
 		{"ctrl+r", tea.Key{Code: 'r', Mod: tea.ModCtrl}, []byte{0x12}},
-		{"unknown", tea.Key{Code: tea.KeyF5}, nil},
+		{"f1", tea.Key{Code: tea.KeyF1}, []byte("\x1bOP")},
+		{"f5", tea.Key{Code: tea.KeyF5}, []byte("\x1b[15~")},
+		{"f12", tea.Key{Code: tea.KeyF12}, []byte("\x1b[24~")},
+		{"home", tea.Key{Code: tea.KeyHome}, []byte("\x1b[H")},
+		{"end", tea.Key{Code: tea.KeyEnd}, []byte("\x1b[F")},
+		{"delete", tea.Key{Code: tea.KeyDelete}, []byte("\x1b[3~")},
+		{"pgup", tea.Key{Code: tea.KeyPgUp}, []byte("\x1b[5~")},
+		{"alt+a", tea.Key{Text: "a", Mod: tea.ModAlt}, []byte("\x1ba")},
+		{"ctrl+space", tea.Key{Code: tea.KeySpace, Mod: tea.ModCtrl}, []byte{0}},
+		{"shift+up", tea.Key{Code: tea.KeyUp, Mod: tea.ModShift}, []byte("\x1b[1;2A")},
+		{"ctrl+left", tea.Key{Code: tea.KeyLeft, Mod: tea.ModCtrl}, []byte("\x1b[1;5D")},
+		{"plain up unaffected by mod handling", tea.Key{Code: tea.KeyUp}, []byte("\x1b[A")},
+		{"unknown", tea.Key{Code: tea.KeyF13}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -104,5 +116,43 @@ func TestModifierClickPassthrough(t *testing.T) {
 	next2, _ := mm.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 40, Y: 5, Mod: tea.ModAlt})
 	if next2.(MergedModel).sel.active {
 		t.Error("merged: modifier+click should not start selection")
+	}
+}
+
+func TestTabbedPasteForwards(t *testing.T) {
+	var sink bytes.Buffer
+	proc := &Process{stdin: &sink, State: StateRunning, Buffer: NewRingBuffer(10)}
+	pm := &ProcessManager{Processes: []*Process{proc}}
+
+	m := TabbedModel{pm: pm, interactive: true}
+	m.Update(tea.PasteMsg{Content: "hello"})
+	if sink.String() != "hello" {
+		t.Errorf("expected paste forwarded to stdin, got %q", sink.String())
+	}
+
+	sink.Reset()
+	m = TabbedModel{pm: pm, interactive: false}
+	m.Update(tea.PasteMsg{Content: "hello"})
+	if sink.String() != "" {
+		t.Errorf("expected no paste forwarded outside interactive mode, got %q", sink.String())
+	}
+}
+
+func TestMergedPasteForwards(t *testing.T) {
+	var sink bytes.Buffer
+	proc := &Process{stdin: &sink, State: StateRunning, Buffer: NewRingBuffer(10)}
+	pm := &ProcessManager{Processes: []*Process{proc}}
+
+	m := MergedModel{pm: pm, visible: map[int]bool{0: true}, interactive: true}
+	m.Update(tea.PasteMsg{Content: "hello"})
+	if sink.String() != "hello" {
+		t.Errorf("expected paste forwarded to stdin, got %q", sink.String())
+	}
+
+	sink.Reset()
+	m = MergedModel{pm: pm, visible: map[int]bool{0: true}, interactive: false}
+	m.Update(tea.PasteMsg{Content: "hello"})
+	if sink.String() != "" {
+		t.Errorf("expected no paste forwarded outside interactive mode, got %q", sink.String())
 	}
 }

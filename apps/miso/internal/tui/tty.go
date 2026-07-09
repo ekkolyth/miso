@@ -6,7 +6,7 @@ import (
 	"github.com/charmbracelet/x/term"
 )
 
-// isTerminal is a seam so tests can stub TTY detection.
+// seam for stubbing TTY detection in tests
 var isTerminal = term.IsTerminal
 
 // TUI needs a real terminal for the alt screen; absent one (CI, pipes, docker
