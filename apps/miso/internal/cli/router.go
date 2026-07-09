@@ -9,6 +9,14 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 )
 
+// resolveScript honors simple mode: folder-only resolution (no package.json fallback).
+func resolveScript(name, root string, cfg config.Config) (scripting.ResolvedScript, error) {
+	if cfg.SimpleMode() {
+		return scripting.ResolveScriptFolderOnly(name, root, cfg)
+	}
+	return scripting.ResolveScript(name, root, cfg)
+}
+
 type Action int
 
 const (
@@ -52,13 +60,13 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	switch cmd {
 	case "install", "i":
 		// check script override
-		if resolved, err := scripting.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
+		if resolved, err := resolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 		}
 		return ParsedCLI{Action: ActionInstall}, nil
 	case "add":
 		// check script override
-		if resolved, err := scripting.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
+		if resolved, err := resolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 		}
 		if len(args) < 2 {
@@ -67,7 +75,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		return ParsedCLI{Action: ActionAdd, PackageNames: args[1:]}, nil
 	case "remove", "rm":
 		// check script override
-		if resolved, err := scripting.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
+		if resolved, err := resolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
 		}
 		if len(args) < 2 {
@@ -88,7 +96,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		}
 		script := scriptNames[0]
 		// check scripts folder and package.json
-		if resolved, err := scripting.ResolveScript(script, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
+		if resolved, err := resolveScript(script, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, script, scriptArgs), nil
 		}
 		// fall back to package manager
@@ -96,7 +104,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	case "dev":
 		inlineArgs := parseInlineArgs(args[1:])
 		// check scripts folder and package.json
-		if resolved, err := scripting.ResolveScript("dev", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
+		if resolved, err := resolveScript("dev", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, "dev", inlineArgs), nil
 		}
 		// dev is shortcut for "run dev"
@@ -111,7 +119,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		return ParsedCLI{Action: ActionVersion}, nil
 	case "upgrade":
 		// check script override
-		if resolved, err := scripting.ResolveScript("upgrade", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
+		if resolved, err := resolveScript("upgrade", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
 			return buildScriptAction(resolved, "upgrade", parseInlineArgs(args[1:])), nil
 		}
 		return ParsedCLI{
@@ -141,7 +149,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	}
 
 	// check scripts folder and package.json
-	resolved, err := scripting.ResolveScript(cmd, root, cfg)
+	resolved, err := resolveScript(cmd, root, cfg)
 	if err != nil {
 		// handle script conflicts
 		if strings.Contains(err.Error(), "multiple scripts") {
