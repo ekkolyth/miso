@@ -4,7 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-playground/validator/v10"
+
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/testutil"
 )
 
 func TestValidateVariables_CollectsAllErrors(t *testing.T) {
@@ -97,4 +100,63 @@ func TestFriendlyValidationMsg_String(t *testing.T) {
 	if !strings.Contains(ve.msg, "expected string") {
 		t.Errorf("expected friendly message with 'expected string', got: %q", ve.msg)
 	}
+}
+
+func floatPtr(f float64) *float64 { return &f }
+
+func TestValidateVar_Types(t *testing.T) {
+	validate := validator.New()
+	tests := []struct {
+		name    string
+		val     string
+		cfg     config.VarConfig
+		wantErr string // "" = expect pass
+	}{
+		{"int ok", "42", config.VarConfig{Type: "int"}, ""},
+		{"int rejects float", "3.14", config.VarConfig{Type: "int"}, "expected integer"},
+		{"int+ rejects negative", "-5", config.VarConfig{Type: "int+"}, "must be positive integer"},
+		{"float above max", "1.5", config.VarConfig{Type: "float", Max: floatPtr(1)}, "must be <="},
+		{"float below min", "-1", config.VarConfig{Type: "float", Min: floatPtr(0)}, "must be >="},
+		{"url disallowed scheme", "https://x.com", config.VarConfig{Type: "url", Schemes: []string{"redis", "rediss"}}, "url scheme must be one of"},
+		{"url ok scheme", "redis://localhost:6379", config.VarConfig{Type: "url", Schemes: []string{"redis", "rediss"}}, ""},
+		{"enum rejects", "d", config.VarConfig{Type: "enum", Values: []string{"a", "b", "c"}}, "must be one of"},
+		{"enum ok", "b", config.VarConfig{Type: "enum", Values: []string{"a", "b", "c"}}, ""},
+		{"pattern rejects", "not-semver", config.VarConfig{Type: "pattern", Pattern: `^v?\d+\.\d+\.\d+$`}, "does not match pattern"},
+		{"pattern ok", "v1.2.3", config.VarConfig{Type: "pattern", Pattern: `^v?\d+\.\d+\.\d+$`}, ""},
+		{"bool rejects", "maybe", config.VarConfig{Type: "bool"}, "invalid bool"},
+		{"bool ok", "yes", config.VarConfig{Type: "bool"}, ""},
+		{"email rejects", "not-an-email", config.VarConfig{Type: "email"}, "expected email"},
+		{"email ok", "a@b.com", config.VarConfig{Type: "email"}, ""},
+		{"json rejects", "{bad", config.VarConfig{Type: "json"}, "expected json"},
+		{"json ok", `{"a":1}`, config.VarConfig{Type: "json"}, ""},
+		{"uuid rejects", "not-a-uuid", config.VarConfig{Type: "uuid"}, "expected uuid"},
+		{"string min", "hi", config.VarConfig{Type: "string", Min: floatPtr(5)}, "at least 5"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateVar(validate, "VAR", tt.val, tt.cfg)
+			if tt.wantErr == "" {
+				testutil.NoError(t, err)
+			} else {
+				testutil.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateVariables_RequiredModes(t *testing.T) {
+	vars := map[string]config.VarConfigOrString{
+		"NEED": {IsShorthand: true, Type: "string"},
+	}
+	// mode "none": absent var passes
+	if errs := validateVariables(map[string]string{}, vars, config.EnvRequired{Mode: "none"}); len(errs) != 0 {
+		t.Fatalf("mode none: want 0 errors, got %v", errs)
+	}
+	// mode "" + Keys: listed key missing is an error
+	errs := validateVariables(map[string]string{}, vars, config.EnvRequired{Keys: []string{"NEED"}})
+	if len(errs) != 1 {
+		t.Fatalf("keys: want 1 error, got %v", errs)
+	}
+	testutil.ErrorContains(t, errs[0], "missing required variable")
 }

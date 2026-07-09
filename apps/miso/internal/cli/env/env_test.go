@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/testutil"
 )
 
 // writeTempEnv creates a temp .env file and returns the project root dir.
@@ -341,6 +342,33 @@ func TestRun_DiscoverMembersError_ReturnsWrappedError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "discover members") {
 		t.Errorf("expected wrapped discover members error, got: %s", err.Error())
+	}
+}
+
+func TestHasEnvFlag(t *testing.T) {
+	testutil.Equal(t, HasEnvFlag([]string{"run", "--env", "build"}), true)
+	testutil.Equal(t, HasEnvFlag([]string{"run", "build"}), false)
+}
+
+func TestStripEnvFlag(t *testing.T) {
+	got := StripEnvFlag([]string{"run", "--env", "build"})
+	if len(got) != 2 || got[0] != "run" || got[1] != "build" {
+		t.Fatalf("StripEnvFlag = %v, want [run build]", got)
+	}
+}
+
+func TestStripEnvFromFlags(t *testing.T) {
+	cfg := config.Config{Flags: map[string][]string{
+		"install": {"--frozen-lockfile", "--env"},
+		"add":     {"--env"},
+	}}
+	out := StripEnvFromFlags(cfg)
+	for k, v := range out.Flags {
+		for _, f := range v {
+			if f == EnvFlag {
+				t.Errorf("flag group %q still contains %s", k, EnvFlag)
+			}
+		}
 	}
 }
 
