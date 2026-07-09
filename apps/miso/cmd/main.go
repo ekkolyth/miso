@@ -64,87 +64,11 @@ func main() {
 
 	// handle global commands before loading config
 	if len(args) > 0 {
+		// internal completion protocol + standalone misox shim: not user-facing built-ins
 		switch args[0] {
 		case "__complete":
 			completion.Complete(args, originalWorkDir)
 			return
-		case "completion":
-			if len(args) < 2 {
-				fmt.Fprintln(os.Stderr, "Usage: miso completion [bash|zsh|fish]")
-				os.Exit(1)
-			}
-			switch args[1] {
-			case "bash":
-				fmt.Print(completion.ScriptBash())
-			case "zsh":
-				fmt.Print(completion.ScriptZsh())
-			case "fish":
-				fmt.Print(completion.ScriptFish())
-			default:
-				fmt.Fprintf(os.Stderr, "Unknown shell: %s (use bash, zsh, or fish)\n", args[1])
-				os.Exit(1)
-			}
-			return
-		case "init":
-			if err := commands.RunInit(originalWorkDir, styles, logger); err != nil {
-				cli.Fail(logger, err, false)
-			}
-			return
-		case "version", "v":
-			if err := commands.RunVersion(); err != nil {
-				cli.Fail(logger, err, false)
-			}
-			return
-		case "upgrade":
-			if err := commands.Upgrade(args[1:]); err != nil {
-				cli.Fail(logger, err, false)
-			}
-			return
-		case "skills":
-			add, rm, yes := commands.ParseSkillsFlags(args[1:])
-			if add && rm {
-				cli.Fail(logger, fmt.Errorf("--add and --rm are mutually exclusive"), false)
-				return
-			}
-			if add || rm {
-				managerName := "npm"
-				if detected, derr := manager.DetectManager(originalWorkDir); derr == nil {
-					managerName = detected
-				}
-				installed := harness.Detect()
-				if len(installed) == 0 {
-					cli.Fail(logger, fmt.Errorf("no supported harness found on PATH; install one of: Claude Code, OpenCode, Codex, Gemini CLI, Cursor"), false)
-					return
-				}
-				var chosen []string
-				if yes {
-					for _, entry := range installed {
-						chosen = append(chosen, entry.Agent)
-					}
-				} else {
-					selected, serr := harness.Select(installed)
-					if serr != nil {
-						cli.Fail(logger, serr, false)
-						return
-					}
-					chosen = selected
-				}
-				if len(chosen) == 0 {
-					fmt.Fprintln(os.Stderr, "no harness selected; nothing to do")
-					return
-				}
-				if add {
-					if err := commands.RunSkillsAdd(managerName, originalWorkDir, chosen); err != nil {
-						cli.Fail(logger, err, false)
-					}
-					return
-				}
-				if err := commands.RunSkillsRemove(managerName, originalWorkDir, chosen); err != nil {
-					cli.Fail(logger, err, false)
-				}
-				return
-			}
-			// neither --add nor --rm: fall through to normal routing (PM passthrough)
 		case "misox":
 			// only the standalone misox binary dispatches; typed `miso misox` falls through to passthrough
 			if !invokedAsMisox {
@@ -162,6 +86,89 @@ func main() {
 				cli.Fail(logger, err, false)
 			}
 			return
+		}
+
+		// user-facing built-ins, canonicalized (aliases resolved) via the registry
+		if cmd, ok := cli.LookupBuiltin(args[0]); ok && cmd.Meta {
+			switch cmd.Name {
+			case "completion":
+				if len(args) < 2 {
+					fmt.Fprintln(os.Stderr, "Usage: miso completion [bash|zsh|fish]")
+					os.Exit(1)
+				}
+				switch args[1] {
+				case "bash":
+					fmt.Print(completion.ScriptBash())
+				case "zsh":
+					fmt.Print(completion.ScriptZsh())
+				case "fish":
+					fmt.Print(completion.ScriptFish())
+				default:
+					fmt.Fprintf(os.Stderr, "Unknown shell: %s (use bash, zsh, or fish)\n", args[1])
+					os.Exit(1)
+				}
+				return
+			case "init":
+				if err := commands.RunInit(originalWorkDir, styles, logger); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
+			case "version":
+				if err := commands.RunVersion(); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
+			case "upgrade":
+				if err := commands.Upgrade(args[1:]); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
+			case "skills":
+				add, rm, yes := commands.ParseSkillsFlags(args[1:])
+				if add && rm {
+					cli.Fail(logger, fmt.Errorf("--add and --rm are mutually exclusive"), false)
+					return
+				}
+				if add || rm {
+					managerName := "npm"
+					if detected, derr := manager.DetectManager(originalWorkDir); derr == nil {
+						managerName = detected
+					}
+					installed := harness.Detect()
+					if len(installed) == 0 {
+						cli.Fail(logger, fmt.Errorf("no supported harness found on PATH; install one of: Claude Code, OpenCode, Codex, Gemini CLI, Cursor"), false)
+						return
+					}
+					var chosen []string
+					if yes {
+						for _, entry := range installed {
+							chosen = append(chosen, entry.Agent)
+						}
+					} else {
+						selected, serr := harness.Select(installed)
+						if serr != nil {
+							cli.Fail(logger, serr, false)
+							return
+						}
+						chosen = selected
+					}
+					if len(chosen) == 0 {
+						fmt.Fprintln(os.Stderr, "no harness selected; nothing to do")
+						return
+					}
+					if add {
+						if err := commands.RunSkillsAdd(managerName, originalWorkDir, chosen); err != nil {
+							cli.Fail(logger, err, false)
+						}
+						return
+					}
+					if err := commands.RunSkillsRemove(managerName, originalWorkDir, chosen); err != nil {
+						cli.Fail(logger, err, false)
+					}
+					return
+				}
+				// neither --add nor --rm: fall through to normal routing (PM passthrough)
+			}
 		}
 	}
 
