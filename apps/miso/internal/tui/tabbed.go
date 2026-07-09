@@ -147,6 +147,10 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft {
+			if msg.Mod != 0 {
+				// modifier held — let the terminal handle it (native select / open link)
+				return m, nil
+			}
 			sw := m.sidebarWidth()
 			listHeight := m.height - 2
 			if listHeight < 0 {

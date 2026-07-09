@@ -90,3 +90,19 @@ func TestMergedInteractiveRouting(t *testing.T) {
 		t.Error("expected interactive mode off after ctrl+z")
 	}
 }
+
+func TestModifierClickPassthrough(t *testing.T) {
+	pmT := &ProcessManager{Processes: []*Process{{Buffer: NewRingBuffer(10)}}}
+	mt := TabbedModel{pm: pmT, width: 80, height: 24}
+	next, _ := mt.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 40, Y: 5, Mod: tea.ModAlt})
+	if next.(TabbedModel).sel.active {
+		t.Error("tabbed: modifier+click should not start selection")
+	}
+
+	pmM := &ProcessManager{Processes: []*Process{{Entry: TuiScriptEntry{Label: "web"}}}}
+	mm := MergedModel{pm: pmM, width: 80, height: 24, visible: map[int]bool{0: true}}
+	next2, _ := mm.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 40, Y: 5, Mod: tea.ModAlt})
+	if next2.(MergedModel).sel.active {
+		t.Error("merged: modifier+click should not start selection")
+	}
+}

@@ -131,6 +131,10 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft {
+			if msg.Mod != 0 {
+				// modifier held — let the terminal handle it (native select / open link)
+				return m, nil
+			}
 			// Copy icon click: y==0, x within icon hit area at right of header
 			if msg.Y == 0 {
 				iconW := lipgloss.Width(copyIconStr)
