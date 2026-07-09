@@ -28,12 +28,7 @@ func ResolveTarget(token string, members []Member, root string, cfg config.Confi
 		return Target{}, fmt.Errorf("%q is reserved and cannot be a target", token)
 	}
 
-	var matched []Member
-	for _, member := range members {
-		if matchesMember(token, member, root) {
-			matched = append(matched, member)
-		}
-	}
+	matched := resolveMembers(token, members, root)
 	switch len(matched) {
 	case 1:
 		return Target{Kind: TargetMember, Name: matched[0].Name, Dir: matched[0].Dir}, nil
@@ -49,14 +44,10 @@ func ResolveTarget(token string, members []Member, root string, cfg config.Confi
 	return Target{Kind: TargetScript, Name: token}, nil
 }
 
-// matches a member by basename, relative path, or package.json name.
+// matches a member by package name or relative path, falling back to directory
+// basename only when nothing matches the canonical identity.
 func Find(name string, members []Member, root string) (Member, error) {
-	var matched []Member
-	for _, member := range members {
-		if matchesMember(name, member, root) {
-			matched = append(matched, member)
-		}
-	}
+	matched := resolveMembers(name, members, root)
 	switch len(matched) {
 	case 1:
 		return matched[0], nil
@@ -89,21 +80,44 @@ func FromCWD(cwd string, members []Member) (Member, bool) {
 	return Member{}, false
 }
 
-func matchesMember(name string, member Member, root string) bool {
-	if filepath.Base(member.Dir) == name {
+// matchesExplicit reports an exact package-name or relative-path match — the
+// canonical ways a workspace is identified (pnpm/bun/turbo all key off the
+// package name). Directory basename is deliberately excluded here.
+func matchesExplicit(name string, member Member, root string) bool {
+	if member.Name != "" && member.Name == name {
 		return true
 	}
-	if rel, err := filepath.Rel(root, member.Dir); err == nil &&
-		filepath.ToSlash(rel) == filepath.ToSlash(name) {
-		return true
+	rel, err := filepath.Rel(root, member.Dir)
+	return err == nil && filepath.ToSlash(rel) == filepath.ToSlash(name)
+}
+
+// resolveMembers returns the members a token identifies, preferring an exact
+// package-name/relpath match and only falling back to directory basename when
+// no canonical match exists — so a distinctly-named workspace never collides
+// with an unrelated directory that happens to share a basename.
+func resolveMembers(name string, members []Member, root string) []Member {
+	var explicit, byBasename []Member
+	for _, member := range members {
+		if matchesExplicit(name, member, root) {
+			explicit = append(explicit, member)
+		} else if filepath.Base(member.Dir) == name {
+			byBasename = append(byBasename, member)
+		}
 	}
-	return member.Name != "" && member.Name == name
+	if len(explicit) > 0 {
+		return explicit
+	}
+	return byBasename
 }
 
 func memberNames(members []Member) string {
 	names := make([]string, 0, len(members))
 	for _, member := range members {
-		names = append(names, filepath.Base(member.Dir))
+		name := member.Name
+		if name == "" {
+			name = filepath.Base(member.Dir)
+		}
+		names = append(names, name)
 	}
 	out := ""
 	for i, name := range names {

@@ -128,3 +128,55 @@ func TestFromCWD_NotFound(t *testing.T) {
 		t.Error("expected FromCWD to report no containing member")
 	}
 }
+
+// apps/web is named "web"; projects/ekkolore/web shares the basename "web" but
+// is named "ekkolore-web". An exact name match must win over the basename clash.
+func precedenceMembers(root string) []Member {
+	return []Member{
+		{Name: "web", Dir: filepath.Join(root, "apps", "web")},
+		{Name: "ekkolore-web", Dir: filepath.Join(root, "projects", "ekkolore", "web")},
+	}
+}
+
+func TestFind_ExactNameBeatsBasename(t *testing.T) {
+	root := t.TempDir()
+	ms := precedenceMembers(root)
+
+	got, err := Find("web", ms, root)
+	if err != nil {
+		t.Fatalf("Find(web) error: %v", err)
+	}
+	if got.Name != "web" {
+		t.Errorf("Find(web) = %+v, want apps/web by exact name", got)
+	}
+
+	got2, err := Find("ekkolore-web", ms, root)
+	if err != nil {
+		t.Fatalf("Find(ekkolore-web) error: %v", err)
+	}
+	if got2.Name != "ekkolore-web" {
+		t.Errorf("Find(ekkolore-web) = %q, want ekkolore-web", got2.Name)
+	}
+}
+
+func TestResolveTarget_ExactNameBeatsBasename(t *testing.T) {
+	root := t.TempDir()
+	got, err := ResolveTarget("web", precedenceMembers(root), root, config.Config{})
+	if err != nil {
+		t.Fatalf("ResolveTarget(web) error: %v", err)
+	}
+	if got.Kind != TargetMember || got.Name != "web" {
+		t.Errorf("got %+v, want member web (exact name wins over basename)", got)
+	}
+}
+
+func TestFind_AmbiguousByName(t *testing.T) {
+	root := t.TempDir()
+	dupes := []Member{
+		{Name: "dup", Dir: filepath.Join(root, "apps", "one")},
+		{Name: "dup", Dir: filepath.Join(root, "apps", "two")},
+	}
+	if _, err := Find("dup", dupes, root); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("expected ambiguous error for duplicate names, got: %v", err)
+	}
+}
