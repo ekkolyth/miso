@@ -5,11 +5,12 @@ import "sync"
 const DefaultBufferSize = 10000
 
 type RingBuffer struct {
-	mu    sync.Mutex
-	buf   []string
-	cap   int
-	head  int
-	count int
+	mu      sync.Mutex
+	buf     []string
+	cap     int
+	head    int
+	count   int
+	dropped int64 // total lines evicted; seq of the oldest retained line
 }
 
 func NewRingBuffer(capacity int) *RingBuffer {
@@ -29,7 +30,16 @@ func (rb *RingBuffer) Write(line string) {
 
 	if rb.count < rb.cap {
 		rb.count++
+	} else {
+		rb.dropped++
 	}
+}
+
+// BaseSeq is the sequence number of the oldest retained line (Lines()[0]).
+func (rb *RingBuffer) BaseSeq() int64 {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.dropped
 }
 
 // oldest to newest

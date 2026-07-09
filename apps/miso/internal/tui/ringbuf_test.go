@@ -76,3 +76,23 @@ func TestRingBuffer_Empty(t *testing.T) {
 		t.Errorf("expected new buffer to return empty slice, got %d lines", len(lines))
 	}
 }
+
+func TestRingBufferBaseSeq(t *testing.T) {
+	rb := NewRingBuffer(3)
+	if rb.BaseSeq() != 0 {
+		t.Fatalf("empty BaseSeq = %d, want 0", rb.BaseSeq())
+	}
+	rb.Write("a")
+	rb.Write("b")
+	rb.Write("c")
+	if rb.BaseSeq() != 0 {
+		t.Errorf("BaseSeq before eviction = %d, want 0", rb.BaseSeq())
+	}
+	rb.Write("d") // evicts "a"
+	if rb.BaseSeq() != 1 {
+		t.Errorf("BaseSeq after 1 eviction = %d, want 1", rb.BaseSeq())
+	}
+	if lines := rb.Lines(); lines[0] != "b" {
+		t.Errorf("oldest retained = %q, want %q", lines[0], "b")
+	}
+}
