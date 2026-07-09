@@ -28,7 +28,7 @@ if [[ -z "$LEVEL" ]]; then
     exit 1
 fi
 
-LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+LATEST=$(git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' --abbrev=0 2>/dev/null || echo "v0.0.0")
 LATEST="${LATEST#v}"
 IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
 
