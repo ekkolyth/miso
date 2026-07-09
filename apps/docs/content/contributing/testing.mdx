@@ -1,0 +1,46 @@
+---
+title: Testing
+---
+
+# Testing
+
+## Test for value, not coverage
+
+Write tests for logic that is **pure**, **breakable**, and **load-bearing** —
+parsers, detectors, validators, resolvers, config, state machines. Don't test
+thin wrappers, glue/wiring, or rendered output. No coverage percentage is
+tracked or gated.
+
+## Green or it doesn't ship
+
+Any failing test, data race, or lint error breaks CI and blocks merge and
+release. This is the only enforcement mechanism, and it is absolute.
+
+## Three layers
+
+- **Unit** — pure logic, colocated `<name>_test.go`, table-driven, stdlib
+  `testing` + `internal/testutil`.
+- **End-to-end** — `apps/miso/e2e/` builds the real binary once and execs it,
+  asserting exit code + output. Runs on every OS in CI.
+- **TUI logic** — extract reducers, buffers, and state machines out of the view
+  and test them as plain functions. Never assert on rendered frames. If a piece
+  of TUI logic can't be tested without a running program, that's the signal to
+  lift it out of the view.
+
+## Conventions
+
+- stdlib `testing`, table-driven, **no testify**.
+- Colocated `<name>_test.go`, white-box (same package) by default.
+- `t.TempDir()` for filesystem tests.
+- `-race` always (Windows CI is the one exception — the race detector needs a C
+  toolchain there).
+- Subtests use lowercase phrases: `t.Run("multiple lockfiles", ...)`.
+
+## Running tests
+
+```bash
+cd apps/miso
+go test ./...            # plain
+gotestsum                # readable output
+golangci-lint run        # lint gate
+```

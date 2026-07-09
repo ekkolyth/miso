@@ -6,7 +6,7 @@ title: Contributing to Miso
 
 ## Prerequisites
 
-- **Go 1.24+** — the CLI source is in `apps/miso`. Verify with `go version`.
+- **Go 1.25** — the CLI source is in `apps/miso`. Verify with `go version`.
 - **Node.js or Bun** — required for the docs site and the skills package.
 - **miso CLI** — install it first so you can use `miso` to run project scripts. See [Installation](/installation).
 
@@ -45,7 +45,7 @@ Build the Go binary and install it to your `GOPATH/bin`:
 
 ```bash
 cd apps/miso
-go build -o miso .
+go build -o miso ./cmd
 ```
 
 Run the local binary directly:
@@ -57,7 +57,7 @@ Run the local binary directly:
 Or install it globally to replace your current miso install during development:
 
 ```bash
-go install .
+go install ./cmd
 ```
 
 ### Docs
@@ -80,7 +80,7 @@ From the `apps/miso` directory:
 go test ./...
 ```
 
-There are no test flags required. Tests are co-located with the packages they cover.
+There are no test flags required. Tests are co-located with the packages they cover. See [Testing](/contributing/testing) for the full strategy and conventions.
 
 ---
 
@@ -94,7 +94,7 @@ A command typically:
 2. Builds an `manager.ExecSpec` describing the process to run.
 3. Calls `manager.Exec(spec, cwd)` to execute it.
 
-The entry point in `apps/miso/main.go` (or the router layer above commands) dispatches to these functions. Match that dispatch pattern when wiring up a new command.
+The entry point in `apps/miso/cmd/main.go` (or the router layer above commands) dispatches to these functions. Match that dispatch pattern when wiring up a new command.
 
 ---
 
