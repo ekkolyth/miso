@@ -56,6 +56,12 @@ func main() {
 		cli.Fail(logger, fmt.Errorf("determine working directory: %w", err), false)
 	}
 
+	// help and bare invocation print the command reference — works with no project
+	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		commands.RunHelp()
+		return
+	}
+
 	// handle global commands before loading config
 	if len(args) > 0 {
 		switch args[0] {
@@ -173,10 +179,6 @@ func main() {
 	// Simple mode: bypass ParseCLI and EnsureManager entirely.
 	// Only meta-commands are handled; everything else is folder script resolution.
 	if cfg.SimpleMode() {
-		if len(args) == 0 {
-			cli.Fail(logger, fmt.Errorf("missing command"), true)
-		}
-
 		cmd := args[0]
 
 		// Meta-commands that remain in simple mode
