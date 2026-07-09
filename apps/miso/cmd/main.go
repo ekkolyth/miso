@@ -192,7 +192,7 @@ func main() {
 		// (init, version, upgrade, completion already handled above)
 		switch cmd {
 		case "env":
-			if err := env.Run(projectRoot, cfg, logger); err != nil {
+			if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
 				os.Exit(1)
 			}
 			return
@@ -269,7 +269,7 @@ func main() {
 
 	// env does not need package manager
 	if parsed.Action == cli.ActionEnv {
-		if err := env.Run(projectRoot, cfg, logger); err != nil {
+		if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
 			os.Exit(1)
 		}
 		return
