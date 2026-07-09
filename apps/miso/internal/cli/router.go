@@ -41,7 +41,9 @@ type ParsedCLI struct {
 	WorkspaceName string // For @workspace/script syntax
 }
 
-// simple mode: folder scripts only, no package.json fallback
+// simple mode: folder scripts only, no package.json fallback.
+// main.go short-circuits simple mode before ParseCLI reaches here — this keeps
+// resolution correct for any other ParseCLI caller too.
 func resolveScript(name, root string, cfg config.Config) (scripting.ResolvedScript, error) {
 	if cfg.SimpleMode() {
 		return scripting.ResolveScriptFolderOnly(name, root, cfg)
