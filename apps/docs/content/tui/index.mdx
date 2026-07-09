@@ -59,7 +59,7 @@ Interactive mode applies to tasks miso orchestrates directly. In delegated mode 
 
 ## Non-interactive Environments
 
-When no terminal is attached — CI, a piped command, `docker` without `-t`, or an agent — miso prints `no interactive terminal — running plain` and runs the script with normal inherited stdio instead of the TUI. Nothing hangs or crashes.
+When no terminal is attached — CI, a piped command, `docker` without `-t`, or an agent — miso prints `miso: no interactive terminal — running plain` and runs the script with normal inherited stdio instead of the TUI. Nothing hangs or crashes.
 
 ## Dependency Ordering
 
