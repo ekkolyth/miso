@@ -1,0 +1,41 @@
+class Miso < Formula
+  desc "The agnostic package manager"
+  homepage "https://github.com/ekkolyth/miso"
+  version "__VERSION__"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/ekkolyth/miso/releases/download/v#{version}/miso_#{version}_darwin_arm64.tar.gz"
+      sha256 "__SHA_DARWIN_ARM64__"
+    end
+
+    on_intel do
+      url "https://github.com/ekkolyth/miso/releases/download/v#{version}/miso_#{version}_darwin_amd64.tar.gz"
+      sha256 "__SHA_DARWIN_AMD64__"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/ekkolyth/miso/releases/download/v#{version}/miso_#{version}_linux_arm64.tar.gz"
+      sha256 "__SHA_LINUX_ARM64__"
+    end
+
+    on_intel do
+      url "https://github.com/ekkolyth/miso/releases/download/v#{version}/miso_#{version}_linux_amd64.tar.gz"
+      sha256 "__SHA_LINUX_AMD64__"
+    end
+  end
+
+  def install
+    os = OS.mac? ? "darwin" : "linux"
+    arch = Hardware::CPU.arm? ? "arm64" : "amd64"
+
+    bin.install "miso-#{os}-#{arch}" => "miso"
+  end
+
+  test do
+    system "#{bin}/miso", "version"
+  end
+end

@@ -95,6 +95,13 @@ jobs:
                   VERSION: ${{ needs.version.outputs.version }}
               run: ./scripts/release/create-archives.sh
 
+            - name: Upload checksums artifact
+              uses: actions/upload-artifact@v7
+              with:
+                  name: checksums
+                  path: dist/checksums.txt
+                  retention-days: 1
+
             - name: Tag and push latest
               run: |
                   git config user.name "github-actions[bot]"
@@ -120,6 +127,48 @@ jobs:
                       dist/misox_${{ needs.version.outputs.version }}_linux_arm64.tar.gz
                       dist/misox_${{ needs.version.outputs.version }}_windows_amd64.zip
                       dist/checksums.txt
+
+    homebrew:
+        needs: [version, release]
+        if: needs.version.outputs.version != ''
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v7
+
+            - name: Download checksums artifact
+              uses: actions/download-artifact@v8
+              with:
+                  name: checksums
+                  path: dist
+
+            - name: Fail if tap token missing
+              env:
+                  HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+              run: |
+                  if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+                    echo "::error::HOMEBREW_TAP_TOKEN not set — cannot push formula" >&2
+                    exit 1
+                  fi
+
+            - name: Render formula
+              env:
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: ./scripts/release/homebrew/render.sh > /tmp/miso.rb
+
+            - name: Push to tap
+              env:
+                  HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: |
+                  git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/dvflw/homebrew-tap.git" tap
+                  cp /tmp/miso.rb tap/Formula/miso.rb
+                  cd tap
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git add Formula/miso.rb
+                  git commit -m "miso $VERSION"
+                  git push
 
     publish:
         needs: [version, release]
