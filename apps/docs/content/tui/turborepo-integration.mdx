@@ -50,6 +50,8 @@ Miso stays invisible. Your command falls through to the package manager, which r
 | Output display (TUI)            | Miso                    |
 | Task discovery (`miso scripts`) | Miso (reads turbo.json) |
 
+Because turbo owns the child processes in delegated mode, miso's per-process features — single-task restart (`r`), interactive mode (`i`), and the per-task pseudo-terminal — apply only to tasks miso orchestrates directly (see [Overriding Tasks](#overriding-tasks-with-miso-orchestration) below). Delegated output is rendered as it arrives.
+
 ## Overriding Tasks with Miso Orchestration
 
 By default, all tasks are delegated to Turbo. If you want Miso to orchestrate specific tasks directly — while Turbo handles everything else — add a `tasks` block to the `repo` config.

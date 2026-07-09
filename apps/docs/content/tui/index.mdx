@@ -49,6 +49,18 @@ miso dev
 
 Miso discovers all matching scripts and launches the TUI.
 
+## Interactive Mode
+
+Press `i` to hand keyboard input to the focused task. Every keystroke is forwarded to that process's stdin — press `r` to reload Metro, trigger a bundler's shortcuts, and so on. Press `Ctrl+Z` to leave interactive mode and return to miso's own controls.
+
+Each task runs in its own pseudo-terminal, so tools that gate color or interactive prompts on a TTY (dev servers, bundlers, Storybook) render exactly as they would when run directly — and long-lived dev servers such as Electron and Vite stay alive instead of shutting down on a closed stdin.
+
+Interactive mode applies to tasks miso orchestrates directly. In delegated mode (Turbo/Nx) turbo owns the child processes, so `i` is unavailable there — see [Turborepo Integration](/tui/turborepo-integration).
+
+## Non-interactive Environments
+
+When no terminal is attached — CI, a piped command, `docker` without `-t`, or an agent — miso prints `no interactive terminal — running plain` and runs the script with normal inherited stdio instead of the TUI. Nothing hangs or crashes.
+
 ## Dependency Ordering
 
 For build commands that need to run in order, configure `dependsOn` in the `repo` field:
