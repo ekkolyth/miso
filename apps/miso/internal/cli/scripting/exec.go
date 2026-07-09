@@ -22,7 +22,7 @@ func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShe
 	if err != nil {
 		return fmt.Errorf("open script file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	var firstLine string

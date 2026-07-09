@@ -49,7 +49,6 @@ var (
 	exitedColor  = lipgloss.Color("#f87171")
 	mutedColor   = lipgloss.Color("#555555")
 	headerBg     = lipgloss.Color("#1a1a2e")
-	panelBg      = lipgloss.Color("#0d0d1a")
 	selectedBg   = lipgloss.NewStyle().Background(lipgloss.Color("#2d4a7a"))
 )
 
@@ -122,7 +121,7 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.selected < len(m.pm.Processes) {
 				m.allExitedPending = false
-				go m.pm.Restart(m.pm.Processes[m.selected])
+				go func() { _ = m.pm.Restart(m.pm.Processes[m.selected]) }()
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false

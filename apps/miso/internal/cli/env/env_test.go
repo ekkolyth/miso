@@ -214,7 +214,9 @@ func TestRun_PassingEntryLogsInfo_WhenSiblingFails(t *testing.T) {
 
 func TestRun_EmptyScopeIsError(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatalf("write temp env: %v", err)
+	}
 	cfg := config.Config{
 		Env: []*config.EnvEntry{
 			{Path: ".env"}, // no scope

@@ -10,6 +10,6 @@ var Version = "unknown"
 
 // miso version
 func RunVersion() error {
-	fmt.Fprintf(os.Stdout, "miso %s\n", Version)
+	_, _ = fmt.Fprintf(os.Stdout, "miso %s\n", Version)
 	return nil
 }

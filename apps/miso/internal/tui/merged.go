@@ -108,7 +108,7 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.cursor < len(m.pm.Processes) {
 				m.allExitedPending = false
-				go m.pm.Restart(m.pm.Processes[m.cursor])
+				go func() { _ = m.pm.Restart(m.pm.Processes[m.cursor]) }()
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
@@ -438,7 +438,7 @@ func (m MergedModel) copyAllText() string {
 
 // mouseToLogRow converts absolute terminal coordinates to a 0-based visual
 // log row index. Returns -1 if the coordinate is above the log area.
-func (m MergedModel) mouseToLogRow(x, y int) int {
+func (m MergedModel) mouseToLogRow(_, y int) int {
 	logPanelTop := 3 // row 0=header, 1=tabs, 2=selector, 3+=logs
 	row := y - logPanelTop
 	if row < 0 {

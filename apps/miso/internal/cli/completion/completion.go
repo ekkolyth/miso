@@ -52,7 +52,7 @@ func Complete(args []string, cwd string) {
 	}
 }
 
-func getCandidates(prev string, cur string, cwd string) []string {
+func getCandidates(prev string, _ string, cwd string) []string {
 	// Completing first word after "miso" (prev is "miso" or empty)
 	if prev == "miso" || prev == "" {
 		candidates := make([]string, 0, len(BuiltinCommands))

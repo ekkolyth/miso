@@ -148,12 +148,12 @@ func printGroupedErrors(w *os.File, failures []entryErrors) {
 		labelColor := ui.LabelColors[i%len(ui.LabelColors)]
 		labelStyle := lipgloss.NewStyle().Bold(true).Foreground(labelColor)
 
-		fmt.Fprintf(w, "  %s\n", labelStyle.Render(f.label))
+		_, _ = fmt.Fprintf(w, "  %s\n", labelStyle.Render(f.label))
 		for _, e := range f.errs {
 			if ve, ok := e.(*varError); ok {
-				fmt.Fprintf(w, "    %s %s\n", warnStyle.Render(ve.name+":"), ve.msg)
+				_, _ = fmt.Fprintf(w, "    %s %s\n", warnStyle.Render(ve.name+":"), ve.msg)
 			} else {
-				fmt.Fprintf(w, "    %s\n", e.Error())
+				_, _ = fmt.Fprintf(w, "    %s\n", e.Error())
 			}
 		}
 	}

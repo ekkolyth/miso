@@ -129,7 +129,7 @@ func EnsureManager(root string, cfg config.Config) (string, config.Config, error
 }
 
 // print error and exit with code 1
-func Fail(logger *log.Logger, err error, showUsage bool) {
+func Fail(_ *log.Logger, err error, showUsage bool) {
 	fmt.Fprintf(os.Stderr, "ERROR miso: %s\n", err.Error())
 	if showUsage {
 		fmt.Fprintln(os.Stderr)

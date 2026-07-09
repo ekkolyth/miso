@@ -1,0 +1,18 @@
+version: "2"
+
+linters:
+    enable:
+        - misspell
+        - revive
+        - errname
+    # default set (errcheck, govet, ineffassign, staticcheck, unused) stays on
+    exclusions:
+        rules:
+            # never-documented codebase; requiring godoc comments on every
+            # exported symbol + package would be repo-wide unrelated churn
+            - linters:
+                  - revive
+              text: "^exported:"
+            - linters:
+                  - revive
+              text: "^package-comments:"

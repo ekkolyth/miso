@@ -18,7 +18,7 @@ type Member struct {
 
 // pnpm-workspace.yaml wins when present; otherwise package.json "workspaces".
 // Independent of repo mode.
-func DiscoverMembers(root string, cfg config.Config) ([]Member, error) {
+func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
 	patterns, err := workspacePatterns(root)
 	if err != nil {
 		return nil, err

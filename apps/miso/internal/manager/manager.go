@@ -85,18 +85,3 @@ func ResolveManagerVersion(managerName string) string {
 	}
 	return managerName + "@" + version
 }
-
-func shellJoin(args []string) string {
-	quoted := make([]string, 0, len(args))
-	for _, a := range args {
-		if a == "" {
-			quoted = append(quoted, "''")
-			continue
-		}
-		if strings.ContainsAny(a, " \t\n\"'`!$&|<>") {
-			a = "'" + strings.ReplaceAll(a, "'", "'\"'\"'") + "'"
-		}
-		quoted = append(quoted, a)
-	}
-	return strings.Join(quoted, " ")
-}

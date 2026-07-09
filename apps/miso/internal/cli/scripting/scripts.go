@@ -58,7 +58,7 @@ func List(cfg config.Config, root string, styles ui.Styles, logger *log.Logger) 
 
 	// show scripts from folder
 	if hasFolderScripts {
-		fmt.Fprintf(os.Stdout, "\nscripts folder:\n")
+		_, _ = fmt.Fprintf(os.Stdout, "\nscripts folder:\n")
 		var folderNames []string
 		for name := range folderScripts {
 			folderNames = append(folderNames, name)
@@ -66,16 +66,16 @@ func List(cfg config.Config, root string, styles ui.Styles, logger *log.Logger) 
 		sort.Strings(folderNames)
 		for _, name := range folderNames {
 			scripts := folderScripts[name]
-			fmt.Fprintf(os.Stdout, "  %s (%s)\n", name, scripts[0].RelativePath)
+			_, _ = fmt.Fprintf(os.Stdout, "  %s (%s)\n", name, scripts[0].RelativePath)
 		}
 	}
 
 	// show scripts from package.json
 	if hasPkgScripts {
 		if hasFolderScripts {
-			fmt.Fprintf(os.Stdout, "\npackage.json:\n")
+			_, _ = fmt.Fprintf(os.Stdout, "\npackage.json:\n")
 		} else {
-			fmt.Fprintf(os.Stdout, "package.json:\n")
+			_, _ = fmt.Fprintf(os.Stdout, "package.json:\n")
 		}
 		var pkgNames []string
 		for name := range pkgScripts {
@@ -83,7 +83,7 @@ func List(cfg config.Config, root string, styles ui.Styles, logger *log.Logger) 
 		}
 		sort.Strings(pkgNames)
 		for _, name := range pkgNames {
-			fmt.Fprintf(os.Stdout, "  %s: %s\n", name, pkgScripts[name])
+			_, _ = fmt.Fprintf(os.Stdout, "  %s: %s\n", name, pkgScripts[name])
 		}
 	}
 
@@ -107,9 +107,9 @@ func List(cfg config.Config, root string, styles ui.Styles, logger *log.Logger) 
 			}
 
 			if len(turboNames) > 0 {
-				fmt.Fprintf(os.Stdout, "\nturbo.json:\n")
+				_, _ = fmt.Fprintf(os.Stdout, "\nturbo.json:\n")
 				for _, name := range turboNames {
-					fmt.Fprintf(os.Stdout, "  %s\n", name)
+					_, _ = fmt.Fprintf(os.Stdout, "  %s\n", name)
 				}
 			}
 		}

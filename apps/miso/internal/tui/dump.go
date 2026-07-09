@@ -44,12 +44,12 @@ func DumpLogs(pm *ProcessManager) {
 		if remaining > 0 {
 			header += strings.Repeat("─", remaining)
 		}
-		fmt.Fprintln(os.Stdout, header)
+		_, _ = fmt.Fprintln(os.Stdout, header)
 
 		for _, line := range lines {
-			fmt.Fprintln(os.Stdout, line)
+			_, _ = fmt.Fprintln(os.Stdout, line)
 		}
 
-		fmt.Fprintln(os.Stdout)
+		_, _ = fmt.Fprintln(os.Stdout)
 	}
 }
