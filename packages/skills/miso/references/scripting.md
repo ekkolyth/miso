@@ -97,6 +97,7 @@ Pick the surface by size:
 
 - **One-liner → `package.json` scripts.** A single command like `vite --config vite.config.ts` belongs in the `package.json` `scripts` block — miso resolves it the same as a folder script, and it's cleaner than a one-line `.sh`. (Simple mode ignores `package.json`, so folder scripts are the only option there.)
 - **Multi-line or `&&`-chained → `scripts/` folder.** Once a command spans multiple lines, chains with `&&`, or needs real logic, a `.sh` file reads far better than a cramped JSON string.
+- **Opt-in dev variants → `dev:<name>` in `package.json`.** A dev target that shouldn't run under a bare `miso dev` (an optional service, an alternate entry point) belongs in the workspace's `package.json` under a distinct name — `dev:ekklipse`, `dev:studio` — not a root launcher script. Start it with `miso @<workspace>/dev:ekklipse`. Bare `dev` stays the default set.
 
 ---
 
