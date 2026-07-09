@@ -52,6 +52,15 @@ jobs:
               with:
                   go-version-file: apps/miso/go.mod
 
+            - name: Test
+              run: cd apps/miso && go test -race ./...
+
+            - name: Lint
+              uses: golangci/golangci-lint-action@v9
+              with:
+                  version: latest
+                  working-directory: apps/miso
+
             - name: Build binaries for all platforms
               run: ./scripts/release/build/npm.sh
 
