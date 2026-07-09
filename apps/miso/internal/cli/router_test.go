@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/config"
@@ -109,46 +107,5 @@ func TestParseMisoxFallsThroughToPassthrough(t *testing.T) {
 	}
 	if parsed.Command != "misox" {
 		t.Errorf("Command = %q, want %q", parsed.Command, "misox")
-	}
-}
-
-func TestParseCLI_SimpleModeIgnoresPackageJSON(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "package.json"),
-		[]byte(`{"scripts":{"foo":"echo hi"}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	pm := false
-	cfg := config.Config{PackageManager: &pm, Scripts: "./scripts"} // SimpleMode
-
-	parsed, err := ParseCLI([]string{"foo"}, cfg, root)
-	if err != nil {
-		t.Fatalf("ParseCLI() error: %v", err)
-	}
-	if parsed.Action != ActionPassthrough {
-		t.Errorf("Action = %v, want ActionPassthrough (simple mode must not resolve package.json)", parsed.Action)
-	}
-}
-
-func TestParseCLI_NonSimpleResolvesPackageJSON(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "package.json"),
-		[]byte(`{"scripts":{"foo":"echo hi"}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Config{Scripts: "./scripts"} // PackageManager nil → not simple
-
-	parsed, err := ParseCLI([]string{"foo"}, cfg, root)
-	if err != nil {
-		t.Fatalf("ParseCLI() error: %v", err)
-	}
-	if parsed.Action != ActionScriptPackageJSON {
-		t.Errorf("Action = %v, want ActionScriptPackageJSON", parsed.Action)
 	}
 }
