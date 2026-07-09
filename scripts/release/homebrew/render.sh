@@ -10,10 +10,10 @@ CHECKSUMS="$ROOT/dist/checksums.txt"
 
 sha_for() { grep -E "miso_${VERSION}_$1\.tar\.gz\$" "$CHECKSUMS" | awk '{print $1}'; }
 
-D_ARM=$(sha_for darwin_arm64)
-D_AMD=$(sha_for darwin_amd64)
-L_ARM=$(sha_for linux_arm64)
-L_AMD=$(sha_for linux_amd64)
+D_ARM=$(sha_for darwin_arm64) || true
+D_AMD=$(sha_for darwin_amd64) || true
+L_ARM=$(sha_for linux_arm64) || true
+L_AMD=$(sha_for linux_amd64) || true
 
 for pair in "D_ARM:$D_ARM" "D_AMD:$D_AMD" "L_ARM:$L_ARM" "L_AMD:$L_AMD"; do
     [[ -n "${pair#*:}" ]] || { echo "::error::missing checksum for ${pair%%:*}" >&2; exit 1; }
