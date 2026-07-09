@@ -90,6 +90,24 @@ Once you add an `env` block, each root entry needs a `scope` — a target name o
 
 `miso env` enforces `scope` strictly and fails on a missing one; loading env into a running script is permissive and just skips entries that don't match. See [Configure](/env-validation/config#scope) for the full breakdown.
 
+## Generating env templates
+
+`miso env` can emit a paste-ready `.env.generated` for each scope:
+
+- `-g` / `--generate` — write `.env.generated` with every variable declared for that scope, values blank.
+- `-p` / `--populate` — fill values from each entry's baseline file (its `path`).
+- `-o` / `--override` — layer each entry's declared `override` file on top (override wins).
+
+Combine them for a full production build:
+
+```bash
+miso env -g          # keys-only template(s)
+miso env -g -p       # filled from local baselines
+miso env -g -p -o    # baselines + overrides, validated
+```
+
+Files follow the scope, not the declaration site: `scope: global` writes `<root>/.env.generated`; `scope: web` writes `apps/web/.env.generated` even if declared in the root `miso.json`. With `-p`/`-o`, the resolved values are validated against your declared types and required keys — a missing required value fails the command and writes nothing.
+
 ## Next Steps
 
 - [Configure](/env-validation/config) labels, paths, required variables, and validation rules
