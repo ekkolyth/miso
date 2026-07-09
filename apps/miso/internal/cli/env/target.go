@@ -74,7 +74,13 @@ func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Targ
 		}
 	}
 
-	if !loaded {
+	startDir := projectRoot
+	if target.Kind == workspace.TargetMember && target.Dir != "" {
+		startDir = target.Dir
+	}
+	binDirs := collectBinDirs(startDir, projectRoot)
+
+	if !loaded && len(binDirs) == 0 {
 		return nil, nil
 	}
 
@@ -90,5 +96,56 @@ func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Targ
 			processEnv = append(processEnv, key+"="+value)
 		}
 	}
+	if len(binDirs) > 0 {
+		processEnv = prependPath(processEnv, binDirs)
+	}
 	return processEnv, nil
+}
+
+// collectBinDirs returns existing node_modules/.bin dirs from startDir up to
+// projectRoot (inclusive), nearest first.
+func collectBinDirs(startDir, projectRoot string) []string {
+	abs := func(p string) string {
+		if a, err := filepath.Abs(p); err == nil {
+			return a
+		}
+		return p
+	}
+	root := abs(projectRoot)
+	dir := abs(startDir)
+
+	var dirs []string
+	seen := make(map[string]bool)
+	for {
+		bin := filepath.Join(dir, "node_modules", ".bin")
+		if info, err := os.Stat(bin); err == nil && info.IsDir() && !seen[bin] {
+			seen[bin] = true
+			dirs = append(dirs, bin)
+		}
+		if dir == root {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return dirs
+}
+
+// prependPath puts binDirs at the front of PATH in environ (local bins win).
+func prependPath(environ []string, binDirs []string) []string {
+	prefix := strings.Join(binDirs, string(os.PathListSeparator))
+	for i, kv := range environ {
+		if key, val, ok := strings.Cut(kv, "="); ok && key == "PATH" {
+			if val != "" {
+				environ[i] = "PATH=" + prefix + string(os.PathListSeparator) + val
+			} else {
+				environ[i] = "PATH=" + prefix
+			}
+			return environ
+		}
+	}
+	return append(environ, "PATH="+prefix)
 }
