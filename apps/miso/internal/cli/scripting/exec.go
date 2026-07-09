@@ -95,6 +95,15 @@ func ExecScriptFile(scriptPath string, args []string, workDir, defaultShell, man
 		return fmt.Errorf("start script: %w", err)
 	}
 
+	// Foreground TTY exec: hand the child's own process group control of the
+	// terminal so interactive children (next dev/build, etc.) can enter raw
+	// mode instead of SIGTTOU-stalling in a background group. Restored on exit.
+	if fi, statErr := os.Stdin.Stat(); statErr == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		if prev, ok := proc.GiveTerminal(os.Stdin.Fd(), cmd.Process.Pid); ok {
+			defer proc.RestoreTerminal(os.Stdin.Fd(), prev)
+		}
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)

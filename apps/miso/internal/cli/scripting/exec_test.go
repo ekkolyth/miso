@@ -78,3 +78,23 @@ func TestResolveInterpreter_LookPathError(t *testing.T) {
 		t.Error("expected LookPath error for missing interpreter")
 	}
 }
+
+func TestExecScriptFile_RunsScript(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran")
+	script := writeScript(t, dir, "task.sh", "touch "+marker+"\n")
+	if err := ExecScriptFile(script, nil, dir, "sh", "", nil); err != nil {
+		t.Fatalf("ExecScriptFile() error: %v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("script did not run (marker missing): %v", err)
+	}
+}
+
+func TestExecScriptFile_FailingScriptErrors(t *testing.T) {
+	dir := t.TempDir()
+	script := writeScript(t, dir, "fail.sh", "exit 3\n")
+	if err := ExecScriptFile(script, nil, dir, "sh", "", nil); err == nil {
+		t.Error("expected error from failing script")
+	}
+}
