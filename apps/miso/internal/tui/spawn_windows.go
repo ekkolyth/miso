@@ -36,6 +36,7 @@ func spawnProcess(cmd *exec.Cmd, _, _ int) (*spawnResult, error) {
 	return &spawnResult{
 		readers: []io.Reader{stdout, stderr},
 		stdin:   stdin,
+		resize:  func(int, int) {},
 		closer:  func() {},
 	}, nil
 }

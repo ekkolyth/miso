@@ -39,6 +39,7 @@ type ProcessStateMsg struct {
 type spawnResult struct {
 	readers []io.Reader
 	stdin   io.Writer
+	resize  func(rows, cols int)
 	closer  func()
 }
 
@@ -54,10 +55,11 @@ type Process struct {
 	StartedAt time.Time
 	Buffer    *RingBuffer
 
-	cmd   *exec.Cmd
-	stdin io.Writer // writable child stdin (pty master on unix, pipe on Windows)
-	done  chan struct{}
-	mu    sync.Mutex
+	cmd    *exec.Cmd
+	stdin  io.Writer // writable child stdin (pty master on unix, pipe on Windows)
+	resize func(rows, cols int)
+	done   chan struct{}
+	mu     sync.Mutex
 }
 
 // ProcessManager owns the set of managed processes and dispatches tea messages.
@@ -128,6 +130,7 @@ func (pm *ProcessManager) Start(p *Process) error {
 
 	p.mu.Lock()
 	p.stdin = res.stdin
+	p.resize = res.resize
 	p.State = StateRunning
 	p.StartedAt = time.Now()
 	p.mu.Unlock()
@@ -206,6 +209,16 @@ func (p *Process) WriteStdin(b []byte) error {
 	return err
 }
 
+// no-op until the process is spawned
+func (p *Process) Resize(rows, cols int) {
+	p.mu.Lock()
+	fn := p.resize
+	p.mu.Unlock()
+	if fn != nil {
+		fn(rows, cols)
+	}
+}
+
 // Restart stops the process and starts it again.
 func (pm *ProcessManager) Restart(p *Process) error {
 	pm.Stop(p)
@@ -222,6 +235,18 @@ func (pm *ProcessManager) RestartAll() {
 
 	for _, p := range procs {
 		_ = pm.Restart(p)
+	}
+}
+
+// ResizeAll forwards a terminal size change to every process's pty.
+func (pm *ProcessManager) ResizeAll(rows, cols int) {
+	pm.mu.Lock()
+	procs := make([]*Process, len(pm.Processes))
+	copy(procs, pm.Processes)
+	pm.mu.Unlock()
+
+	for _, p := range procs {
+		p.Resize(rows, cols)
 	}
 }
 
