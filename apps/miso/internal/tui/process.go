@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bufio"
+	"io"
 	"os/exec"
 	"regexp"
 	"sync"
@@ -30,6 +31,15 @@ type ProcessStateMsg struct {
 	Label string
 	State ProcessState
 	Code  int
+}
+
+// spawnResult holds the streams wired to a spawned process. On unix the pty
+// master is both the merged-output reader and the stdin writer; on Windows the
+// readers are separate stdout/stderr pipes and stdin is a pipe.
+type spawnResult struct {
+	readers []io.Reader
+	stdin   io.Writer
+	closer  func()
 }
 
 // Process holds the runtime state for a single managed process.
