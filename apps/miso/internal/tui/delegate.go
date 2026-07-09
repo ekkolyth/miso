@@ -34,6 +34,11 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		return false, nil
 	}
 
+	if !hasInteractiveTTY() {
+		fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
+		return false, nil
+	}
+
 	mode := cfg.RepoMode()
 
 	// Verify the binary exists

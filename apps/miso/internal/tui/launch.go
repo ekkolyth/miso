@@ -24,6 +24,11 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 		return false, nil
 	}
 
+	if !hasInteractiveTTY() {
+		fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
+		return false, nil
+	}
+
 	entries, err := discoverEntries(cfg, scriptName, root)
 	if err != nil {
 		return false, err
