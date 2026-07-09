@@ -6,28 +6,7 @@ title: Simple Mode
 
 A package-manager-free `miso.json` for non-JavaScript projects. Uses miso as a pure script runner with TUI, concurrent tasks, and env validation.
 
-```json
-{
-    "$schema": "https://misojs.dev/miso.schema.json",
-    "packageManager": false,
-    "scripts": "./scripts",
-    "shell": "bash",
-    "tui": "tabbed",
-    "repo": {
-        "tasks": {
-            "dev": { "concurrent": ["services"] }
-        }
-    },
-    "env": {
-        "scope": "global",
-        "path": ".env.local",
-        "variables": {
-            "PORT": "port",
-            "DATABASE_URL": "url"
-        }
-    }
-}
-```
+<ConfigExample name="simple" />
 
 ## What's Different from a Normal Config
 

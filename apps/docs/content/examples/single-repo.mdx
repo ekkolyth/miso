@@ -6,28 +6,4 @@ title: Single Repo
 
 A standard single-project `miso.json` with TUI, env validation, concurrent tasks, and flags.
 
-```json
-{
-    "$schema": "https://misojs.dev/miso.schema.json",
-    "scripts": "./scripts",
-    "tui": "tabbed",
-    "repo": {
-        "tasks": {
-            "dev": { "concurrent": ["services"] }
-        }
-    },
-    "flags": {
-        "install": ["--frozen-lockfile"],
-        "dev": ["--env"]
-    },
-    "env": {
-        "scope": "global",
-        "path": ".env.local",
-        "variables": {
-            "PORT": "port",
-            "DATABASE_URL": "url",
-            "API_KEY": "string"
-        }
-    }
-}
-```
+<ConfigExample name="single" />
