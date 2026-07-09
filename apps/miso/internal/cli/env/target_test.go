@@ -196,3 +196,16 @@ func TestBuildTargetEnv_NoFilesNoBinsReturnsNil(t *testing.T) {
 		t.Errorf("got %v, want nil (no env, no bins)", environ)
 	}
 }
+
+func TestBuildTargetEnv_DelegatedSkipsScopedInjection(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".env"), "X=delegated\n")
+	cfg := config.Config{Repo: "turbo", Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
+	got, err := BuildTargetEnv(root, cfg, workspace.Target{Kind: workspace.TargetScript, Name: "dev"})
+	if err != nil {
+		t.Fatalf("BuildTargetEnv() error: %v", err)
+	}
+	if envSliceToMap(got)["X"] == "delegated" {
+		t.Error("delegated mode injected a scoped env value; turbo/nx own env")
+	}
+}

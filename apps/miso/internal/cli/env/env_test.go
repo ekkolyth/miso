@@ -229,6 +229,23 @@ func TestRun_EmptyScopeIsError(t *testing.T) {
 	}
 }
 
+func TestRun_DelegatedSkipsScopeRequirement(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatalf("write temp env: %v", err)
+	}
+	cfg := config.Config{
+		Repo: "turbo",
+		Env: []*config.EnvEntry{
+			{Path: ".env"}, // no scope — allowed in delegated mode
+		},
+	}
+	logger := log.New(io.Discard)
+	if err := Run(dir, cfg, logger); err != nil {
+		t.Errorf("delegated mode should not require scope: %v", err)
+	}
+}
+
 func TestRun_MemberLocalEnvEntry_MissingFileReported(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {

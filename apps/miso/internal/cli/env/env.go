@@ -76,41 +76,67 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 		return nil
 	}
 
-	members, err := workspace.DiscoverMembers(projectRoot, cfg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr)
-		logger.Error("failed to discover workspaces", "error", err)
-		return fmt.Errorf("discover members: %w", err)
-	}
-	memberNames := make(map[string]bool, len(members))
-	for _, member := range members {
-		if member.Name == "global" {
-			fmt.Fprintln(os.Stderr)
-			logger.Error("member uses the reserved name \"global\"", "dir", member.Dir)
-			return fmt.Errorf("member %q uses the reserved name \"global\"", member.Dir)
-		}
-		memberNames[member.Name] = true
-	}
-	var unscoped []string
-	for _, entry := range cfg.Env {
-		if entry.Scope == "" {
-			unscoped = append(unscoped, entry.Path)
-			continue
-		}
-		if entry.Scope != "global" && !memberNames[entry.Scope] {
-			logger.Warn("env entry scope matches no known member", "scope", entry.Scope, "path", entry.Path)
-		}
-	}
-	if len(unscoped) > 0 {
-		fmt.Fprintln(os.Stderr)
-		logger.Error("env config invalid — every root entry needs a scope (a target name or \"global\")")
-		for _, path := range unscoped {
-			fmt.Fprintf(os.Stderr, "    %s\n", path)
-		}
-		return errors.New("env config invalid: missing scope")
-	}
-
 	var failures []entryErrors
+
+	// Scope-based injection and member-local env are miso-mode concerns. In
+	// delegated (turbo/nx) mode the delegate owns env, so scope isn't required
+	// and member configs aren't miso's to inject — env then validates only the
+	// declared root entries.
+	if !cfg.IsDelegated() {
+		members, err := workspace.DiscoverMembers(projectRoot, cfg)
+		if err != nil {
+			fmt.Fprintln(os.Stderr)
+			logger.Error("failed to discover workspaces", "error", err)
+			return fmt.Errorf("discover members: %w", err)
+		}
+		memberNames := make(map[string]bool, len(members))
+		for _, member := range members {
+			if member.Name == "global" {
+				fmt.Fprintln(os.Stderr)
+				logger.Error("member uses the reserved name \"global\"", "dir", member.Dir)
+				return fmt.Errorf("member %q uses the reserved name \"global\"", member.Dir)
+			}
+			memberNames[member.Name] = true
+		}
+		var unscoped []string
+		for _, entry := range cfg.Env {
+			if entry.Scope == "" {
+				unscoped = append(unscoped, entry.Path)
+				continue
+			}
+			if entry.Scope != "global" && !memberNames[entry.Scope] {
+				logger.Warn("env entry scope matches no known member", "scope", entry.Scope, "path", entry.Path)
+			}
+		}
+		if len(unscoped) > 0 {
+			fmt.Fprintln(os.Stderr)
+			logger.Error("env config invalid — every root entry needs a scope (a target name or \"global\")")
+			for _, path := range unscoped {
+				fmt.Fprintf(os.Stderr, "    %s\n", path)
+			}
+			return errors.New("env config invalid: missing scope")
+		}
+
+		// Member-local entries scope by location, not by declared scope field.
+		for _, member := range members {
+			if member.ConfigPath == "" {
+				continue
+			}
+			memberCfg, err := config.Load(member.Dir)
+			if err != nil {
+				continue
+			}
+			for _, entry := range memberCfg.Env {
+				errs := runEntry(member.Dir, entry, logger)
+				if len(errs) > 0 {
+					failures = append(failures, entryErrors{
+						label: member.Name + ": " + entryLabel(entry),
+						errs:  errs,
+					})
+				}
+			}
+		}
+	}
 
 	for _, entry := range cfg.Env {
 		errs := runEntry(projectRoot, entry, logger)
@@ -119,26 +145,6 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 				label: entryLabel(entry),
 				errs:  errs,
 			})
-		}
-	}
-
-	// Member-local entries scope by location, not by declared scope field.
-	for _, member := range members {
-		if member.ConfigPath == "" {
-			continue
-		}
-		memberCfg, err := config.Load(member.Dir)
-		if err != nil {
-			continue
-		}
-		for _, entry := range memberCfg.Env {
-			errs := runEntry(member.Dir, entry, logger)
-			if len(errs) > 0 {
-				failures = append(failures, entryErrors{
-					label: member.Name + ": " + entryLabel(entry),
-					errs:  errs,
-				})
-			}
 		}
 	}
 
