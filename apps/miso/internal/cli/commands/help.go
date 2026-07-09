@@ -21,7 +21,7 @@ func RenderHelp() string {
 	s := ui.Default()
 	var out strings.Builder
 	out.WriteString(RenderMisoLogo())
-	out.WriteString("\n" + s.Heading.Render("Miso – the agnostic package manager") + "\n\n")
+	out.WriteString("\n" + s.Heading.Render("Miso") + " – the agnostic package manager\n\n")
 	out.WriteString(renderCommandGroup(s, "Commands", false))
 	out.WriteString("\n")
 	out.WriteString(renderCommandGroup(s, "Miso", true))
