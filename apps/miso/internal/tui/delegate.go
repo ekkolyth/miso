@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/proc"
 	"github.com/ekkolyth/miso/internal/turbo"
 )
 
@@ -61,7 +62,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	// Build the command
 	cmd := exec.Command(binary, delegateArgs...)
 	cmd.Dir = root
-	setProcGroup(cmd)
+	proc.SetGroup(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -221,7 +222,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	// Kill the delegated process group
 	if cmd.Process != nil {
 		pgid := cmd.Process.Pid
-		_ = killGroup(pgid, syscall.SIGTERM)
+		_ = proc.KillGroup(pgid, syscall.SIGTERM)
 	}
 
 	failed := pm.FailedCount()

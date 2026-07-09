@@ -9,6 +9,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/ekkolyth/miso/internal/proc"
 )
 
 type ProcessState int
@@ -32,11 +34,11 @@ type ProcessStateMsg struct {
 
 // Process holds the runtime state for a single managed process.
 type Process struct {
-	Entry    TuiScriptEntry
-	Command  string
-	Args     []string
-	Dir      string   // working directory for the process
-	Environ  []string // environment variables for the process (nil = inherit)
+	Entry     TuiScriptEntry
+	Command   string
+	Args      []string
+	Dir       string   // working directory for the process
+	Environ   []string // environment variables for the process (nil = inherit)
 	State     ProcessState
 	ExitCode  int
 	StartedAt time.Time
@@ -99,7 +101,7 @@ func (pm *ProcessManager) Start(p *Process) error {
 		p.cmd.Env = p.Environ
 	}
 	// Create a new process group so we can kill the entire tree on stop.
-	setProcGroup(p.cmd)
+	proc.SetGroup(p.cmd)
 	p.mu.Unlock()
 
 	cmd := p.cmd
@@ -190,13 +192,13 @@ func (pm *ProcessManager) Stop(p *Process) {
 
 	// Kill the entire process group (negative PID) so child processes are cleaned up.
 	pgid := cmd.Process.Pid
-	_ = killGroup(pgid, syscall.SIGTERM)
+	_ = proc.KillGroup(pgid, syscall.SIGTERM)
 
 	select {
 	case <-done:
 		// Process group exited cleanly after SIGTERM.
 	case <-time.After(5 * time.Second):
-		_ = killGroup(pgid, syscall.SIGKILL)
+		_ = proc.KillGroup(pgid, syscall.SIGKILL)
 		// Wait for the done channel to be closed by the Start() goroutine.
 		<-done
 	}
