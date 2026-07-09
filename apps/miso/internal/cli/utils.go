@@ -164,9 +164,8 @@ func UsageText() string {
 	}
 	b.WriteString("\n")
 	for _, note := range []string{
-		"Automatically detects bun, npm, pnpm, or yarn.",
-		"Generates a miso.json so you can override the manager or define scripts.",
-		"Unknown commands pass through to the detected package manager.",
+		"Miso automatically detects your package manager (bun, pnpm, npm, yarn)",
+		"Configure miso for your repo using miso.json",
 	} {
 		b.WriteString("  " + s.Muted.Render("- "+note) + "\n")
 	}
