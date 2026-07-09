@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 func TestParseGenerateFlags(t *testing.T) {
@@ -64,5 +65,20 @@ func TestReadEnvSoft_Reads(t *testing.T) {
 	m, err := readEnvSoft(path)
 	if err != nil || m["K"] != "v" {
 		t.Errorf("read => K=v; got %v %v", m, err)
+	}
+}
+
+func TestScopeDir(t *testing.T) {
+	root := "/repo"
+	members := []workspace.Member{{Name: "web", Dir: "/repo/apps/web"}}
+
+	if dir, err := scopeDir("global", root, members); err != nil || dir != root {
+		t.Errorf("global => %q %v, want %q", dir, err, root)
+	}
+	if dir, err := scopeDir("web", root, members); err != nil || dir != "/repo/apps/web" {
+		t.Errorf("web => %q %v", dir, err)
+	}
+	if _, err := scopeDir("nope", root, members); err == nil {
+		t.Error("unknown scope should error")
 	}
 }

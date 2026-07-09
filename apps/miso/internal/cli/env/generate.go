@@ -79,11 +79,23 @@ func readEnvSoft(path string) (map[string]string, error) {
 	return godotenv.Read(path)
 }
 
-// declarations below are added in later tasks: scopeDir, collectScopes,
+// scopeDir resolves a scope to the directory its .env.generated is written in:
+// "global" is the repo root; any other scope is that member's directory.
+func scopeDir(scope, projectRoot string, members []workspace.Member) (string, error) {
+	if scope == "global" {
+		return projectRoot, nil
+	}
+	member, err := workspace.Find(scope, members, projectRoot)
+	if err != nil {
+		return "", err
+	}
+	return member.Dir, nil
+}
+
+// declarations below are added in later tasks: collectScopes,
 // buildScopeEnv, validateEntryValues, Generate, Command.
 var (
 	_ = sort.Strings
 	_ = filepath.Join
 	_ = log.Default
-	_ = workspace.DiscoverMembers
 )
