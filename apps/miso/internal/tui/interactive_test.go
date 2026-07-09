@@ -65,3 +65,28 @@ func TestTabbedInteractiveRouting(t *testing.T) {
 		t.Error("expected interactive mode off after ctrl+z")
 	}
 }
+
+func TestMergedInteractiveRouting(t *testing.T) {
+	var sink bytes.Buffer
+	proc := &Process{stdin: &sink, State: StateRunning, Buffer: NewRingBuffer(10)}
+	pm := &ProcessManager{Processes: []*Process{proc}}
+	m := MergedModel{pm: pm, keys: DefaultMergedKeyMap(), visible: map[int]bool{0: true}}
+
+	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "i", Code: 'i'}))
+	m = next.(MergedModel)
+	if !m.interactive {
+		t.Fatal("expected interactive mode after 'i'")
+	}
+
+	next, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	m = next.(MergedModel)
+	if sink.String() != "\r" {
+		t.Errorf("expected enter forwarded as CR, got %q", sink.String())
+	}
+
+	next, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: 'z', Mod: tea.ModCtrl}))
+	m = next.(MergedModel)
+	if m.interactive {
+		t.Error("expected interactive mode off after ctrl+z")
+	}
+}
