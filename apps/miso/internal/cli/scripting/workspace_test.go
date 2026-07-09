@@ -32,7 +32,7 @@ func TestResolveWorkspaceScriptFromFolder(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(scriptsDir, "build.sh"), []byte("#!/bin/sh\necho build"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Scripts: "./scripts", Repo: "mono"}
+	cfg := config.Config{Scripts: "./scripts", Repo: "miso"}
 
 	resolved, workDir, _, err := ResolveWorkspaceScript("api", "build", root, cfg)
 	if err != nil {
@@ -56,7 +56,7 @@ func TestResolveWorkspaceScriptFromPackageJSON(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wsDir, "package.json"), []byte(wsPkg), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Scripts: "./scripts", Repo: "mono"}
+	cfg := config.Config{Scripts: "./scripts", Repo: "miso"}
 
 	resolved, workDir, _, err := ResolveWorkspaceScript("api", "test:unit", root, cfg)
 	if err != nil {
@@ -75,7 +75,7 @@ func TestResolveWorkspaceScriptFromPackageJSON(t *testing.T) {
 
 func TestResolveWorkspaceScriptNotFound(t *testing.T) {
 	root, wsDir := setupWorkspace(t)
-	cfg := config.Config{Scripts: "./scripts", Repo: "mono"}
+	cfg := config.Config{Scripts: "./scripts", Repo: "miso"}
 
 	resolved, workDir, _, err := ResolveWorkspaceScript("api", "nonexistent", root, cfg)
 	if err != nil {
@@ -103,7 +103,7 @@ func TestResolveWorkspaceScript_HonorsMemberScriptsAndShell(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tasksDir, "build.sh"), []byte("#!/bin/sh\necho build"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Scripts: "./scripts", Shell: "bash", Repo: "mono"}
+	cfg := config.Config{Scripts: "./scripts", Shell: "bash", Repo: "miso"}
 
 	resolved, workDir, shell, err := ResolveWorkspaceScript("api", "build", root, cfg)
 	if err != nil {
@@ -127,7 +127,7 @@ func TestResolveWorkspaceScriptByPackageName(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wsDir, "package.json"), []byte(wsPkg), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Scripts: "./scripts", Repo: "mono"}
+	cfg := config.Config{Scripts: "./scripts", Repo: "miso"}
 
 	resolved, _, _, err := ResolveWorkspaceScript("@myorg/api", "build", root, cfg)
 	if err != nil {

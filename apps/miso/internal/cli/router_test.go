@@ -8,9 +8,10 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 )
 
-// minimal cfg helpers
-func monoCfg() config.Config   { return config.Config{Repo: "mono"} }
-func singleCfg() config.Config { return config.Config{Repo: "single"} }
+// minimal cfg helpers — both non-delegated (miso mode); the repo field no longer
+// distinguishes mono vs single, so the scenario lives in each test's name.
+func monoCfg() config.Config   { return config.Config{Repo: "miso"} }
+func singleCfg() config.Config { return config.Config{Repo: "miso"} }
 
 func TestParseDevConflictErrors(t *testing.T) {
 	root := t.TempDir()
