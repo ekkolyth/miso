@@ -100,7 +100,7 @@ If omitted, Miso falls back to the same discovery order used when no `env` confi
 
 ### `override`
 
-Path to this scope's override file, relative to the project root (or the member's directory for a member-local entry). Used by `miso env -g -o`: its values are layered on top of the populated baseline, winning on key conflict. One override file per scope — at the root level for `"global"`, or one per member entry.
+Path to this scope's override file, relative to the project root (or the member's directory for a member-local entry). Used by `miso env -g -o`: its values are layered on top of the baseline values (populated by `-p` when given), winning on key conflict. One override file per scope — at the root level for `"global"`, or one per member entry.
 
 See [Generating env templates](/env-validation#generating-env-templates) for the full `--generate` workflow.
 

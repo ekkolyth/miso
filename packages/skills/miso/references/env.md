@@ -76,7 +76,7 @@ This checks that each named variable is present in the env file but does not val
 |---|---|---|
 | `scope` | `string` | **Required on every root entry in miso mode** (see Env Scoping). The target this env applies to — a workspace/member name, or the reserved `"global"`. Omit inside a member's own `<member>/miso.json` (scope implicit by location), and in `turbo`/`nx` mode where miso doesn't inject and scope isn't used. |
 | `path` | `string` | Path to the `.env` file, relative to `miso.json` |
-| `override` | `string` | Optional. Path to this scope's override file. Layered on top of the populated baseline by `-o`/`--override` (override wins). |
+| `override` | `string` | Optional. Path to this scope's override file. Layered on top of the baseline values (populated by `-p` when given) by `-o`/`--override` (override wins). |
 | `label` | `string` | Optional. Display name used in validation output |
 | `required` | `"all" \| "none" \| string[]` | Which variables must be present. `"all"` = all defined variables. Array = specific keys only. |
 | `variables` | `object \| string[]` | Variable name → type validator (object), or list of variable names for presence-only checking (array) |
@@ -213,7 +213,7 @@ Run `miso env` to validate without executing any script.
 - `-p` / `--populate` — fill values from each entry's `path` baseline.
 - `-o` / `--override` — layer each entry's `override` file on top (override wins).
 
-File location follows the scope: `global` → repo root; `<member>` → that member's dir. With `-p`/`-o` the resolved values are validated (type + required) and nothing is written if a scope fails.
+File location follows the scope: `global` → repo root; `<member>` → that member's dir. With `-p`/`-o` the resolved values are validated (type + required) and nothing is written for any scope if one fails.
 
 Entry field `override`: path to that scope's override file (root/global override, or one per scope).
 
