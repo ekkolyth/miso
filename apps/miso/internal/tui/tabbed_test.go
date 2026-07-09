@@ -6,6 +6,21 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+func TestTabbedWindowResizeForwards(t *testing.T) {
+	var gotRows, gotCols int
+	p := &Process{resize: func(rows, cols int) {
+		gotRows, gotCols = rows, cols
+	}}
+	pm := &ProcessManager{Processes: []*Process{p}}
+	m := TabbedModel{pm: pm}
+
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	if gotRows != 30 || gotCols != 100 {
+		t.Errorf("resize forwarded as (rows=%d, cols=%d), want (rows=30, cols=100)", gotRows, gotCols)
+	}
+}
+
 func TestSidebarStartIdx(t *testing.T) {
 	tests := []struct {
 		selected   int

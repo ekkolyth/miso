@@ -21,10 +21,13 @@ func spawnProcess(cmd *exec.Cmd, _, _ int) (*spawnResult, error) {
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		_ = stdin.Close()
 		return nil, err
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
@@ -33,6 +36,7 @@ func spawnProcess(cmd *exec.Cmd, _, _ int) (*spawnResult, error) {
 	return &spawnResult{
 		readers: []io.Reader{stdout, stderr},
 		stdin:   stdin,
+		resize:  func(int, int) {},
 		closer:  func() {},
 	}, nil
 }

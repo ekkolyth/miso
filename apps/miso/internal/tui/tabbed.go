@@ -87,6 +87,13 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.pm.ResizeAll(msg.Height, msg.Width)
+		return m, nil
+
+	case tea.PasteMsg:
+		if m.interactive && !m.delegated && m.selected < len(m.pm.Processes) {
+			_ = m.pm.Processes[m.selected].WriteStdin([]byte(msg.Content))
+		}
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -122,10 +129,12 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.selected < len(m.pm.Processes) {
 				m.allExitedPending = false
+				m.sel = SelectionState{}
 				go m.pm.Restart(m.pm.Processes[m.selected])
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
+			m.sel = SelectionState{}
 			go m.pm.RestartAll()
 		case key.Matches(msg, m.keys.CopyKey):
 			if m.sel.active {
@@ -551,7 +560,7 @@ func (m TabbedModel) mouseToLogRow(x, y int) int {
 	return row
 }
 
-// selectedText returns the selected buffer lines as raw text (unwrapped).
+// selected buffer lines as raw text (unwrapped)
 func (m TabbedModel) selectedText() string {
 	if m.selected >= len(m.pm.Processes) || !m.sel.active {
 		return ""
