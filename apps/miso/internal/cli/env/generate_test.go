@@ -82,3 +82,49 @@ func TestScopeDir(t *testing.T) {
 		t.Error("unknown scope should error")
 	}
 }
+
+func TestBuildScopeEnv_KeysOnly(t *testing.T) {
+	entries := []scopedEntry{{entry: &config.EnvEntry{Variables: config.EnvVariables{Array: []string{"API_URL", "PORT"}}}, baseDir: t.TempDir()}}
+	keys, values, err := buildScopeEnv(entries, GenerateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(keys, []string{"API_URL", "PORT"}) {
+		t.Errorf("keys = %v (want sorted union)", keys)
+	}
+	if values["API_URL"] != "" || values["PORT"] != "" {
+		t.Errorf("keys-only must have empty values, got %v", values)
+	}
+}
+
+func TestBuildScopeEnv_PopulateThenOverride(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".env.local"), "API_URL=http://local\nPORT=3000\n")
+	writeFile(t, filepath.Join(dir, ".env.infra"), "API_URL=http://prod\n")
+	entries := []scopedEntry{{
+		entry: &config.EnvEntry{
+			Path:      ".env.local",
+			Override:  ".env.infra",
+			Variables: config.EnvVariables{Array: []string{"API_URL", "PORT"}},
+		},
+		baseDir: dir,
+	}}
+	_, values, err := buildScopeEnv(entries, GenerateOptions{Populate: true, Override: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values["API_URL"] != "http://prod" { // override wins
+		t.Errorf("API_URL = %q, want override http://prod", values["API_URL"])
+	}
+	if values["PORT"] != "3000" { // populate only
+		t.Errorf("PORT = %q, want 3000", values["PORT"])
+	}
+}
+
+// writeFile is a tiny helper for these tests.
+func writeFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

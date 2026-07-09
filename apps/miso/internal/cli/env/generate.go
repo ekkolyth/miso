@@ -92,10 +92,92 @@ func scopeDir(scope, projectRoot string, members []workspace.Member) (string, er
 	return member.Dir, nil
 }
 
-// declarations below are added in later tasks: collectScopes,
-// buildScopeEnv, validateEntryValues, Generate, Command.
+// scopedEntry pairs an env entry with the directory its path/override resolve from.
+type scopedEntry struct {
+	entry   *config.EnvEntry
+	baseDir string
+}
+
+// collectScopes groups declared entries by scope. Root entries use their declared
+// scope and resolve paths from the repo root; member-local entries take the
+// member's name as scope and resolve from the member dir.
+func collectScopes(projectRoot string, cfg config.Config, members []workspace.Member) map[string][]scopedEntry {
+	scopes := map[string][]scopedEntry{}
+	for _, entry := range cfg.Env {
+		if entry.Scope == "" {
+			continue
+		}
+		scopes[entry.Scope] = append(scopes[entry.Scope], scopedEntry{entry: entry, baseDir: projectRoot})
+	}
+	for _, member := range members {
+		if member.ConfigPath == "" {
+			continue
+		}
+		memberCfg, err := config.Load(member.Dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range memberCfg.Env {
+			scopes[member.Name] = append(scopes[member.Name], scopedEntry{entry: entry, baseDir: member.Dir})
+		}
+	}
+	return scopes
+}
+
+// buildScopeEnv returns the sorted declared key set and a values map for a scope:
+// empty values for keys-only, baseline values with -p, override values winning with -o.
+func buildScopeEnv(entries []scopedEntry, opts GenerateOptions) ([]string, map[string]string, error) {
+	keySet := map[string]bool{}
+	for _, scoped := range entries {
+		for _, key := range variableKeys(scoped.entry.Variables) {
+			keySet[key] = true
+		}
+	}
+	keys := make([]string, 0, len(keySet))
+	for key := range keySet {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	values := make(map[string]string, len(keys))
+	for _, key := range keys {
+		values[key] = ""
+	}
+
+	layer := func(source func(scopedEntry) string) error {
+		for _, scoped := range entries {
+			rel := source(scoped)
+			if rel == "" {
+				continue
+			}
+			found, err := readEnvSoft(filepath.Join(scoped.baseDir, rel))
+			if err != nil {
+				return err
+			}
+			for _, key := range keys {
+				if val, ok := found[key]; ok {
+					values[key] = val
+				}
+			}
+		}
+		return nil
+	}
+
+	if opts.Populate {
+		if err := layer(func(scoped scopedEntry) string { return scoped.entry.Path }); err != nil {
+			return nil, nil, err
+		}
+	}
+	if opts.Override {
+		if err := layer(func(scoped scopedEntry) string { return scoped.entry.Override }); err != nil {
+			return nil, nil, err
+		}
+	}
+	return keys, values, nil
+}
+
+// declarations below are wired into Generate/Command in a later task.
 var (
-	_ = sort.Strings
-	_ = filepath.Join
+	_ = collectScopes
 	_ = log.Default
 )
