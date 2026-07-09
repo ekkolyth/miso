@@ -176,8 +176,95 @@ func buildScopeEnv(entries []scopedEntry, opts GenerateOptions) ([]string, map[s
 	return keys, values, nil
 }
 
-// declarations below are wired into Generate/Command in a later task.
-var (
-	_ = collectScopes
-	_ = log.Default
-)
+// validateEntryValues checks a built values map against an entry's declared rules,
+// reusing the same validators as `miso env`. An empty value for a required key fails.
+func validateEntryValues(values map[string]string, entry *config.EnvEntry) []error {
+	if len(entry.Variables.Array) > 0 {
+		var errs []error
+		for _, key := range entry.Variables.Array {
+			if val, ok := values[key]; !ok || val == "" {
+				errs = append(errs, &varError{name: key, msg: "missing required variable"})
+			}
+		}
+		return errs
+	}
+	if len(entry.Variables.Object) > 0 {
+		return validateVariables(values, entry.Variables.Object, entry.Required)
+	}
+	return nil
+}
+
+// Command is the `miso env` entry point: parse flags, then generate or validate.
+func Command(projectRoot string, cfg config.Config, logger *log.Logger, args []string) error {
+	generate, opts, err := ParseGenerateFlags(args)
+	if err != nil {
+		return err
+	}
+	if generate {
+		return Generate(projectRoot, cfg, logger, opts)
+	}
+	return Run(projectRoot, cfg, logger)
+}
+
+// Generate writes one .env.generated per scope. With -p/-o it validates the
+// resolved values first and writes nothing if any scope fails.
+func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts GenerateOptions) error {
+	members, err := workspace.DiscoverMembers(projectRoot, cfg)
+	if err != nil {
+		return fmt.Errorf("discover members: %w", err)
+	}
+	scopes := collectScopes(projectRoot, cfg, members)
+
+	scopeNames := make([]string, 0, len(scopes))
+	for name := range scopes {
+		scopeNames = append(scopeNames, name)
+	}
+	sort.Strings(scopeNames)
+
+	type output struct {
+		dir  string
+		keys []string
+		text string
+	}
+	var outputs []output
+	var failures []entryErrors
+
+	for _, scope := range scopeNames {
+		entries := scopes[scope]
+		dir, err := scopeDir(scope, projectRoot, members)
+		if err != nil {
+			return err
+		}
+		keys, values, err := buildScopeEnv(entries, opts)
+		if err != nil {
+			return err
+		}
+		if opts.Populate || opts.Override {
+			for _, scoped := range entries {
+				if errs := validateEntryValues(values, scoped.entry); len(errs) > 0 {
+					failures = append(failures, entryErrors{
+						label: scope + ": " + entryLabel(scoped.entry),
+						errs:  errs,
+					})
+				}
+			}
+		}
+		outputs = append(outputs, output{dir: dir, keys: keys, text: renderEnvFile(keys, values)})
+	}
+
+	if len(failures) > 0 {
+		fmt.Fprintln(os.Stderr)
+		logger.Error("env generation failed validation")
+		printGroupedErrors(os.Stderr, failures)
+		return errors.New("env generation failed validation")
+	}
+
+	for _, out := range outputs {
+		path := filepath.Join(out.dir, ".env.generated")
+		if err := os.WriteFile(path, []byte(out.text), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+		logger.Info("env generated", "path", path, "variables", len(out.keys))
+	}
+	return nil
+}
