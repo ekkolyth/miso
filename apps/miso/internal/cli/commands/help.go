@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ekkolyth/miso/internal/cli"
+	"github.com/ekkolyth/miso/internal/ui"
 )
 
 const docsURL = "https://misojs.dev"
@@ -17,19 +18,20 @@ func RunHelp() {
 
 // RenderHelp builds the help screen: logo, tagline, grouped commands, docs link.
 func RenderHelp() string {
+	s := ui.Default()
 	var out strings.Builder
 	out.WriteString(RenderMisoLogo())
-	out.WriteString("\nMiso – the agnostic package manager\n\n")
-	out.WriteString(renderCommandGroup("Commands", false))
+	out.WriteString("\n" + s.Heading.Render("Miso – the agnostic package manager") + "\n\n")
+	out.WriteString(renderCommandGroup(s, "Commands", false))
 	out.WriteString("\n")
-	out.WriteString(renderCommandGroup("Miso", true))
-	out.WriteString("\nDocs: " + docsURL + "\n")
+	out.WriteString(renderCommandGroup(s, "Miso", true))
+	out.WriteString("\n" + s.Muted.Render("Docs:") + " " + s.Flavor.Render(docsURL) + "\n")
 	return out.String()
 }
 
-func renderCommandGroup(title string, meta bool) string {
+func renderCommandGroup(s ui.Styles, title string, meta bool) string {
 	var out strings.Builder
-	out.WriteString(title + "\n")
+	out.WriteString(s.Label.Render(title) + "\n")
 	for _, cmd := range cli.Builtins {
 		if cmd.Meta != meta {
 			continue
@@ -38,7 +40,8 @@ func renderCommandGroup(title string, meta bool) string {
 		if cmd.Usage != "" {
 			left += " " + cmd.Usage
 		}
-		_, _ = fmt.Fprintf(&out, "  %-28s %s\n", left, cmd.Summary)
+		// pad the plain string before styling so ANSI codes don't skew the column
+		_, _ = fmt.Fprintf(&out, "  %s %s\n", s.Accent.Render(fmt.Sprintf("%-28s", left)), s.Muted.Render(cmd.Summary))
 	}
 	return out.String()
 }
