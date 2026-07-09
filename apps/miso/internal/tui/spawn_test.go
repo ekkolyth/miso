@@ -16,6 +16,12 @@ func TestSpawnProcessPTYEchoesStdin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawnProcess: %v", err)
 	}
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		res.closer()
+	})
 	if len(res.readers) != 1 {
 		t.Fatalf("pty path should expose one merged reader, got %d", len(res.readers))
 	}
@@ -43,7 +49,4 @@ func TestSpawnProcessPTYEchoesStdin(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for pty echo")
 	}
-
-	_ = cmd.Process.Kill()
-	res.closer()
 }

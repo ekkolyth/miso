@@ -122,10 +122,12 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.selected < len(m.pm.Processes) {
 				m.allExitedPending = false
+				m.sel = SelectionState{}
 				go m.pm.Restart(m.pm.Processes[m.selected])
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
+			m.sel = SelectionState{}
 			go m.pm.RestartAll()
 		case key.Matches(msg, m.keys.CopyKey):
 			if m.sel.active {

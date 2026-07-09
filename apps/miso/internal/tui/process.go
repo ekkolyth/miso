@@ -55,11 +55,10 @@ type Process struct {
 	StartedAt time.Time
 	Buffer    *RingBuffer
 
-	cmd        *exec.Cmd
-	stdin      io.Writer // writable child stdin (pty master on unix, pipe on Windows)
-	closeSpawn func()
-	done       chan struct{}
-	mu         sync.Mutex
+	cmd   *exec.Cmd
+	stdin io.Writer // writable child stdin (pty master on unix, pipe on Windows)
+	done  chan struct{}
+	mu    sync.Mutex
 }
 
 // ProcessManager owns the set of managed processes and dispatches tea messages.
@@ -130,7 +129,6 @@ func (pm *ProcessManager) Start(p *Process) error {
 
 	p.mu.Lock()
 	p.stdin = res.stdin
-	p.closeSpawn = res.closer
 	p.State = StateRunning
 	p.StartedAt = time.Now()
 	p.mu.Unlock()
