@@ -542,3 +542,64 @@ func scopeOf(cfg Config) string {
 	}
 	return cfg.Env[0].Scope
 }
+
+func TestLoadEnv_ArrayForm(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"env": [
+			{"label": "app", "path": ".env", "variables": {"PORT": "port"}}
+		]
+	}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Env) != 1 {
+		t.Fatalf("got %d env entries, want 1", len(cfg.Env))
+	}
+	e := cfg.Env[0]
+	if e.Label != "app" || e.Path != ".env" {
+		t.Errorf("entry = %+v, want label=app path=.env", e)
+	}
+	v, ok := e.Variables.Object["PORT"]
+	if !ok || !v.IsShorthand || v.Type != "port" {
+		t.Errorf("PORT var = %+v, want shorthand port", v)
+	}
+}
+
+func TestLoadEnv_BareStringForm(t *testing.T) {
+	dir := writeTempConfig(t, `{ "env": ".env.local" }`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Env) != 1 || cfg.Env[0].Path != ".env.local" {
+		t.Fatalf("env = %+v, want single entry path=.env.local", cfg.Env)
+	}
+}
+
+func TestLoadEnv_RequiredModeString(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"env": [{"path": ".env", "required": "none", "variables": {"X": "string"}}]
+	}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Env[0].Required.Mode != "none" {
+		t.Errorf("required.Mode = %q, want none", cfg.Env[0].Required.Mode)
+	}
+}
+
+func TestLoadEnv_VariablesArrayForm(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"env": [{"path": ".env", "variables": ["A", "B"]}]
+	}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	arr := cfg.Env[0].Variables.Array
+	if len(arr) != 2 || arr[0] != "A" || arr[1] != "B" {
+		t.Errorf("variables array = %v, want [A B]", arr)
+	}
+}
