@@ -198,6 +198,8 @@ func validateEntryValues(values map[string]string, entry *config.EnvEntry) []err
 func Command(projectRoot string, cfg config.Config, logger *log.Logger, args []string) error {
 	generate, opts, err := ParseGenerateFlags(args)
 	if err != nil {
+		fmt.Fprintln(os.Stderr)
+		logger.Error(err.Error())
 		return err
 	}
 	if generate {
@@ -211,6 +213,8 @@ func Command(projectRoot string, cfg config.Config, logger *log.Logger, args []s
 func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts GenerateOptions) error {
 	members, err := workspace.DiscoverMembers(projectRoot, cfg)
 	if err != nil {
+		fmt.Fprintln(os.Stderr)
+		logger.Error("failed to discover workspaces", "error", err)
 		return fmt.Errorf("discover members: %w", err)
 	}
 	scopes := collectScopes(projectRoot, cfg, members)
@@ -237,10 +241,14 @@ func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts Ge
 		entries := scopes[scope]
 		dir, err := scopeDir(scope, projectRoot, members)
 		if err != nil {
+			fmt.Fprintln(os.Stderr)
+			logger.Error("env generate: cannot resolve scope to a directory", "scope", scope, "error", err)
 			return err
 		}
 		keys, values, err := buildScopeEnv(entries, opts)
 		if err != nil {
+			fmt.Fprintln(os.Stderr)
+			logger.Error("env generate: failed to build scope env", "scope", scope, "error", err)
 			return err
 		}
 		if opts.Populate || opts.Override {
@@ -266,6 +274,8 @@ func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts Ge
 	for _, out := range outputs {
 		path := filepath.Join(out.dir, ".env.generated")
 		if err := os.WriteFile(path, []byte(out.text), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr)
+			logger.Error("env generate: failed to write file", "path", path, "error", err)
 			return fmt.Errorf("write %s: %w", path, err)
 		}
 		logger.Info("env generated", "path", path, "variables", len(out.keys))
