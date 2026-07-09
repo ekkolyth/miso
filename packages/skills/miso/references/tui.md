@@ -15,6 +15,24 @@ Controls the terminal UI mode. Set at the top level of `miso.json`.
 
 ---
 
+## Interactive Mode
+
+Press `i` to forward keyboard input to the focused task — every keystroke goes to that process's stdin (reload Metro with `r`, trigger bundler shortcuts, answer prompts). Press `Ctrl+Z` to return to miso's controls. Each task runs in its own pseudo-terminal, so tools that gate color or prompts on a TTY behave as if run directly, and long-lived dev servers stay alive instead of shutting down on a closed stdin. Interactive mode is unavailable in delegated (`turbo`/`nx`) mode — the delegate owns the child processes.
+
+## Selection and Copy
+
+Click-drag to select log text; `c` copies the selection, `C` copies the full buffer. Selection is anchored to buffer lines, so it survives terminal resizes. Hold a modifier (⌘/Alt/Ctrl) while clicking to let the terminal handle the click natively (native select, open links).
+
+## No TTY
+
+When no terminal is attached — CI, piped output, `docker` without `-t`, an agent — miso prints `miso: no interactive terminal — running plain` and runs the script with normal inherited stdio instead of the TUI. Applies to both `tabbed` and `merged`; nothing hangs or crashes.
+
+## ANSI Colors
+
+Because each child runs in a real pseudo-terminal, its ANSI color output renders in the TUI — including slog-style loggers that emit color only when they detect a TTY. Cursor and erase control sequences are stripped; color (SGR) sequences are preserved.
+
+---
+
 ## `repo` Field
 
 Controls **orchestration** — who runs the processes. Workspace membership is detected automatically from the package manager (`pnpm-workspace.yaml` or `package.json` `workspaces`), independent of this field.

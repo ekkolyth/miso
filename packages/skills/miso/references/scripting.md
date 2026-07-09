@@ -22,12 +22,14 @@ Miso selects the interpreter based on file extension:
 | `.bash` | `bash` |
 | `.zsh` | `zsh` |
 | `.js`, `.mjs` | `node` |
-| `.ts` | `ts-node` |
+| `.ts` | `bun` or `node` |
 | `.py` | `python3` |
 | `.rb` | `ruby` |
 | `.pl` | `perl` |
 | `.lua` | `lua` |
 | `.php` | `php` |
+
+`.ts` runs on `bun` when the project uses bun, otherwise `node` (bare `node script.ts` needs Node 23.6+; `bun` runs TypeScript with no extra setup).
 
 **Never add a shebang.** Miso selects the interpreter from the file extension — the extension is how you control which interpreter runs your script. If a script does start with `#!`, that interpreter takes precedence, but this should never be necessary in miso.
 
@@ -84,6 +86,17 @@ scripts/
 ```
 
 Invoke with path syntax: `miso build/docs`, `miso test/e2e`.
+
+Nest related commands rather than prefixing flat filenames. Create `scripts/docker/up.sh` (→ `miso docker/up`), **not** `scripts/docker-up.sh`. Stuttering flat names (`docker-up.sh`, `docker-build.sh`) should be a nested `docker/` folder.
+
+---
+
+## Where to put a command
+
+Pick the surface by size:
+
+- **One-liner → `package.json` scripts.** A single command like `vite --config vite.config.ts` belongs in the `package.json` `scripts` block — miso resolves it the same as a folder script, and it's cleaner than a one-line `.sh`. (Simple mode ignores `package.json`, so folder scripts are the only option there.)
+- **Multi-line or `&&`-chained → `scripts/` folder.** Once a command spans multiple lines, chains with `&&`, or needs real logic, a `.sh` file reads far better than a cramped JSON string.
 
 ---
 

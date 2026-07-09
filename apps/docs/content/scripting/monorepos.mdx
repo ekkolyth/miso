@@ -88,6 +88,15 @@ miso deploy   # resolves to apps/api/scripts/deploy.sh
 
 This matches the same behaviour you'd expect from tools like Turborepo's automatic package scoping.
 
+## Per-Workspace `miso.json`
+
+A workspace member can carry its own `miso.json`. When miso runs a task scoped to that member, the member's config overlays the root config for these fields: `scripts`, `shell`, `flags`, `tui`, and `tasks`. Any field the member omits falls back to the root value.
+
+Two things are **not** taken from a member's config:
+
+- **`repo`** — orchestration mode is a root-level decision, so a member's `repo` field is ignored. Members are leaves, not orchestrators.
+- **`env`** — env entries scope by file location, not by overlay. A member's `env` entries apply only to that member — see [env `scope`](/env-validation/config#scope).
+
 ## How Workspace Matching Works
 
 The identifier in `@identifier/script` is matched against every discovered workspace using three strategies, checked in order:

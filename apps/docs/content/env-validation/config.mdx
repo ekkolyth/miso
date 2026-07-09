@@ -52,7 +52,8 @@ Which target this entry applies to: a workspace member name, a configured task/s
 **Required on root `miso.json` entries.** `miso env` rejects any root entry with no `scope`:
 
 ```
-env entry ".env.local" has no scope (set a target name or "global")
+env config invalid — every root entry needs a scope (a target name or "global")
+    .env.local
 ```
 
 Member `miso.json` files (nested at `<member>/miso.json`) don't set `scope` at all — they scope by file location. Every entry inside a member's own config applies only to that member.
