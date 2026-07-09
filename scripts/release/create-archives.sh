@@ -17,3 +17,12 @@ tar -czf misox_${VERSION}_darwin_arm64.tar.gz -C bin misox-darwin-arm64
 tar -czf misox_${VERSION}_linux_amd64.tar.gz -C bin misox-linux-amd64
 tar -czf misox_${VERSION}_linux_arm64.tar.gz -C bin misox-linux-arm64
 zip -j misox_${VERSION}_windows_amd64.zip bin/misox-windows-amd64.exe
+
+# Emit sha256 checksums for all archives (consumed by the homebrew bump job,
+# and attached to the GitHub Release).
+if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum ./*.tar.gz ./*.zip > checksums.txt
+else
+    shasum -a 256 ./*.tar.gz ./*.zip > checksums.txt
+fi
+echo "✓ wrote dist/checksums.txt"

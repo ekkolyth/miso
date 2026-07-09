@@ -119,6 +119,7 @@ jobs:
                       dist/misox_${{ needs.version.outputs.version }}_linux_amd64.tar.gz
                       dist/misox_${{ needs.version.outputs.version }}_linux_arm64.tar.gz
                       dist/misox_${{ needs.version.outputs.version }}_windows_amd64.zip
+                      dist/checksums.txt
 
     publish:
         needs: [version, release]
