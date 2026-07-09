@@ -142,6 +142,10 @@
 					],
 					"description": "Path to the .env file, relative to project root (string). A legacy array is accepted; only the first element is used."
 				},
+				"override": {
+					"type": "string",
+					"description": "Path to this scope's override file, layered over populated values by `miso env -g -o` (override wins)."
+				},
 				"required": {
 					"oneOf": [
 						{ "type": "string", "enum": ["all", "none"] },
