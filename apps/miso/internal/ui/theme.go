@@ -33,7 +33,7 @@ var WarningColor = lipgloss.Color("#f59e0b") // amber
 
 // return default miso theme
 func Default() Styles {
-	accent := lipgloss.Color("#7c3aed")  // purple
+	accent := lipgloss.Color("#a855f7")  // purple
 	heading := lipgloss.Color("#ec4899") // pink
 	muted := lipgloss.Color("#64748b")
 	flavor := lipgloss.Color("#0ea5e9")      // blue
