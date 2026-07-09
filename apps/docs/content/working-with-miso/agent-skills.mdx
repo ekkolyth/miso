@@ -36,7 +36,7 @@ miso skills --add --yes
 ```
 
 <Callout type="info">
-Miso runs the installer through your project's package manager (`bunx`, `pnpm dlx`, `yarn dlx`, or `npx`). On an npm project whose `package.json` has an `overrides` field, npm's installer crashes — an npm bug — so miso stops with a clear message. Use bun or pnpm, or remove `overrides`.
+Miso runs the installer through your project's package manager (`bunx`, `pnpm dlx`, `yarn dlx`, or `npx`). npm's installer crashes on projects with an `overrides` field — an npm bug — so on an npm project with `overrides`, miso runs the installer through `bunx`, `pnpm dlx`, or `yarn dlx` instead (whichever is installed). If none is available, miso stops with a clear message — install bun, pnpm, or yarn, or remove `overrides`.
 </Callout>
 
 ### Remove

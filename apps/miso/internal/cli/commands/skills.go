@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/ekkolyth/miso/internal/manager"
@@ -15,7 +16,7 @@ const (
 	skillName    = "miso"
 )
 
-var errNpmOverrides = errors.New(`npm's package installer (arborist) crashes on projects with an "overrides" field (npm bug). install bun or pnpm, or remove "overrides" to use miso skills`)
+var errNpmOverrides = errors.New(`npm's package installer (arborist) crashes on projects with an "overrides" field (npm bug). install bun, pnpm, or yarn — or remove "overrides" — to use miso skills`)
 
 // buildSkillsArgs assembles the skills-tool argv for an add/remove targeting the
 // given harness agent ids.
@@ -56,15 +57,37 @@ func hasNpmOverridesConflict(managerName, workDir string) (bool, error) {
 	return len(pkg.Overrides) > 0, nil
 }
 
-func guardNpmOverrides(managerName, workDir string) error {
+// binaryOnPath reports whether cmd resolves on PATH.
+func binaryOnPath(cmd string) bool {
+	_, err := exec.LookPath(cmd)
+	return err == nil
+}
+
+// resolveSkillsRunner picks the package-manager driver to run the skills
+// installer through. Normally that's managerName's own driver. npm's arborist
+// crashes on projects with an "overrides" field, so npm+overrides routes through
+// the first installed dlx runner among bun, pnpm, yarn instead — each runs in
+// the project dir without loading npm's manifest. Only when npm+overrides is hit
+// and no alternative is installed does it return errNpmOverrides.
+func resolveSkillsRunner(managerName, workDir string, hasBinary func(string) bool) (manager.Manager, error) {
+	driver, ok := manager.GetManager(managerName)
+	if !ok {
+		return nil, fmt.Errorf("unsupported manager: %s", managerName)
+	}
 	conflict, err := hasNpmOverridesConflict(managerName, workDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if conflict {
-		return errNpmOverrides
+	if !conflict {
+		return driver, nil
 	}
-	return nil
+	for _, name := range []string{"bun", "pnpm", "yarn"} {
+		alt, ok := manager.GetManager(name)
+		if ok && hasBinary(alt.BuildDlx(skillName, nil).Command) {
+			return alt, nil
+		}
+	}
+	return nil, errNpmOverrides
 }
 
 // ParseSkillsFlags scans args for --add, --rm, and --yes/-y. Does not modify args.
@@ -92,12 +115,9 @@ func RunSkillsRemove(managerName, workDir string, harnesses []string) error {
 }
 
 func runSkills(op, managerName, workDir string, harnesses []string) error {
-	if err := guardNpmOverrides(managerName, workDir); err != nil {
+	driver, err := resolveSkillsRunner(managerName, workDir, binaryOnPath)
+	if err != nil {
 		return err
-	}
-	driver, ok := manager.GetManager(managerName)
-	if !ok {
-		return fmt.Errorf("unsupported manager: %s", managerName)
 	}
 	spec := driver.BuildDlx("skills", buildSkillsArgs(op, skillName, harnesses))
 	return manager.Exec(spec, workDir)
