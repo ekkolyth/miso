@@ -299,6 +299,12 @@ func main() {
 		}
 
 		if isRoot {
+			// ActionScriptFolder is deliberately absent: a folder script runs
+			// literally (miso can't wrap its output in the turbo/nx chrome,
+			// which needs miso to control the turbo invocation — see
+			// tui.DelegateLaunch). Delegation is reached via a package.json
+			// script or the built-in dev/run action, where miso reconstructs
+			// `turbo run <name>` itself.
 			switch parsed.Action {
 			case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON:
 				scriptName := parsed.ScriptName

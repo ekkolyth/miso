@@ -12,6 +12,25 @@ import (
 func monoCfg() config.Config   { return config.Config{Repo: "mono"} }
 func singleCfg() config.Config { return config.Config{Repo: "single"} }
 
+func TestParseDevConflictErrors(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scripts", "dev.sh"), []byte("#!/usr/bin/env bash\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"scripts":{"dev":"turbo run dev"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// turbo mode, not simple — resolution checks both folder and package.json
+	cfg := config.Config{Repo: "turbo", Scripts: "./scripts"}
+	if _, err := ParseCLI([]string{"dev"}, cfg, root); err == nil {
+		t.Fatal("expected error for \"dev\" defined in both scripts folder and package.json")
+	}
+}
+
 func TestParseAtWorkspaceScript(t *testing.T) {
 	parsed, err := ParseCLI([]string{"@api/test"}, monoCfg(), t.TempDir())
 	if err != nil {

@@ -51,12 +51,21 @@ miso <scriptname> --arg # passes --arg to the script
 
 ## Resolution Order
 
-When you run `miso <command>`, miso checks in this order:
+When you run `miso <command>`, miso resolves it from **at most one** source:
 1. `scripts/` folder (script file match)
 2. `package.json` `scripts` block
 3. Passthrough to the package manager
 
-A script file in the `scripts/` folder overrides a same-named `package.json` script. A `scripts/install.sh` file, for example, replaces `miso install`.
+A name may live in only one of them. If the same name is defined in **both** the `scripts/` folder and `package.json`, miso **errors** and asks you to rename one — it will not silently pick a winner, because the two invoke different things (see below). Two files in the folder that share a name (`dev.sh` and `dev.ts`) are the same kind of error.
+
+## Folder script vs package.json script — they are not interchangeable
+
+In `turbo`/`nx` mode this distinction matters:
+
+- A **`package.json` script** whose name is a turbo/nx task gets **delegated** — miso runs `turbo run <name>` itself and wraps the output in the miso TUI chrome (tabs). This works because miso controls the invocation (it adds `--log-order=stream`, withholds a pty, and parses turbo's streamed output). This is the way to get the chrome.
+- A **folder script** runs **literally** — exactly the command you wrote. miso does **not** wrap it in the turbo chrome, because it can't reliably parse an arbitrary script's output into tabs (the script controls turbo's flags, not miso). You get turbo's own output.
+
+So: want the tabbed chrome → put `"dev": "turbo run dev"` in `package.json`. Want an exact custom command (extra turbo tasks, flags) → use a folder `dev.sh` and accept turbo's own UI. Defining `dev` in both is the conflict above — pick one.
 
 ---
 

@@ -1,6 +1,7 @@
 package scripting
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -23,146 +24,124 @@ type ResolvedScript struct {
 	Path   string // file path for folder scripts, command for package.json scripts
 }
 
-// resolve script by name from folder or package.json
-func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript, error) {
-	scriptsPath := cfg.Scripts
-	if scriptsPath == "" {
-		scriptsPath = "./scripts"
+// ErrAmbiguousScript marks a resolution that matched more than one definition:
+// two folder scripts sharing a key, or a folder script AND a package.json script
+// of the same name. miso refuses to guess which one you meant.
+var ErrAmbiguousScript = errors.New("ambiguous script")
+
+// scriptsFolder resolves the scripts directory for root (defaults to ./scripts).
+func scriptsFolder(cfg config.Config, root string) string {
+	path := cfg.Scripts
+	if path == "" {
+		path = "./scripts"
 	}
-
-	// resolve scripts path relative to root
-	if !filepath.IsAbs(scriptsPath) {
-		scriptsPath = filepath.Join(root, scriptsPath)
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
 	}
+	return path
+}
 
-	// check scripts folder first
-	discovered, err := DiscoverScripts(scriptsPath)
-	if err != nil {
-		return ResolvedScript{}, fmt.Errorf("discover scripts: %w", err)
-	}
-
-	// normalize name to use forward slashes for path matching
-	name = filepath.ToSlash(name)
-
-	// check for explicit extension
-	ext := filepath.Ext(name)
+// matchFolderScript finds the single folder script for name — an explicit
+// extension match first, then a bare-key match. Returns nil when none matches,
+// and ErrAmbiguousScript when two files share the key.
+func matchFolderScript(discovered map[string][]ScriptInfo, name, ext, key string) (*ScriptInfo, error) {
 	if ext != "" {
-		key := strings.TrimSuffix(name, ext)
 		if scripts, ok := discovered[key]; ok {
-			for _, script := range scripts {
-				if script.Extension == ext {
+			for i := range scripts {
+				if scripts[i].Extension == ext {
 					if len(scripts) > 1 {
-						var paths []string
-						for _, s := range scripts {
-							paths = append(paths, s.RelativePath)
-						}
-						return ResolvedScript{}, fmt.Errorf("multiple scripts for %q exist, exiting: %s",
-							key, strings.Join(paths, ", "))
+						return nil, multipleScriptsError(key, scripts)
 					}
-					return ResolvedScript{
-						Source: ScriptSourceFolder,
-						Path:   script.Path,
-					}, nil
+					return &scripts[i], nil
 				}
 			}
 		}
 	}
-
-	// check by key (handles paths and index files)
-	key := strings.TrimSuffix(name, ext)
 	if scripts, ok := discovered[key]; ok {
 		if len(scripts) > 1 {
-			var paths []string
-			for _, script := range scripts {
-				paths = append(paths, script.RelativePath)
-			}
-			return ResolvedScript{}, fmt.Errorf("multiple scripts for %q exist, exiting: %s",
-				key, strings.Join(paths, ", "))
+			return nil, multipleScriptsError(key, scripts)
 		}
-		return ResolvedScript{
-			Source: ScriptSourceFolder,
-			Path:   scripts[0].Path,
-		}, nil
+		return &scripts[0], nil
+	}
+	return nil, nil
+}
+
+func multipleScriptsError(key string, scripts []ScriptInfo) error {
+	paths := make([]string, 0, len(scripts))
+	for _, s := range scripts {
+		paths = append(paths, s.RelativePath)
+	}
+	return fmt.Errorf("%w: multiple scripts for %q exist: %s", ErrAmbiguousScript, key, strings.Join(paths, ", "))
+}
+
+// ResolveScript resolves a script by name from the scripts folder or package.json.
+//
+// A name may resolve from at most ONE source. miso deliberately does not pick a
+// winner between a folder script and a package.json script of the same name —
+// they invoke different things (a package.json script named after a turbo/nx
+// task is how you get delegation + the TUI chrome, since miso controls that
+// invocation; a folder script runs literally). Silently preferring one hides
+// intent, so an overlap is a hard ErrAmbiguousScript telling you to rename one.
+func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript, error) {
+	discovered, err := DiscoverScripts(scriptsFolder(cfg, root))
+	if err != nil {
+		return ResolvedScript{}, fmt.Errorf("discover scripts: %w", err)
 	}
 
-	// check package.json (only for simple names)
+	name = filepath.ToSlash(name)
+	ext := filepath.Ext(name)
+	key := strings.TrimSuffix(name, ext)
+
+	folder, err := matchFolderScript(discovered, name, ext, key)
+	if err != nil {
+		return ResolvedScript{}, err
+	}
+
+	// package.json scripts apply only to simple (non-path) names
+	var pkgCommand string
+	var pkgFound bool
 	if !strings.Contains(name, "/") {
 		pkgScripts, err := ReadPackageJSONScripts(root)
 		if err != nil {
 			return ResolvedScript{}, fmt.Errorf("read package.json scripts: %w", err)
 		}
-
-		if command, ok := pkgScripts[name]; ok {
-			return ResolvedScript{
-				Source: ScriptSourcePackageJSON,
-				Path:   command,
-			}, nil
-		}
+		pkgCommand, pkgFound = pkgScripts[name]
 	}
 
-	// not found
+	if folder != nil && pkgFound {
+		return ResolvedScript{}, fmt.Errorf(
+			"%w: %q is defined both as a scripts-folder script (%s) and a package.json script — rename one so the invocation is unambiguous",
+			ErrAmbiguousScript, name, folder.RelativePath)
+	}
+
+	if folder != nil {
+		return ResolvedScript{Source: ScriptSourceFolder, Path: folder.Path}, nil
+	}
+	if pkgFound {
+		return ResolvedScript{Source: ScriptSourcePackageJSON, Path: pkgCommand}, nil
+	}
 	return ResolvedScript{Source: ScriptSourceNone}, nil
 }
 
-// ResolveScriptFolderOnly resolves a script by name from the folder only.
-// Unlike ResolveScript, it does NOT fall back to package.json.
-// Used in simple mode where package.json scripts are ignored.
+// ResolveScriptFolderOnly resolves a script from the folder only — no
+// package.json fallback. Used in simple mode, where package.json is ignored.
 func ResolveScriptFolderOnly(name string, root string, cfg config.Config) (ResolvedScript, error) {
-	scriptsPath := cfg.Scripts
-	if scriptsPath == "" {
-		scriptsPath = "./scripts"
-	}
-
-	if !filepath.IsAbs(scriptsPath) {
-		scriptsPath = filepath.Join(root, scriptsPath)
-	}
-
-	discovered, err := DiscoverScripts(scriptsPath)
+	discovered, err := DiscoverScripts(scriptsFolder(cfg, root))
 	if err != nil {
 		return ResolvedScript{}, fmt.Errorf("discover scripts: %w", err)
 	}
 
 	name = filepath.ToSlash(name)
-
 	ext := filepath.Ext(name)
-	if ext != "" {
-		key := strings.TrimSuffix(name, ext)
-		if scripts, ok := discovered[key]; ok {
-			for _, script := range scripts {
-				if script.Extension == ext {
-					if len(scripts) > 1 {
-						var paths []string
-						for _, s := range scripts {
-							paths = append(paths, s.RelativePath)
-						}
-						return ResolvedScript{}, fmt.Errorf("multiple scripts for %q exist, exiting: %s",
-							key, strings.Join(paths, ", "))
-					}
-					return ResolvedScript{
-						Source: ScriptSourceFolder,
-						Path:   script.Path,
-					}, nil
-				}
-			}
-		}
-	}
-
 	key := strings.TrimSuffix(name, ext)
-	if scripts, ok := discovered[key]; ok {
-		if len(scripts) > 1 {
-			var paths []string
-			for _, script := range scripts {
-				paths = append(paths, script.RelativePath)
-			}
-			return ResolvedScript{}, fmt.Errorf("multiple scripts for %q exist, exiting: %s",
-				key, strings.Join(paths, ", "))
-		}
-		return ResolvedScript{
-			Source: ScriptSourceFolder,
-			Path:   scripts[0].Path,
-		}, nil
-	}
 
+	folder, err := matchFolderScript(discovered, name, ext, key)
+	if err != nil {
+		return ResolvedScript{}, err
+	}
+	if folder != nil {
+		return ResolvedScript{Source: ScriptSourceFolder, Path: folder.Path}, nil
+	}
 	return ResolvedScript{Source: ScriptSourceNone}, nil
 }
 
@@ -170,7 +149,7 @@ func ResolveScriptFolderOnly(name string, root string, cfg config.Config) (Resol
 func HasScript(name string, root string, cfg config.Config) (bool, error) {
 	resolved, err := ResolveScript(name, root, cfg)
 	if err != nil {
-		if strings.Contains(err.Error(), "multiple scripts") {
+		if errors.Is(err, ErrAmbiguousScript) {
 			return true, err
 		}
 		return false, err
