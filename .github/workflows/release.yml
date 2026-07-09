@@ -37,16 +37,6 @@ jobs:
               with:
                   token: ${{ secrets.RELEASE_TOKEN }}
 
-            - name: Update package.json version
-              env:
-                  VERSION: ${{ needs.version.outputs.version }}
-              run: ./scripts/release/version/update.sh
-
-            - name: Commit and push version bump
-              env:
-                  VERSION: ${{ needs.version.outputs.version }}
-              run: ./scripts/release/version/commit.sh
-
             - name: Setup Go
               uses: actions/setup-go@v6
               with:
@@ -60,6 +50,16 @@ jobs:
               with:
                   version: latest
                   working-directory: apps/miso
+
+            - name: Update package.json version
+              env:
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: ./scripts/release/version/update.sh
+
+            - name: Commit and push version bump
+              env:
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: ./scripts/release/version/commit.sh
 
             - name: Build binaries for all platforms
               run: ./scripts/release/build/npm.sh
