@@ -7,7 +7,7 @@ import (
 )
 
 // run custom script (legacy - should use resolution system instead)
-func RunOverride(scriptName string, scriptArgs []string, root string, cfg config.Config, environ []string) error {
+func RunOverride(scriptName string, scriptArgs []string, root string, cfg config.Config, managerName string, environ []string) error {
 	resolved, err := ResolveScript(scriptName, root, cfg)
 	if err != nil {
 		return err
@@ -16,7 +16,7 @@ func RunOverride(scriptName string, scriptArgs []string, root string, cfg config
 		return fmt.Errorf("script %q not found", scriptName)
 	}
 	if resolved.Source == ScriptSourceFolder {
-		return ExecScriptFile(resolved.Path, scriptArgs, root, cfg.Shell, environ)
+		return ExecScriptFile(resolved.Path, scriptArgs, root, cfg.Shell, managerName, environ)
 	}
 	if resolved.Source == ScriptSourcePackageJSON {
 		return fmt.Errorf("script %q found in package.json, use package manager directly", scriptName)

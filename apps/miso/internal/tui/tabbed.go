@@ -16,25 +16,26 @@ type allExitedMsg struct{}
 type copyFlashDoneMsg struct{}
 type copyConfirmDoneMsg struct{}
 
-// SelectionState tracks the click-drag log row selection.
+// SelectionState tracks the click-drag selection anchored to buffer-line
+// sequence numbers, so it survives re-wrapping and new output.
 type SelectionState struct {
 	active   bool
-	startRow int // 0-based visual row index within the visible panel
-	endRow   int
+	startSeq int64
+	endSeq   int64
 }
 
-func (s SelectionState) minRow() int {
-	if s.startRow <= s.endRow {
-		return s.startRow
+func (s SelectionState) minSeq() int64 {
+	if s.startSeq <= s.endSeq {
+		return s.startSeq
 	}
-	return s.endRow
+	return s.endSeq
 }
 
-func (s SelectionState) maxRow() int {
-	if s.startRow >= s.endRow {
-		return s.startRow
+func (s SelectionState) maxSeq() int64 {
+	if s.startSeq >= s.endSeq {
+		return s.startSeq
 	}
-	return s.endRow
+	return s.endSeq
 }
 
 // copyIconStr is the canonical display string for the copy-all icon.
@@ -63,6 +64,7 @@ type TabbedModel struct {
 	delegated        bool
 	allExitedPending bool
 	sel              SelectionState
+	interactive      bool
 	copyFlash        bool // true during the 150ms invert flash
 	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
 }
@@ -85,10 +87,33 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.pm.ResizeAll(msg.Height, msg.Width)
+		return m, nil
+
+	case tea.PasteMsg:
+		if m.interactive && !m.delegated && m.selected < len(m.pm.Processes) {
+			_ = m.pm.Processes[m.selected].WriteStdin([]byte(msg.Content))
+		}
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.interactive {
+			if msg.String() == "ctrl+z" {
+				m.interactive = false
+				return m, nil
+			}
+			if !m.delegated && m.selected < len(m.pm.Processes) {
+				if b := keyToBytes(msg.Key()); b != nil {
+					_ = m.pm.Processes[m.selected].WriteStdin(b)
+				}
+			}
+			return m, nil
+		}
 		switch {
+		case msg.String() == "i":
+			if !m.delegated && m.selected < len(m.pm.Processes) {
+				m.interactive = true
+			}
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Up):
@@ -104,10 +129,12 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.selected < len(m.pm.Processes) {
 				m.allExitedPending = false
+				m.sel = SelectionState{}
 				go m.pm.Restart(m.pm.Processes[m.selected])
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
+			m.sel = SelectionState{}
 			go m.pm.RestartAll()
 		case key.Matches(msg, m.keys.CopyKey):
 			if m.sel.active {
@@ -130,6 +157,10 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft {
+			if msg.Mod != 0 {
+				// modifier held — let the terminal handle it (native select / open link)
+				return m, nil
+			}
 			sw := m.sidebarWidth()
 			listHeight := m.height - 2
 			if listHeight < 0 {
@@ -162,7 +193,12 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// existing log-row selection
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
-				m.sel = SelectionState{active: true, startRow: row, endRow: row}
+				logWidth := m.width - m.sidebarWidth() - 1
+				_, rowSeqs := m.buildLogVisualRows(logWidth, m.logHeight())
+				if row < len(rowSeqs) && rowSeqs[row] >= 0 {
+					seq := rowSeqs[row]
+					m.sel = SelectionState{active: true, startSeq: seq, endSeq: seq}
+				}
 			}
 		}
 
@@ -170,7 +206,11 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseLeft && m.sel.active {
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
-				m.sel.endRow = row
+				logWidth := m.width - m.sidebarWidth() - 1
+				_, rowSeqs := m.buildLogVisualRows(logWidth, m.logHeight())
+				if row < len(rowSeqs) && rowSeqs[row] >= 0 {
+					m.sel.endSeq = rowSeqs[row]
+				}
 			}
 		}
 
@@ -406,10 +446,13 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	}
 
 	var hintText string
-	if m.delegated {
+	switch {
+	case m.interactive:
+		hintText = "interactive — ctrl+z to exit"
+	case m.delegated:
 		hintText = "c copy · R restart"
-	} else {
-		hintText = "c copy · r restart · R restart all"
+	default:
+		hintText = "i interactive · c copy · r restart · R restart all"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
@@ -452,15 +495,16 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 		logHeight = 0
 	}
 
-	visualRows := m.buildLogVisualRows(width, logHeight)
+	visualRows, rowSeqs := m.buildLogVisualRows(width, logHeight)
 	// Pad to fill remaining space.
 	for len(visualRows) < logHeight {
 		visualRows = append(visualRows, "")
+		rowSeqs = append(rowSeqs, -1)
 	}
 
-	// Highlight selected rows.
+	// Highlight rows whose source buffer line is in the selection range.
 	for i := range visualRows {
-		if m.sel.active && i >= m.sel.minRow() && i <= m.sel.maxRow() {
+		if m.sel.active && rowSeqs[i] >= 0 && rowSeqs[i] >= m.sel.minSeq() && rowSeqs[i] <= m.sel.maxSeq() {
 			visualRows[i] = selectedBg.Render(visualRows[i])
 		}
 	}
@@ -516,37 +560,38 @@ func (m TabbedModel) mouseToLogRow(x, y int) int {
 	return row
 }
 
-// selectedText returns the selected log rows as a plain string.
+// selected buffer lines as raw text (unwrapped)
 func (m TabbedModel) selectedText() string {
-	sidebarWidth := m.sidebarWidth()
-	logWidth := m.width - sidebarWidth - 1
-	logHeight := m.logHeight()
-	visualRows := m.buildLogVisualRows(logWidth, logHeight)
-
-	// Slice selection.
-	lo := m.sel.minRow()
-	hi := m.sel.maxRow()
-	if lo < 0 {
-		lo = 0
-	}
-	if hi >= len(visualRows) {
-		hi = len(visualRows) - 1
-	}
-	if lo > hi || len(visualRows) == 0 {
+	if m.selected >= len(m.pm.Processes) || !m.sel.active {
 		return ""
 	}
-	return strings.Join(visualRows[lo:hi+1], "\n")
+	proc := m.pm.Processes[m.selected]
+	lines := proc.Buffer.Lines()
+	base := proc.Buffer.BaseSeq()
+	lo, hi := m.sel.minSeq(), m.sel.maxSeq()
+
+	var out []string
+	for i, line := range lines {
+		seq := base + int64(i)
+		if seq >= lo && seq <= hi {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // buildLogVisualRows re-derives the visual rows for the currently selected
 // process's log panel. It applies the scroll window, wraps each raw line, and
 // tail-slices to logHeight. logWidth is the panel width passed to renderLogPanel.
-func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) []string {
+// The second return value is the source buffer-line seq for each visual row,
+// parallel to the first.
+func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) ([]string, []int64) {
 	if m.selected >= len(m.pm.Processes) {
-		return nil
+		return nil, nil
 	}
 	proc := m.pm.Processes[m.selected]
 	lines := proc.Buffer.Lines()
+	base := proc.Buffer.BaseSeq()
 	totalLines := len(lines)
 
 	endIdx := totalLines - m.scrollOffset
@@ -559,14 +604,20 @@ func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) []string {
 	}
 	visible := lines[startIdx:endIdx]
 
-	var visualRows []string
-	for _, line := range visible {
-		visualRows = append(visualRows, wrapLine(line, logWidth-2)...)
+	var rows []string
+	var seqs []int64
+	for k, line := range visible {
+		seq := base + int64(startIdx+k)
+		for _, r := range wrapLine(line, logWidth-2) {
+			rows = append(rows, r)
+			seqs = append(seqs, seq)
+		}
 	}
-	if len(visualRows) > logHeight {
-		visualRows = visualRows[len(visualRows)-logHeight:]
+	if len(rows) > logHeight {
+		rows = rows[len(rows)-logHeight:]
+		seqs = seqs[len(seqs)-logHeight:]
 	}
-	return visualRows
+	return rows, seqs
 }
 
 // wrapLine splits a single log line into multiple visual rows of at most `width`

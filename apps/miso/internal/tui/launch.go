@@ -10,10 +10,21 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/ekkolyth/miso/internal/cli/env"
+	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
 	"github.com/ekkolyth/miso/internal/workspace"
 )
+
+// resolves the interpreter for a folder script, returning the command plus
+// its full argument list (interpreter args + script path).
+func folderSpawn(scriptPath, shell, managerName string) (string, []string, error) {
+	interp, interpArgs, err := scripting.ResolveInterpreter(scriptPath, shell, managerName)
+	if err != nil {
+		return "", nil, err
+	}
+	return interp, append(interpArgs, scriptPath), nil
+}
 
 // Launch starts the TUI with the given config, script name, and manager.
 // Returns (true, nil) if the TUI ran successfully.
@@ -21,6 +32,11 @@ import (
 // Returns (false, err) on error.
 func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager) (bool, error) {
 	if !cfg.TuiEnabled() {
+		return false, nil
+	}
+
+	if !hasInteractiveTTY() {
+		fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
 		return false, nil
 	}
 
@@ -34,22 +50,30 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 
 	pm := NewProcessManager()
 
+	managerName := ""
+	if mgr != nil {
+		managerName = mgr.Name()
+	} else if detected, err := manager.DetectManager(root); err == nil {
+		managerName = detected
+	}
+
 	for _, entry := range entries {
 		var cmd string
 		var args []string
 		dir := entry.WorkspaceDir
 
 		if entry.ScriptSource == "folder" {
-			// Run via shell — member's effective shell wins, then root, then sh
+			// member's effective shell wins, then root, then sh (see ResolveInterpreter)
 			shell := entry.Shell
 			if shell == "" {
 				shell = cfg.Shell
 			}
-			if shell == "" {
-				shell = "sh"
+			spawnCmd, spawnArgs, spawnErr := folderSpawn(entry.ScriptPath, shell, managerName)
+			if spawnErr != nil {
+				return false, spawnErr
 			}
-			cmd = shell
-			args = []string{"-e", entry.ScriptPath}
+			cmd = spawnCmd
+			args = spawnArgs
 		} else {
 			// Run via package manager
 			if mgr == nil {

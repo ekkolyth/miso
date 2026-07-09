@@ -2,13 +2,17 @@ package tui
 
 import (
 	"bufio"
+	"io"
 	"os/exec"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/ekkolyth/miso/internal/proc"
 )
 
 type ProcessState int
@@ -30,21 +34,32 @@ type ProcessStateMsg struct {
 	Code  int
 }
 
+// streams wired to a spawned process — unix: pty master is both reader and
+// stdin writer; windows: separate stdout/stderr pipes + stdin pipe
+type spawnResult struct {
+	readers []io.Reader
+	stdin   io.Writer
+	resize  func(rows, cols int)
+	closer  func()
+}
+
 // Process holds the runtime state for a single managed process.
 type Process struct {
-	Entry    TuiScriptEntry
-	Command  string
-	Args     []string
-	Dir      string   // working directory for the process
-	Environ  []string // environment variables for the process (nil = inherit)
+	Entry     TuiScriptEntry
+	Command   string
+	Args      []string
+	Dir       string   // working directory for the process
+	Environ   []string // environment variables for the process (nil = inherit)
 	State     ProcessState
 	ExitCode  int
 	StartedAt time.Time
 	Buffer    *RingBuffer
 
-	cmd  *exec.Cmd
-	done chan struct{}
-	mu   sync.Mutex
+	cmd    *exec.Cmd
+	stdin  io.Writer // writable child stdin (pty master on unix, pipe on Windows)
+	resize func(rows, cols int)
+	done   chan struct{}
+	mu     sync.Mutex
 }
 
 // ProcessManager owns the set of managed processes and dispatches tea messages.
@@ -98,35 +113,12 @@ func (pm *ProcessManager) Start(p *Process) error {
 	if p.Environ != nil {
 		p.cmd.Env = p.Environ
 	}
-	// Create a new process group so we can kill the entire tree on stop.
-	setProcGroup(p.cmd)
+	cmd := p.cmd
 	p.mu.Unlock()
 
-	cmd := p.cmd
-
-	stdoutPipe, err := cmd.StdoutPipe()
+	// A pty (unix) or pipes (Windows) — gives children a TTY + live stdin.
+	res, err := spawnProcess(cmd, 0, 0)
 	if err != nil {
-		p.mu.Lock()
-		p.State = StateExited
-		p.ExitCode = -1
-		close(p.done)
-		p.mu.Unlock()
-		pm.sendState(p, StateExited, -1)
-		return err
-	}
-
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		p.mu.Lock()
-		p.State = StateExited
-		p.ExitCode = -1
-		close(p.done)
-		p.mu.Unlock()
-		pm.sendState(p, StateExited, -1)
-		return err
-	}
-
-	if err := cmd.Start(); err != nil {
 		p.mu.Lock()
 		p.State = StateExited
 		p.ExitCode = -1
@@ -137,22 +129,25 @@ func (pm *ProcessManager) Start(p *Process) error {
 	}
 
 	p.mu.Lock()
+	p.stdin = res.stdin
+	p.resize = res.resize
 	p.State = StateRunning
 	p.StartedAt = time.Now()
 	p.mu.Unlock()
 	pm.sendState(p, StateRunning, 0)
 
 	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go pm.captureOutput(p, stdoutPipe, &wg)
-	go pm.captureOutput(p, stderrPipe, &wg)
+	wg.Add(len(res.readers))
+	for _, r := range res.readers {
+		go pm.captureOutput(p, r, &wg)
+	}
 
 	go func() {
-		// Wait for both capture goroutines to finish draining the pipes.
 		wg.Wait()
-		// Now it is safe to call cmd.Wait() — the pipes are drained.
 		exitErr := cmd.Wait()
+		if res.closer != nil {
+			res.closer()
+		}
 
 		code := 0
 		if exitErr != nil {
@@ -190,15 +185,37 @@ func (pm *ProcessManager) Stop(p *Process) {
 
 	// Kill the entire process group (negative PID) so child processes are cleaned up.
 	pgid := cmd.Process.Pid
-	_ = killGroup(pgid, syscall.SIGTERM)
+	_ = proc.KillGroup(pgid, syscall.SIGTERM)
 
 	select {
 	case <-done:
 		// Process group exited cleanly after SIGTERM.
 	case <-time.After(5 * time.Second):
-		_ = killGroup(pgid, syscall.SIGKILL)
+		_ = proc.KillGroup(pgid, syscall.SIGKILL)
 		// Wait for the done channel to be closed by the Start() goroutine.
 		<-done
+	}
+}
+
+// no-op when stdin is unset; used by interactive mode
+func (p *Process) WriteStdin(b []byte) error {
+	p.mu.Lock()
+	w := p.stdin
+	p.mu.Unlock()
+	if w == nil {
+		return nil
+	}
+	_, err := w.Write(b)
+	return err
+}
+
+// no-op until the process is spawned
+func (p *Process) Resize(rows, cols int) {
+	p.mu.Lock()
+	fn := p.resize
+	p.mu.Unlock()
+	if fn != nil {
+		fn(rows, cols)
 	}
 }
 
@@ -218,6 +235,18 @@ func (pm *ProcessManager) RestartAll() {
 
 	for _, p := range procs {
 		_ = pm.Restart(p)
+	}
+}
+
+// ResizeAll forwards a terminal size change to every process's pty.
+func (pm *ProcessManager) ResizeAll(rows, cols int) {
+	pm.mu.Lock()
+	procs := make([]*Process, len(pm.Processes))
+	copy(procs, pm.Processes)
+	pm.mu.Unlock()
+
+	for _, p := range procs {
+		p.Resize(rows, cols)
 	}
 }
 
@@ -241,7 +270,7 @@ func (pm *ProcessManager) StopAll() {
 
 // captureOutput reads lines from r, strips non-color ANSI sequences, writes
 // them to the process buffer, and sends ProcessOutputMsg messages.
-func (pm *ProcessManager) captureOutput(p *Process, r interface{ Read([]byte) (int, error) }, wg *sync.WaitGroup) {
+func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	scanner := bufio.NewScanner(r)
@@ -250,7 +279,7 @@ func (pm *ProcessManager) captureOutput(p *Process, r interface{ Read([]byte) (i
 	scanner.Buffer(buf, maxTokenSize)
 
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := strings.TrimSuffix(scanner.Text(), "\r")
 		line = stripNonColorANSI(line)
 		p.Buffer.Write(line)
 		pm.sendOutput(p, line)

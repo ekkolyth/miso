@@ -29,6 +29,7 @@ type MergedModel struct {
 	cursor           int
 	visible          map[int]bool
 	logLines         []mergedLine
+	logSeq           int64
 	scrollOffset     int // 0 = pinned to bottom, >0 = scrolled up N lines
 	width            int
 	height           int
@@ -36,6 +37,7 @@ type MergedModel struct {
 	delegated        bool
 	allExitedPending bool
 	sel              SelectionState
+	interactive      bool
 	copyFlash        bool // true during the 150ms invert flash
 	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
 }
@@ -44,6 +46,7 @@ type mergedLine struct {
 	label string
 	color color.Color
 	text  string
+	seq   int64
 }
 
 func NewMergedModel(pm *ProcessManager, script string, delegated bool) MergedModel {
@@ -70,10 +73,33 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.pm.ResizeAll(msg.Height, msg.Width)
+		return m, nil
+
+	case tea.PasteMsg:
+		if m.interactive && !m.delegated && m.cursor < len(m.pm.Processes) {
+			_ = m.pm.Processes[m.cursor].WriteStdin([]byte(msg.Content))
+		}
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.interactive {
+			if msg.String() == "ctrl+z" {
+				m.interactive = false
+				return m, nil
+			}
+			if !m.delegated && m.cursor < len(m.pm.Processes) {
+				if b := keyToBytes(msg.Key()); b != nil {
+					_ = m.pm.Processes[m.cursor].WriteStdin(b)
+				}
+			}
+			return m, nil
+		}
 		switch {
+		case msg.String() == "i":
+			if !m.delegated && m.cursor < len(m.pm.Processes) {
+				m.interactive = true
+			}
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Left):
@@ -89,10 +115,12 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.cursor < len(m.pm.Processes) {
 				m.allExitedPending = false
+				m.sel = SelectionState{}
 				go m.pm.Restart(m.pm.Processes[m.cursor])
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
+			m.sel = SelectionState{}
 			go m.pm.RestartAll()
 		case key.Matches(msg, m.keys.CopyKey):
 			if m.sel.active {
@@ -114,6 +142,10 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft {
+			if msg.Mod != 0 {
+				// modifier held — let the terminal handle it (native select / open link)
+				return m, nil
+			}
 			// Copy icon click: y==0, x within icon hit area at right of header
 			if msg.Y == 0 {
 				iconW := lipgloss.Width(copyIconStr)
@@ -135,7 +167,11 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
-				m.sel = SelectionState{active: true, startRow: row, endRow: row}
+				_, rowSeqs := m.buildLogVisualRows(m.logHeight(), SelectionState{})
+				if row < len(rowSeqs) {
+					seq := rowSeqs[row]
+					m.sel = SelectionState{active: true, startSeq: seq, endSeq: seq}
+				}
 			}
 		}
 
@@ -143,7 +179,10 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseLeft && m.sel.active {
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
-				m.sel.endRow = row
+				_, rowSeqs := m.buildLogVisualRows(m.logHeight(), SelectionState{})
+				if row < len(rowSeqs) {
+					m.sel.endSeq = rowSeqs[row]
+				}
 			}
 		}
 
@@ -174,10 +213,12 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Default new dynamically-added processes to visible (turbo/nx mode).
 		m.ensureVisible()
 		color := m.colorForLabel(msg.Label)
+		m.logSeq++
 		m.logLines = append(m.logLines, mergedLine{
 			label: msg.Label,
 			color: color,
 			text:  msg.Line,
+			seq:   m.logSeq,
 		})
 		// Cap merged log to prevent unbounded memory growth
 		maxMergedLines := DefaultBufferSize * len(m.pm.Processes)
@@ -230,7 +271,7 @@ func (m MergedModel) View() tea.View {
 	filterBar := m.renderFilterBar()
 	logHeight := m.logHeight()
 
-	logOutput := m.buildLogVisualRows(logHeight, m.sel)
+	logOutput, _ := m.buildLogVisualRows(logHeight, m.sel)
 	// Pad to fill.
 	for len(logOutput) < logHeight {
 		logOutput = append(logOutput, "")
@@ -266,10 +307,13 @@ func (m MergedModel) renderFilterBar() string {
 	}
 
 	var hintText string
-	if m.delegated {
+	switch {
+	case m.interactive:
+		hintText = "interactive — ctrl+z to exit"
+	case m.delegated:
 		hintText = "space toggle · c copy · R restart"
-	} else {
-		hintText = "space toggle · c copy · r restart · R restart all"
+	default:
+		hintText = "i interactive · space toggle · c copy · r restart · R restart all"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
@@ -412,31 +456,29 @@ func (m MergedModel) mouseToLogRow(x, y int) int {
 	return row
 }
 
-// selectedText returns the selected log rows as a plain string.
+// selected visible-process log lines as raw text
 func (m MergedModel) selectedText() string {
-	logHeight := m.logHeight()
-	logOutput := m.buildLogVisualRows(logHeight, SelectionState{})
-
-	// Slice selection.
-	lo := m.sel.minRow()
-	hi := m.sel.maxRow()
-	if lo < 0 {
-		lo = 0
-	}
-	if hi >= len(logOutput) {
-		hi = len(logOutput) - 1
-	}
-	if lo > hi || len(logOutput) == 0 {
+	if !m.sel.active {
 		return ""
 	}
-	return strings.Join(logOutput[lo:hi+1], "\n")
+	visibleLabels := m.visibleLabels()
+	lo, hi := m.sel.minSeq(), m.sel.maxSeq()
+
+	var out []string
+	for _, line := range m.logLines {
+		if visibleLabels[line.label] && line.seq >= lo && line.seq <= hi {
+			out = append(out, line.text)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // buildLogVisualRows re-derives the visual rows for the merged log panel,
-// applying the scroll window, wrapping, and tail-slice.
+// applying the scroll window, wrapping, and tail-slice. The second return
+// value is the source line's seq for each visual row, parallel to the first.
 // sel is used to apply selection highlighting row-by-row; pass SelectionState{}
 // (inactive) to skip highlighting (e.g. when building rows for clipboard copy).
-func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) []string {
+func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) ([]string, []int64) {
 	visibleLabels := m.visibleLabels()
 	var visibleLines []mergedLine
 	for _, line := range m.logLines {
@@ -470,12 +512,12 @@ func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) []str
 	}
 
 	var logOutput []string
+	var seqs []int64
 	for _, line := range windowLines {
 		indent := strings.Repeat(" ", prefixWidth)
 		wrapped := wrapLine(line.text, textWidth)
-		rowIdx := len(logOutput)
+		selected := sel.active && line.seq >= sel.minSeq() && line.seq <= sel.maxSeq()
 		for i, row := range wrapped {
-			selected := sel.active && rowIdx+i >= sel.minRow() && rowIdx+i <= sel.maxRow()
 			if i == 0 {
 				// Render label and text under the same background so the selection
 				// highlight covers the full line. Applying selectedBg to the
@@ -501,10 +543,12 @@ func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) []str
 					logOutput = append(logOutput, indent+row)
 				}
 			}
+			seqs = append(seqs, line.seq)
 		}
 	}
 	if len(logOutput) > logHeight {
 		logOutput = logOutput[len(logOutput)-logHeight:]
+		seqs = seqs[len(seqs)-logHeight:]
 	}
-	return logOutput
+	return logOutput, seqs
 }

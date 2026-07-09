@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/proc"
 	"github.com/ekkolyth/miso/internal/turbo"
 )
 
@@ -29,8 +30,19 @@ func parseNxHeader(line string) (label string, isHeader bool) {
 
 // DelegateLaunch spawns turbo or nx as a single process and renders its output
 // in the miso TUI. Returns (true, nil) if the TUI ran successfully.
+//
+// The delegated process is deliberately NOT given a pseudo-terminal (unlike the
+// direct-spawn ProcessManager.Start path). turbo and nx orchestrate their own
+// child processes — and turbo runs its own TTY-aware UI — so miso supplies only
+// the chrome (sidebar/tabs + log rendering) and leaves process lifecycle and
+// stdin to them. A pty here would collide with turbo's own terminal UI.
 func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs []string) (bool, error) {
 	if !cfg.TuiEnabled() {
+		return false, nil
+	}
+
+	if !hasInteractiveTTY() {
+		fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
 		return false, nil
 	}
 
@@ -56,7 +68,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	// Build the command
 	cmd := exec.Command(binary, delegateArgs...)
 	cmd.Dir = root
-	setProcGroup(cmd)
+	proc.SetGroup(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -216,7 +228,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	// Kill the delegated process group
 	if cmd.Process != nil {
 		pgid := cmd.Process.Pid
-		_ = killGroup(pgid, syscall.SIGTERM)
+		_ = proc.KillGroup(pgid, syscall.SIGTERM)
 	}
 
 	failed := pm.FailedCount()

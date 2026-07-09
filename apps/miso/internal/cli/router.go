@@ -9,14 +9,6 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 )
 
-// resolveScript honors simple mode: folder-only resolution (no package.json fallback).
-func resolveScript(name, root string, cfg config.Config) (scripting.ResolvedScript, error) {
-	if cfg.SimpleMode() {
-		return scripting.ResolveScriptFolderOnly(name, root, cfg)
-	}
-	return scripting.ResolveScript(name, root, cfg)
-}
-
 type Action int
 
 const (
@@ -47,6 +39,16 @@ type ParsedCLI struct {
 	Command       string
 	Args          []string
 	WorkspaceName string // For @workspace/script syntax
+}
+
+// simple mode: folder scripts only, no package.json fallback.
+// main.go short-circuits simple mode before ParseCLI reaches here — this keeps
+// resolution correct for any other ParseCLI caller too.
+func resolveScript(name, root string, cfg config.Config) (scripting.ResolvedScript, error) {
+	if cfg.SimpleMode() {
+		return scripting.ResolveScriptFolderOnly(name, root, cfg)
+	}
+	return scripting.ResolveScript(name, root, cfg)
 }
 
 func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) {

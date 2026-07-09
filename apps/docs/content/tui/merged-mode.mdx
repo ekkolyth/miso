@@ -9,15 +9,21 @@ Merged mode shows all workspace output in a single interleaved stream. Each line
 
 ## Keybindings
 
-| Key       | Action                               |
-| --------- | ------------------------------------ |
-| `←` / `→` | Select workspace in filter bar       |
-| `space`   | Toggle selected workspace visibility |
-| `r`       | Restart workspace at cursor          |
-| `R`       | Restart all workspaces               |
-| `Ctrl+C`  | Quit (stops all processes)           |
+| Key       | Action                                                      |
+| --------- | ----------------------------------------------------------- |
+| `←` / `→` | Select workspace in filter bar                              |
+| `space`   | Toggle selected workspace visibility                        |
+| `r`       | Restart workspace at cursor                                 |
+| `R`       | Restart all workspaces                                      |
+| `i`       | Enter interactive mode — forward keys to the cursor process |
+| `Ctrl+Z`  | Exit interactive mode                                       |
+| `Ctrl+C`  | Quit (stops all processes)                                  |
 
 In delegated mode (Turbo/Nx), `r` (restart single process) is disabled — only `R` (restart all) is available.
+
+Press `i` to enter **interactive mode**: keystrokes are forwarded to the process at the cursor's stdin. Press `Ctrl+Z` to return to miso's controls. Interactive mode is unavailable in delegated mode (Turbo/Nx).
+
+Hold a modifier (⌘/Alt/Ctrl) while clicking to let your terminal handle the click natively — miso ignores modifier-held clicks so opening links and native text selection keep working.
 
 ## Filter Bar
 

@@ -129,6 +129,76 @@ func TestProcessManager_StopAll(t *testing.T) {
 	}
 }
 
+func TestProcessWriteStdin(t *testing.T) {
+	var sink strings.Builder
+	p := &Process{Buffer: NewRingBuffer(10)}
+
+	// nil stdin: no-op, no error
+	if err := p.WriteStdin([]byte("x")); err != nil {
+		t.Fatalf("WriteStdin with nil stdin should be a no-op, got %v", err)
+	}
+
+	p.stdin = &sink
+	if err := p.WriteStdin([]byte("hello")); err != nil {
+		t.Fatalf("WriteStdin: %v", err)
+	}
+	if sink.String() != "hello" {
+		t.Errorf("stdin got %q, want %q", sink.String(), "hello")
+	}
+}
+
+func TestCaptureOutputTrimsCarriageReturn(t *testing.T) {
+	// The child emits bare "\n"; the pty's ONLCR maps it to "\r\n" on the
+	// master, so captured lines carry a trailing "\r" that must be trimmed.
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "cr"}, "printf", []string{`one\ntwo\n`}, "", nil)
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	lines := p.Buffer.Lines()
+	if len(lines) == 0 {
+		t.Fatal("expected captured lines, got none")
+	}
+	for _, line := range lines {
+		if strings.HasSuffix(line, "\r") {
+			t.Errorf("line retained trailing CR: %q", line)
+		}
+	}
+}
+
+func TestProcessManager_ResizeAll(t *testing.T) {
+	type call struct{ rows, cols int }
+	var calls []call
+
+	spy := func(rows, cols int) {
+		calls = append(calls, call{rows: rows, cols: cols})
+	}
+
+	pm := &ProcessManager{
+		Processes: []*Process{
+			{resize: spy},
+			{resize: spy},
+		},
+	}
+
+	pm.ResizeAll(30, 100)
+
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 resize calls, got %d", len(calls))
+	}
+	for _, c := range calls {
+		if c.rows != 30 || c.cols != 100 {
+			t.Errorf("resize call = (rows=%d, cols=%d), want (rows=30, cols=100)", c.rows, c.cols)
+		}
+	}
+}
+
+func TestProcessResizeNilSafe(t *testing.T) {
+	p := &Process{}
+	p.Resize(10, 20) // must not panic
+}
+
 func TestStripNonColorANSI(t *testing.T) {
 	tests := []struct {
 		name  string

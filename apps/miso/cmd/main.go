@@ -239,7 +239,8 @@ func main() {
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
-		if err := scripting.ExecScriptFile(resolved.Path, scriptArgs, originalWorkDir, cfg.Shell, processEnv); err != nil {
+		detected, _ := manager.DetectManager(projectRoot)
+		if err := scripting.ExecScriptFile(resolved.Path, scriptArgs, originalWorkDir, cfg.Shell, detected, processEnv); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -371,7 +372,7 @@ func main() {
 			if envErr != nil {
 				cli.Fail(logger, envErr, false)
 			}
-			if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, shell, processEnv); err != nil {
+			if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, shell, managerName, processEnv); err != nil {
 				cli.Fail(logger, err, false)
 			}
 		case scripting.ScriptSourcePackageJSON:
@@ -398,7 +399,7 @@ func main() {
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
-		if err := scripting.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg, processEnv); err != nil {
+		if err := scripting.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg, managerName, processEnv); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -408,7 +409,7 @@ func main() {
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
-		if err := scripting.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell, processEnv); err != nil {
+		if err := scripting.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell, managerName, processEnv); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
