@@ -90,6 +90,12 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pm.ResizeAll(msg.Height, msg.Width)
 		return m, nil
 
+	case tea.PasteMsg:
+		if m.interactive && !m.delegated && m.selected < len(m.pm.Processes) {
+			_ = m.pm.Processes[m.selected].WriteStdin([]byte(msg.Content))
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		if m.interactive {
 			if msg.String() == "ctrl+z" {

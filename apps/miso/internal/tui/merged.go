@@ -76,6 +76,12 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pm.ResizeAll(msg.Height, msg.Width)
 		return m, nil
 
+	case tea.PasteMsg:
+		if m.interactive && !m.delegated && m.cursor < len(m.pm.Processes) {
+			_ = m.pm.Processes[m.cursor].WriteStdin([]byte(msg.Content))
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		if m.interactive {
 			if msg.String() == "ctrl+z" {
