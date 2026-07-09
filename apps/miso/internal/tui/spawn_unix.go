@@ -11,9 +11,8 @@ import (
 	"github.com/creack/pty"
 )
 
-// spawnProcess starts cmd on a pseudo-terminal so children see a TTY (keeps
-// color and interactive prompts alive) with a live stdin. The pty master is
-// returned as both the output reader and the stdin writer.
+// pty-backed spawn: children see a TTY (color + interactive prompts) with a
+// live stdin; the pty master is both output reader and stdin writer
 func spawnProcess(cmd *exec.Cmd, rows, cols int) (*spawnResult, error) {
 	if rows <= 0 || cols <= 0 {
 		if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil && w > 0 && h > 0 {

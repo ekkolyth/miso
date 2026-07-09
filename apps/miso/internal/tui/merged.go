@@ -449,7 +449,7 @@ func (m MergedModel) mouseToLogRow(x, y int) int {
 	return row
 }
 
-// selectedText returns the selected log lines (visible processes only) as raw text.
+// selected visible-process log lines as raw text
 func (m MergedModel) selectedText() string {
 	if !m.sel.active {
 		return ""

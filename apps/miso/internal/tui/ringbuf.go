@@ -35,7 +35,7 @@ func (rb *RingBuffer) Write(line string) {
 	}
 }
 
-// BaseSeq is the sequence number of the oldest retained line (Lines()[0]).
+// sequence number of the oldest retained line (Lines()[0])
 func (rb *RingBuffer) BaseSeq() int64 {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()

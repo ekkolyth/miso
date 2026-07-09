@@ -553,7 +553,7 @@ func (m TabbedModel) mouseToLogRow(x, y int) int {
 	return row
 }
 
-// selectedText returns the selected buffer lines as raw text (unwrapped).
+// selected buffer lines as raw text (unwrapped)
 func (m TabbedModel) selectedText() string {
 	if m.selected >= len(m.pm.Processes) || !m.sel.active {
 		return ""

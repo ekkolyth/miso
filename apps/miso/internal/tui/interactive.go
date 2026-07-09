@@ -2,9 +2,9 @@ package tui
 
 import tea "charm.land/bubbletea/v2"
 
-// keyToBytes encodes a key event as the bytes a child process expects on its
-// stdin. Printable characters (incl. shifted) arrive via Text; special keys map
-// to their control sequences. Returns nil for keys with no byte representation.
+// encode a key event as the bytes a child expects on stdin. printable chars
+// (incl. shifted) arrive via Text; special keys map to control sequences; nil
+// for keys with no byte form
 func keyToBytes(k tea.Key) []byte {
 	if k.Text != "" {
 		return []byte(k.Text)

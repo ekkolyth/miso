@@ -34,9 +34,8 @@ type ProcessStateMsg struct {
 	Code  int
 }
 
-// spawnResult holds the streams wired to a spawned process. On unix the pty
-// master is both the merged-output reader and the stdin writer; on Windows the
-// readers are separate stdout/stderr pipes and stdin is a pipe.
+// streams wired to a spawned process — unix: pty master is both reader and
+// stdin writer; windows: separate stdout/stderr pipes + stdin pipe
 type spawnResult struct {
 	readers []io.Reader
 	stdin   io.Writer
@@ -195,7 +194,7 @@ func (pm *ProcessManager) Stop(p *Process) {
 	}
 }
 
-// WriteStdin forwards bytes to the process's stdin. Used by interactive mode.
+// no-op when stdin is unset; used by interactive mode
 func (p *Process) WriteStdin(b []byte) error {
 	p.mu.Lock()
 	w := p.stdin
