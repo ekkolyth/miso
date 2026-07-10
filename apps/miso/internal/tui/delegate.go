@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -26,6 +27,18 @@ func parseNxHeader(line string) (label string, isHeader bool) {
 		return "", false
 	}
 	return m[1], true
+}
+
+// FORCE_COLOR=1 unless the caller already set FORCE_COLOR or opted out via
+// NO_COLOR (NO_COLOR wins, matching turbo/nx and the no-color.org convention).
+func delegatedColorEnv(base []string) []string {
+	for _, kv := range base {
+		key, _, _ := strings.Cut(kv, "=")
+		if key == "NO_COLOR" || key == "FORCE_COLOR" {
+			return base
+		}
+	}
+	return append(base, "FORCE_COLOR=1")
 }
 
 // DelegateLaunch spawns turbo or nx as a single process and renders its output
@@ -68,6 +81,11 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	// Build the command
 	cmd := exec.Command(binary, delegateArgs...)
 	cmd.Dir = root
+	// miso pipes turbo/nx output, so they'd see a non-tty and strip color.
+	// FORCE_COLOR mirrors what a real terminal gives them: turbo/nx run their
+	// normal color path and forward FORCE_COLOR to tasks, matching a direct
+	// `turbo run`. NO_COLOR still wins per the shared convention.
+	cmd.Env = delegatedColorEnv(os.Environ())
 	proc.SetGroup(cmd)
 
 	stdout, err := cmd.StdoutPipe()
