@@ -11,6 +11,7 @@ import (
 	"github.com/ekkolyth/miso/internal/cli/commands"
 	"github.com/ekkolyth/miso/internal/cli/completion"
 	"github.com/ekkolyth/miso/internal/cli/env"
+	"github.com/ekkolyth/miso/internal/cli/reference"
 	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/harness"
@@ -59,6 +60,12 @@ func main() {
 
 	// help and bare invocation print the command reference — works with no project
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		if len(args) >= 2 && args[0] == "help" {
+			if err := reference.RunCommandHelp(args[1]); err != nil {
+				os.Exit(1)
+			}
+			return
+		}
 		commands.RunHelp()
 		return
 	}
