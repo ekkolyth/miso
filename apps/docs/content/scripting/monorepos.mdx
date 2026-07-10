@@ -92,6 +92,8 @@ An explicit `@scope` is always honored or Miso fails — if it doesn't resolve t
 
 > The old prefixed form, `miso @workspace/script`, has been removed in favor of `miso <script> @scope`.
 
+> Scoping needs a package manager. In [simple mode](/working-with-miso/simple-mode) (`"packageManager": false`), workspace discovery is disabled and `@scope` is passed through to the script as a literal argument instead of being resolved.
+
 ### From Inside a Workspace — Automatic Scoping
 
 When you're already inside a workspace directory, Miso automatically scopes to that workspace. No special syntax needed:
