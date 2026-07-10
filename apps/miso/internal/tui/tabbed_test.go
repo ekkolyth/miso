@@ -1,10 +1,54 @@
 package tui
 
 import (
+	"fmt"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 )
+
+func TestReassertBg(t *testing.T) {
+	// the colored span's reset must not drop the selection bg for the text after it
+	got := reassertBg("a\x1b[0mc", "<BG>")
+	want := "<BG>a\x1b[0m<BG>c\x1b[0m"
+	if got != want {
+		t.Errorf("reassertBg = %q, want %q", got, want)
+	}
+}
+
+func TestBuildLogVisualRowsFreezesDuringSelection(t *testing.T) {
+	pm := NewProcessManager()
+	proc := pm.Add(TuiScriptEntry{Label: "api:dev"}, "", nil, "", nil)
+	for i := 0; i < 20; i++ {
+		proc.Buffer.Write(fmt.Sprintf("line %d", i))
+	}
+	m := TabbedModel{pm: pm, selected: 0, width: 40, height: 8}
+
+	bottom := m.currentBottomSeq()
+	m.sel = SelectionState{active: true, startSeq: bottom, endSeq: bottom, anchorBottomSeq: bottom}
+
+	lastReal := func(seqs []int64) int64 {
+		for i := len(seqs) - 1; i >= 0; i-- {
+			if seqs[i] >= 0 {
+				return seqs[i]
+			}
+		}
+		return -1
+	}
+
+	_, before := m.buildLogVisualRows(m.width-1, m.logHeight())
+	for i := 20; i < 40; i++ { // stream in more output mid-selection
+		proc.Buffer.Write(fmt.Sprintf("line %d", i))
+	}
+	_, after := m.buildLogVisualRows(m.width-1, m.logHeight())
+
+	if lastReal(before) != lastReal(after) {
+		t.Errorf("window moved during selection: bottom seq %d -> %d (should be frozen)", lastReal(before), lastReal(after))
+	}
+	if lastReal(after) != bottom {
+		t.Errorf("frozen bottom seq = %d, want anchored %d", lastReal(after), bottom)
+	}
+}
 
 func TestTabbedWindowResizeForwards(t *testing.T) {
 	var gotRows, gotCols int

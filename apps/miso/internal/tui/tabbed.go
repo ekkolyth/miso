@@ -24,6 +24,10 @@ type SelectionState struct {
 	active   bool
 	startSeq int64
 	endSeq   int64
+	// anchorBottomSeq freezes the visible window at the bottom seq present when
+	// the selection began, so streaming output can't slide lines out from under
+	// an in-progress drag.
+	anchorBottomSeq int64
 }
 
 func (s SelectionState) minSeq() int64 {
@@ -191,14 +195,16 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					)
 				}
 			}
-			// existing log-row selection
+			// log-row selection — clear any prior selection first so the window is
+			// live (unfrozen) while we map this click and capture the anchor.
+			m.sel = SelectionState{}
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
 				logWidth := m.width - m.sidebarWidth() - 1
 				_, rowSeqs := m.buildLogVisualRows(logWidth, m.logHeight())
 				if row < len(rowSeqs) && rowSeqs[row] >= 0 {
 					seq := rowSeqs[row]
-					m.sel = SelectionState{active: true, startSeq: seq, endSeq: seq}
+					m.sel = SelectionState{active: true, startSeq: seq, endSeq: seq, anchorBottomSeq: m.currentBottomSeq()}
 				}
 			}
 		}
@@ -503,7 +509,7 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	// Highlight rows whose source buffer line is in the selection range.
 	for i := range visualRows {
 		if m.sel.active && rowSeqs[i] >= 0 && rowSeqs[i] >= m.sel.minSeq() && rowSeqs[i] <= m.sel.maxSeq() {
-			visualRows[i] = selectedBg.Render(visualRows[i])
+			visualRows[i] = highlightRow(visualRows[i])
 		}
 	}
 
@@ -595,6 +601,37 @@ func (m TabbedModel) selectedText() string {
 	return strings.Join(out, "\n")
 }
 
+// highlightRow paints the selection background across the whole row, re-asserting
+// it after every SGR reset embedded in the row's own colors — otherwise a colored
+// span's trailing `\x1b[0m` (e.g. after `[api]`, `DEBUG`, or a URL) cancels the
+// highlight mid-line.
+func highlightRow(row string) string {
+	rendered := selectedBg.Render("\x00")
+	open := rendered
+	if i := strings.IndexByte(rendered, 0); i >= 0 {
+		open = rendered[:i]
+	}
+	if open == "" {
+		return row // no background in this color profile
+	}
+	return reassertBg(row, open)
+}
+
+// reassertBg opens the background, re-emits it after each reset, and closes.
+func reassertBg(row, open string) string {
+	return open + strings.ReplaceAll(row, "\x1b[0m", "\x1b[0m"+open) + "\x1b[0m"
+}
+
+// currentBottomSeq is the buffer seq at the bottom of the live (unfrozen)
+// window — captured when a selection starts to freeze the drag target.
+func (m TabbedModel) currentBottomSeq() int64 {
+	if m.selected >= len(m.pm.Processes) {
+		return 0
+	}
+	proc := m.pm.Processes[m.selected]
+	return proc.Buffer.BaseSeq() + int64(proc.Buffer.Len()-1-m.scrollOffset)
+}
+
 // buildLogVisualRows re-derives the visual rows for the currently selected
 // process's log panel. It applies the scroll window, wraps each raw line, and
 // tail-slices to logHeight. logWidth is the panel width passed to renderLogPanel.
@@ -610,6 +647,15 @@ func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) ([]string, []in
 	totalLines := len(lines)
 
 	endIdx := totalLines - m.scrollOffset
+	if m.sel.active {
+		// Freeze the window at the seq that was at the bottom when the selection
+		// began — streaming output keeps filling the buffer but the drag target
+		// stays put. Resumes tailing once the selection is cleared.
+		endIdx = int(m.sel.anchorBottomSeq-base) + 1
+	}
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
 	if endIdx < 0 {
 		endIdx = 0
 	}
