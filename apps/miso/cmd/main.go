@@ -376,8 +376,13 @@ func main() {
 	// refuse to run unscoped.
 	if len(parsed.Scopes) > 0 {
 		target := parsed.ScriptName
-		if parsed.Action == cli.ActionPassthrough {
+		switch parsed.Action {
+		case cli.ActionDev:
+			target = "dev"
+		case cli.ActionPassthrough:
 			target = parsed.Command
+		case cli.ActionRunMultiple:
+			target = strings.Join(parsed.ScriptNames, " ")
 		}
 		cli.Fail(logger, fmt.Errorf(
 			"cannot scope %q to %s — scoped runs need an interactive terminal and a workspace-aware target (a turbo/nx task or a script defined in the target workspace)",
