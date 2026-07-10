@@ -13,3 +13,6 @@ pkg.version = process.env.VERSION;
 fs.writeFileSync('apps/miso/package.json', JSON.stringify(pkg, null, 2) + '\n');
 "
 echo "Updated apps/miso/package.json to version $VERSION"
+
+# Stamp the same version into the schema: source (latest) + pinned public copy.
+VERSION="$VERSION" "$(dirname "$0")/../schema/render.sh"
