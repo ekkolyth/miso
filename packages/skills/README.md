@@ -30,6 +30,7 @@ npx skills add ekkolyth/miso -a opencode
 | Scripts folder, extension dispatch, shebang, resolution order | `references/scripting.md` |
 | Multi-process TUI, `repo` modes, `tasks.concurrent`, `tasks.dependsOn` | `references/tui.md` |
 | Env validation, variable types, `--env`, injection behavior | `references/env.md` |
+| Upgrading a project from an older miso (0.5.x → 0.6.0) | `references/migration.md` |
 
 ---
 
