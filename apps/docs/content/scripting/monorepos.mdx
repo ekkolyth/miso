@@ -115,7 +115,7 @@ Two things are **not** taken from a member's config:
 
 ## How Workspace Matching Works
 
-A `@scope` token is matched against every discovered workspace using three strategies, checked in order:
+A `@scope` token is matched against every discovered workspace if it equals any of three forms — there's no precedence between them, so a token that happens to match more than one workspace across any combination of forms is always an ambiguity error, not resolved by trying one form before another:
 
 1. **Full `package.json` name** — the `name` field in the workspace's `package.json` (e.g. `@myorg/api`)
 2. **Short-name or directory basename** — the segment after the last `/` in the package name, or the workspace directory's basename when it has none (e.g. `api` matches `packages/api`)
