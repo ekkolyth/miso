@@ -289,6 +289,14 @@ func main() {
 	// --env flag: run env validation first, then strip from args before passing to command
 	cfg, parsed = runEnvIfRequested(projectRoot, cfg, parsed, logger)
 
+	// Resolve explicit @scope filters up front so an unknown or ambiguous scope
+	// fails with a precise message regardless of TUI/root/action routing, and so
+	// the intercept switch below doesn't re-discover members.
+	var scopeFilters []string
+	if len(parsed.Scopes) > 0 {
+		scopeFilters = scopeFilterNames(parsed.Scopes, projectRoot, cfg, logger)
+	}
+
 	// TUI interception — check if we should launch the TUI instead of normal execution
 	if cfg.TuiEnabled() {
 		// Only intercept when running from project root (not workspace subdirectory)
@@ -318,7 +326,7 @@ func main() {
 					scriptArgs = parsed.Args
 				}
 
-				filters := scopeFilterNames(parsed.Scopes, projectRoot, cfg, logger)
+				filters := scopeFilters
 
 				if cfg.IsDelegated() {
 					// Check if this task is overridden by miso's direct orchestration
