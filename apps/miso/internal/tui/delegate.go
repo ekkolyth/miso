@@ -74,7 +74,9 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	}
 
 	if !hasInteractiveTTY() {
-		fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
+		if len(filters) == 0 {
+			fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
+		}
 		return false, nil
 	}
 

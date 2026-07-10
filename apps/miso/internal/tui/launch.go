@@ -55,7 +55,9 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	}
 
 	if !hasInteractiveTTY() {
-		fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
+		if len(filterNames) == 0 {
+			fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
+		}
 		return false, nil
 	}
 
