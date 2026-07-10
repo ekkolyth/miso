@@ -8,6 +8,49 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 )
 
+// ekko-os shape: apps/web is named "web"; a nested projects/ekkolore/web is
+// named "ekkolore-web". @web must bind to the workspace *named* web, not get
+// snagged by the nested one's folder basename.
+func scopeCollisionMembers(root string) []Member {
+	return []Member{
+		{Name: "web", Dir: filepath.Join(root, "apps", "web")},
+		{Name: "ekkolore-web", Dir: filepath.Join(root, "projects", "ekkolore", "web")},
+	}
+}
+
+func TestResolveScopesNameBeatsBasename(t *testing.T) {
+	root := t.TempDir()
+	got, err := ResolveScopes([]string{"@web"}, scopeCollisionMembers(root), root)
+	if err != nil {
+		t.Fatalf("@web should resolve to the workspace named web, got: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "web" {
+		t.Errorf("got %v, want the member named web", got)
+	}
+}
+
+func TestResolveScopesNestedReachableByOwnName(t *testing.T) {
+	root := t.TempDir()
+	got, err := ResolveScopes([]string{"@ekkolore-web"}, scopeCollisionMembers(root), root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "ekkolore-web" {
+		t.Errorf("got %v, want ekkolore-web", got)
+	}
+}
+
+func TestResolveScopesGenuineSameNameAmbiguous(t *testing.T) {
+	root := t.TempDir()
+	members := []Member{
+		{Name: "web", Dir: filepath.Join(root, "apps", "web")},
+		{Name: "web", Dir: filepath.Join(root, "packages", "web")},
+	}
+	if _, err := ResolveScopes([]string{"@web"}, members, root); err == nil {
+		t.Error("two workspaces both named web should be a genuine ambiguity error")
+	}
+}
+
 func members(root string) []Member {
 	return []Member{
 		{Name: "@org/web", Dir: filepath.Join(root, "apps", "web")},

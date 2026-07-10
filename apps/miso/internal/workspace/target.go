@@ -111,51 +111,82 @@ func resolveMembers(name string, members []Member, root string) []Member {
 	return byBasename
 }
 
-// ResolveScopes maps each @-prefixed scope token to exactly one member. A token
-// matches by full package name (@ekko/web), by package short-name or dir
-// basename (@web), or by relpath. Unknown or ambiguous tokens are errors.
+// ResolveScopes maps each @-prefixed scope token to exactly one member, matching
+// by identity in priority order: exact package name (bare `web` or scoped
+// `@ekko/web`), then a scoped package's short-name (`@ekko/web` → `web`), then
+// relative path, and only as a last resort the directory basename. A higher tier
+// always wins, so a workspace named `web` is never shadowed by an unrelated one
+// that merely sits in a folder called `web`. Ambiguity *within* the winning
+// tier, or no match at all, is an error.
 func ResolveScopes(scopes []string, members []Member, root string) ([]Member, error) {
 	seen := make(map[string]bool)
 	var out []Member
 	for _, token := range scopes {
-		bare := strings.TrimPrefix(token, "@")
-		var matched []Member
-		for _, member := range members {
-			if scopeMatches(bare, member, root) {
-				matched = append(matched, member)
-			}
+		member, err := resolveScope(token, members, root)
+		if err != nil {
+			return nil, err
 		}
-		switch len(matched) {
-		case 1:
-			if !seen[matched[0].Name] {
-				seen[matched[0].Name] = true
-				out = append(out, matched[0])
-			}
-		case 0:
-			return nil, fmt.Errorf("scope %q matched no workspace (available: %s)", token, memberNames(members))
-		default:
-			return nil, fmt.Errorf("scope %q is ambiguous — matches %s; use the full @scope/name", token, memberNames(matched))
+		key := member.Name + "\x00" + member.Dir
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, member)
 		}
 	}
 	return out, nil
 }
 
-// scopeMatches reports whether bare (the token minus its @) identifies member by
-// full package name, package short-name, dir basename, or relpath.
-func scopeMatches(bare string, member Member, root string) bool {
-	if member.Name != "" {
-		if member.Name == "@"+bare || member.Name == bare {
-			return true
+func resolveScope(token string, members []Member, root string) (Member, error) {
+	bare := strings.TrimPrefix(token, "@")
+	tiers := []func(Member) bool{
+		func(m Member) bool { return m.Name != "" && (m.Name == bare || m.Name == "@"+bare) }, // exact package name
+		func(m Member) bool { return m.Name != "" && scopeShortName(m.Name) == bare },         // scoped package short-name
+		func(m Member) bool { return relPath(m.Dir, root) == bare },                           // relative path from root
+		func(m Member) bool { return filepath.Base(m.Dir) == bare },                           // dir basename (last resort)
+	}
+	for _, matches := range tiers {
+		var hits []Member
+		for _, member := range members {
+			if matches(member) {
+				hits = append(hits, member)
+			}
 		}
-		if slash := strings.LastIndex(member.Name, "/"); slash >= 0 && member.Name[slash+1:] == bare {
-			return true
+		switch len(hits) {
+		case 1:
+			return hits[0], nil
+		case 0:
+			continue
+		default:
+			return Member{}, fmt.Errorf("scope %q is ambiguous — matches %s; qualify by path (e.g. @%s)",
+				token, memberPaths(hits, root), relPath(hits[0].Dir, root))
 		}
 	}
-	if filepath.Base(member.Dir) == bare {
-		return true
+	return Member{}, fmt.Errorf("scope %q matched no workspace (available: %s)", token, memberNames(members))
+}
+
+// scopeShortName returns the segment after the last "/" of a scoped package name
+// (@ekko/web → web); an unscoped name is returned whole.
+func scopeShortName(name string) string {
+	if slash := strings.LastIndex(name, "/"); slash >= 0 {
+		return name[slash+1:]
 	}
-	rel, err := filepath.Rel(root, member.Dir)
-	return err == nil && filepath.ToSlash(rel) == bare
+	return name
+}
+
+func relPath(dir, root string) string {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return ""
+	}
+	return filepath.ToSlash(rel)
+}
+
+// memberPaths lists members by relative path, for disambiguation messages.
+func memberPaths(members []Member, root string) string {
+	parts := make([]string, 0, len(members))
+	for _, member := range members {
+		parts = append(parts, relPath(member.Dir, root))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func memberNames(members []Member) string {
