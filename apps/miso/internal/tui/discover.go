@@ -9,7 +9,6 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 )
 
-// WorkspaceInfo holds the name and directory of a workspace.
 type WorkspaceInfo struct {
 	Name string
 	Dir  string

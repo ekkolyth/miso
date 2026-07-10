@@ -118,8 +118,7 @@ func List(cfg config.Config, root string, styles ui.Styles, logger *log.Logger) 
 	return nil
 }
 
-// ListNames returns sorted script names from scripts folder and package.json,
-// deduplicated by resolution order (scripts folder takes precedence).
+// sorted, deduped by resolution order (scripts folder over package.json)
 func ListNames(root string, cfg config.Config) ([]string, error) {
 	scriptsPath := cfg.Scripts
 	if scriptsPath == "" {

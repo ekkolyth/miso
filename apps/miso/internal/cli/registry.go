@@ -1,6 +1,6 @@
 package cli
 
-// Command describes a built-in miso command for help, completion, and dispatch.
+// built-in miso command: help, completion, dispatch
 type Command struct {
 	Name         string
 	Aliases      []string
@@ -29,7 +29,7 @@ var Builtins = []Command{
 	{Name: "help", Summary: "show this help", Meta: true},
 }
 
-// LookupBuiltin resolves a name or alias to its canonical command.
+// name or alias → canonical command
 func LookupBuiltin(token string) (Command, bool) {
 	for _, cmd := range Builtins {
 		if cmd.Name == token {
@@ -44,7 +44,7 @@ func LookupBuiltin(token string) (Command, bool) {
 	return Command{}, false
 }
 
-// BuiltinNames returns every built-in name and alias, for shell completion.
+// every name + alias, for shell completion
 func BuiltinNames() []string {
 	names := make([]string, 0, len(Builtins))
 	for _, cmd := range Builtins {

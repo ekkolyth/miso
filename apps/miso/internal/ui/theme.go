@@ -16,7 +16,7 @@ type Styles struct {
 	Error   lipgloss.Style
 }
 
-// LabelColors is the palette used to color workspace/app labels (matches merged TUI view).
+// palette for workspace/app labels
 var LabelColors = []color.Color{
 	lipgloss.Color("#7c3aed"), // purple
 	lipgloss.Color("#3b82f6"), // blue
@@ -28,10 +28,9 @@ var LabelColors = []color.Color{
 	lipgloss.Color("#f97316"), // orange
 }
 
-// WarningColor is used for warning-level highlights (e.g. variable names in validation errors).
+// warning-level highlights (e.g. var names in validation errors)
 var WarningColor = lipgloss.Color("#f59e0b") // amber
 
-// return default miso theme
 func Default() Styles {
 	accent := lipgloss.Color("#a855f7")  // purple
 	heading := lipgloss.Color("#ec4899") // pink

@@ -6,10 +6,8 @@ import (
 	"strings"
 )
 
-// DumpLogs prints all buffered process output to stdout, grouped by process.
-// Each process section has a header with the label and exit code.
-// This is called on TUI exit to preserve logs that would otherwise be lost
-// when the alternate screen buffer is discarded.
+// buffered output, grouped by process; each section headed with label + exit code.
+// called on TUI exit to preserve logs the alt-screen buffer would discard.
 func DumpLogs(pm *ProcessManager) {
 	pm.mu.Lock()
 	procs := make([]*Process, len(pm.Processes))

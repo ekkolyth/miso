@@ -44,7 +44,6 @@ type spawnResult struct {
 	closer  func()
 }
 
-// Process holds the runtime state for a single managed process.
 type Process struct {
 	Entry     TuiScriptEntry
 	Command   string
@@ -282,9 +281,9 @@ func (pm *ProcessManager) StopAll() {
 	var wg sync.WaitGroup
 	for _, p := range procs {
 		wg.Add(1)
-		go func(proc *Process) {
+		go func(process *Process) {
 			defer wg.Done()
-			pm.Stop(proc)
+			pm.Stop(process)
 		}(p)
 	}
 	wg.Wait()

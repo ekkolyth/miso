@@ -48,7 +48,7 @@ var misoASCII = []string{
 	"                                                          ",
 }
 
-// RenderMisoLogo returns the colored miso ASCII logo.
+// colored ascii logo
 func RenderMisoLogo() string {
 	// color styles matching logo
 	purpleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7c3aed"))
@@ -111,7 +111,6 @@ func RenderMisoLogo() string {
 	return rendered.String()
 }
 
-// display miso ASCII art with welcome message
 func printMisoWelcome(_ ui.Styles) {
 	_, _ = fmt.Fprint(os.Stdout, RenderMisoLogo())
 

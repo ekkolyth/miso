@@ -9,7 +9,6 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 )
 
-// script source type
 type ScriptSource int
 
 const (
@@ -18,7 +17,6 @@ const (
 	ScriptSourcePackageJSON
 )
 
-// resolved script info
 type ResolvedScript struct {
 	Source ScriptSource
 	Path   string // file path for folder scripts, command for package.json scripts
@@ -29,7 +27,7 @@ type ResolvedScript struct {
 // of the same name. miso refuses to guess which one you meant.
 var ErrAmbiguousScript = errors.New("ambiguous script")
 
-// scriptsFolder resolves the scripts directory for root (defaults to ./scripts).
+// scripts dir for root (defaults to ./scripts)
 func scriptsFolder(cfg config.Config, root string) string {
 	path := cfg.Scripts
 	if path == "" {
@@ -74,7 +72,7 @@ func multipleScriptsError(key string, scripts []ScriptInfo) error {
 	return fmt.Errorf("%w: multiple scripts for %q exist: %s", ErrAmbiguousScript, key, strings.Join(paths, ", "))
 }
 
-// ResolveScript resolves a script by name from the scripts folder or package.json.
+// from the scripts folder or package.json — at most one source.
 //
 // A name may resolve from at most ONE source. miso deliberately does not pick a
 // winner between a folder script and a package.json script of the same name —
@@ -123,8 +121,7 @@ func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript,
 	return ResolvedScript{Source: ScriptSourceNone}, nil
 }
 
-// ResolveScriptFolderOnly resolves a script from the folder only — no
-// package.json fallback. Used in simple mode, where package.json is ignored.
+// folder only — no package.json fallback; used in simple mode, where package.json is ignored.
 func ResolveScriptFolderOnly(name string, root string, cfg config.Config) (ResolvedScript, error) {
 	discovered, err := DiscoverScripts(scriptsFolder(cfg, root))
 	if err != nil {

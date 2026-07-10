@@ -3,6 +3,7 @@ package tui
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -153,16 +154,16 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		if label == "" {
 			return
 		}
-		proc := pm.findProc(label)
-		if proc == nil {
+		process := pm.findProc(label)
+		if process == nil {
 			entry := TuiScriptEntry{Label: label, ScriptName: scriptName, WorkspaceDir: root}
-			proc = pm.Add(entry, "", nil, root, nil)
-			proc.State = StateRunning
-			pm.sendState(proc, StateRunning, 0)
+			process = pm.Add(entry, "", nil, root, nil)
+			process.State = StateRunning
+			pm.sendState(process, StateRunning, 0)
 			pm.PinLast(metaTabLabel)
 		}
-		proc.Buffer.Write(text)
-		pm.sendOutput(proc, text)
+		process.Buffer.Write(text)
+		pm.sendOutput(process, text)
 	}
 
 	// routeTurbo handles turbo output with per-task exit codes and cache metadata.
@@ -176,24 +177,24 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 			}
 			return
 		}
-		proc := pm.findProc(meta.Label)
-		if proc == nil {
+		process := pm.findProc(meta.Label)
+		if process == nil {
 			entry := TuiScriptEntry{Label: meta.Label, ScriptName: scriptName, WorkspaceDir: root}
-			proc = pm.Add(entry, "", nil, root, nil)
-			proc.State = StateRunning
-			pm.sendState(proc, StateRunning, 0)
+			process = pm.Add(entry, "", nil, root, nil)
+			process.State = StateRunning
+			pm.sendState(process, StateRunning, 0)
 			pm.PinLast(metaTabLabel)
 		}
 		if meta.IsExit {
-			proc.mu.Lock()
-			proc.State = StateExited
-			proc.ExitCode = meta.ExitCode
-			proc.mu.Unlock()
-			pm.sendState(proc, StateExited, meta.ExitCode)
+			process.mu.Lock()
+			process.State = StateExited
+			process.ExitCode = meta.ExitCode
+			process.mu.Unlock()
+			pm.sendState(process, StateExited, meta.ExitCode)
 			return
 		}
-		proc.Buffer.Write(meta.Text)
-		pm.sendOutput(proc, meta.Text)
+		process.Buffer.Write(meta.Text)
+		pm.sendOutput(process, meta.Text)
 	}
 
 	// Start the delegated process and output parsing in a goroutine.
@@ -209,7 +210,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		var scanWg sync.WaitGroup
 		scanWg.Add(2)
 
-		scanPipe := func(r interface{ Read([]byte) (int, error) }) {
+		scanPipe := func(r io.Reader) {
 			defer scanWg.Done()
 			scanner := bufio.NewScanner(r)
 			currentNxLabel := ""
@@ -253,14 +254,14 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		nProcs := len(procs)
 		pm.mu.Unlock()
 
-		for _, proc := range procs {
-			proc.mu.Lock()
-			if proc.State != StateExited {
-				proc.State = StateExited
-				proc.ExitCode = code
+		for _, process := range procs {
+			process.mu.Lock()
+			if process.State != StateExited {
+				process.State = StateExited
+				process.ExitCode = code
 			}
-			proc.mu.Unlock()
-			pm.sendState(proc, StateExited, proc.ExitCode)
+			process.mu.Unlock()
+			pm.sendState(process, StateExited, process.ExitCode)
 		}
 
 		// If turbo exited before producing any workspace output (e.g. config error),

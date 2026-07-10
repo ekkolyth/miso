@@ -16,7 +16,7 @@ var (
 	sgrRe       = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 )
 
-// LineMeta holds parsed metadata for a single line of turbo output.
+// parsed metadata for one turbo output line
 type LineMeta struct {
 	Label    string
 	Text     string

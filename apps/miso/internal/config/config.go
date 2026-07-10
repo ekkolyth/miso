@@ -11,13 +11,12 @@ import (
 // return when miso.json not found
 var ErrNotFound = errors.New("config: not found")
 
-// default miso config filename
 const FileName = "miso.json"
 
-// SchemaURL is the canonical URL for the miso.json JSON schema (IDE autocomplete/validation)
+// canonical miso.json schema url (IDE autocomplete/validation)
 const SchemaURL = "https://misojs.dev/miso.schema.json"
 
-// TaskConfig holds per-task configuration for dependency ordering and concurrent companions.
+// dependency ordering + concurrent companions
 type TaskConfig struct {
 	DependsOn  []string `json:"dependsOn,omitempty"`
 	Concurrent []string `json:"concurrent,omitempty"`
@@ -37,8 +36,7 @@ type Config struct {
 	TuiCleanExit   bool                  `json:"-"`              // populated from tui object form; not serialized directly
 }
 
-// EnvEntry holds a single env file path and its variable validation rules.
-// label is optional but recommended in multi-app setups.
+// label is optional but recommended in multi-app setups
 type EnvEntry struct {
 	Scope     string       `json:"scope,omitempty"`
 	Label     string       `json:"label,omitempty"`
@@ -101,7 +99,6 @@ func (v VarConfigOrString) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Config)
 }
 
-// VarConfig holds per-variable validation rules
 type VarConfig struct {
 	Type        string   `json:"type"`
 	Optional    bool     `json:"optional"`

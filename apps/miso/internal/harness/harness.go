@@ -19,7 +19,7 @@ var table = []Harness{
 	{Agent: "cursor", Label: "Cursor", Bins: []string{"cursor", "cursor-agent"}},
 }
 
-var errNotFound = errors.New("not found")
+var errNotFound = errors.New("harness: not found")
 
 // seam for tests
 var lookPath = exec.LookPath

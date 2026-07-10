@@ -8,7 +8,6 @@ import (
 	"github.com/ekkolyth/miso/internal/workspace"
 )
 
-// ResolveWorkspaceScript resolves a script by name within a specific workspace.
 // workspaceName is matched against members by basename, relative path,
 // or package.json name field. scriptName is the script to find.
 // Returns the resolved script, the workspace directory as the working directory,

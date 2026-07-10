@@ -35,7 +35,7 @@ func ErrorContains(t testing.TB, err error, substr string) {
 	}
 }
 
-// WriteFiles creates empty files with the given names under dir.
+// empty files under dir
 func WriteFiles(t testing.TB, dir string, names ...string) {
 	t.Helper()
 	for _, name := range names {

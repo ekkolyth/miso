@@ -11,27 +11,26 @@ import (
 
 const docsURL = "https://misojs.dev"
 
-// RunHelp prints the miso logo and built-in command reference to stdout.
 func RunHelp() {
 	_, _ = fmt.Fprint(os.Stdout, RenderHelp())
 }
 
-// RenderHelp builds the help screen: logo, tagline, grouped commands, docs link.
+// logo, tagline, grouped commands, docs link
 func RenderHelp() string {
-	s := ui.Default()
+	styles := ui.Default()
 	var out strings.Builder
 	out.WriteString(RenderMisoLogo())
-	out.WriteString("\n" + s.Heading.Render("Miso") + " – the agnostic package manager\n\n")
-	out.WriteString(renderCommandGroup(s, "Commands", false))
+	out.WriteString("\n" + styles.Heading.Render("Miso") + " – the agnostic package manager\n\n")
+	out.WriteString(renderCommandGroup(styles, "Commands", false))
 	out.WriteString("\n")
-	out.WriteString(renderCommandGroup(s, "Miso", true))
-	out.WriteString("\n" + s.Muted.Render("Docs:") + " " + s.Flavor.Render(docsURL) + "\n")
+	out.WriteString(renderCommandGroup(styles, "Miso", true))
+	out.WriteString("\n" + styles.Muted.Render("Docs:") + " " + styles.Flavor.Render(docsURL) + "\n")
 	return out.String()
 }
 
-func renderCommandGroup(s ui.Styles, title string, meta bool) string {
+func renderCommandGroup(styles ui.Styles, title string, meta bool) string {
 	var out strings.Builder
-	out.WriteString(s.Label.Render(title) + "\n")
+	out.WriteString(styles.Label.Render(title) + "\n")
 	for _, cmd := range cli.Builtins {
 		if cmd.Meta != meta {
 			continue
@@ -41,7 +40,7 @@ func renderCommandGroup(s ui.Styles, title string, meta bool) string {
 			left += " " + cmd.Usage
 		}
 		// pad the plain string before styling so ANSI codes don't skew the column
-		_, _ = fmt.Fprintf(&out, "  %s %s\n", s.Accent.Render(fmt.Sprintf("%-28s", left)), s.Muted.Render(cmd.Summary))
+		_, _ = fmt.Fprintf(&out, "  %s %s\n", styles.Accent.Render(fmt.Sprintf("%-28s", left)), styles.Muted.Render(cmd.Summary))
 	}
 	return out.String()
 }

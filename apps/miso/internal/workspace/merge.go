@@ -4,31 +4,31 @@ import "github.com/ekkolyth/miso/internal/config"
 
 // overlays a member's miso.json onto root for non-env fields.
 // Env is resolved per-target elsewhere; member Repo is ignored (members are leaves).
-func EffectiveConfig(root config.Config, m Member) config.Config {
-	if m.ConfigPath == "" {
+func EffectiveConfig(root config.Config, member Member) config.Config {
+	if member.ConfigPath == "" {
 		return root
 	}
-	member, err := config.Load(m.Dir)
+	memberCfg, err := config.Load(member.Dir)
 	if err != nil {
 		return root
 	}
 
 	merged := root
-	if member.Scripts != "" {
-		merged.Scripts = member.Scripts
+	if memberCfg.Scripts != "" {
+		merged.Scripts = memberCfg.Scripts
 	}
-	if member.Shell != "" {
-		merged.Shell = member.Shell
+	if memberCfg.Shell != "" {
+		merged.Shell = memberCfg.Shell
 	}
-	if len(member.Flags) > 0 {
-		merged.Flags = member.Flags
+	if len(memberCfg.Flags) > 0 {
+		merged.Flags = memberCfg.Flags
 	}
-	if member.TuiMode != "" && member.TuiMode != "off" {
-		merged.TuiMode = member.TuiMode
-		merged.TuiCleanExit = member.TuiCleanExit
+	if memberCfg.TuiMode != "" && memberCfg.TuiMode != "off" {
+		merged.TuiMode = memberCfg.TuiMode
+		merged.TuiCleanExit = memberCfg.TuiCleanExit
 	}
-	if len(member.Tasks) > 0 {
-		merged.Tasks = member.Tasks
+	if len(memberCfg.Tasks) > 0 {
+		merged.Tasks = memberCfg.Tasks
 	}
 	return merged
 }

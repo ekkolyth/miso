@@ -9,19 +9,12 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/ekkolyth/miso/internal/ui"
 )
 
-// Fixed color palette for workspace labels — cycles if more workspaces than colors.
-var labelColors = []color.Color{
-	lipgloss.Color("#7c3aed"), // purple
-	lipgloss.Color("#3b82f6"), // blue
-	lipgloss.Color("#f59e0b"), // amber
-	lipgloss.Color("#10b981"), // emerald
-	lipgloss.Color("#ef4444"), // red
-	lipgloss.Color("#ec4899"), // pink
-	lipgloss.Color("#06b6d4"), // cyan
-	lipgloss.Color("#f97316"), // orange
-}
+// workspace label palette (canonical set in internal/ui) — cycles if more workspaces than colors
+var labelColors = ui.LabelColors
 
 type MergedModel struct {
 	pm               *ProcessManager
