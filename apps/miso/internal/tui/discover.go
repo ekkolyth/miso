@@ -36,7 +36,7 @@ type TuiScriptEntry struct {
 //
 // Prefix matching: command "dev" matches "dev", "dev:worker", "dev/worker", etc.
 // Scripts folder takes precedence over package.json for the same script name.
-// Labels: single match per workspace → workspace name; multiple matches → "workspace:scriptName".
+// Labels: single match per workspace → workspace name; multiple matches → "workspace/scriptName".
 // Results are sorted alphabetically by label.
 func DiscoverTuiScripts(command string, workspaces []WorkspaceInfo, scriptsFolder string) ([]TuiScriptEntry, error) {
 	if scriptsFolder == "" {
@@ -129,7 +129,7 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 		if len(matches) == 1 {
 			label = ws.Name
 		} else {
-			label = ws.Name + ":" + m.name
+			label = ws.Name + "/" + m.name
 		}
 		entries = append(entries, TuiScriptEntry{
 			Label:         label,
@@ -155,7 +155,7 @@ func matchesPrefix(command, scriptName string) bool {
 }
 
 // DeduplicateLabels ensures all labels in the merged entry list are unique.
-// For any label that appears more than once, it rewrites to "label:scriptName".
+// For any label that appears more than once, it rewrites to "label/scriptName".
 func DeduplicateLabels(entries []TuiScriptEntry) []TuiScriptEntry {
 	// Count label occurrences
 	counts := make(map[string]int)
@@ -166,7 +166,7 @@ func DeduplicateLabels(entries []TuiScriptEntry) []TuiScriptEntry {
 	// Rewrite duplicates
 	for i := range entries {
 		if counts[entries[i].Label] > 1 {
-			entries[i].Label = entries[i].Label + ":" + entries[i].ScriptName
+			entries[i].Label = entries[i].Label + "/" + entries[i].ScriptName
 		}
 	}
 
