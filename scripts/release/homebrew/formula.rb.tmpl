@@ -33,6 +33,7 @@ class Miso < Formula
     arch = Hardware::CPU.arm? ? "arm64" : "amd64"
 
     bin.install "miso-#{os}-#{arch}" => "miso"
+    bin.install "misox-#{os}-#{arch}" => "misox"
   end
 
   test do
