@@ -161,8 +161,14 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	}
 
 	// routeTurbo handles turbo output with per-task exit codes and cache metadata.
-	routeTurbo := func(meta turbo.LineMeta) {
-		if meta.Skip || meta.Label == "" {
+	// Lines with no task prefix (turbo's own orchestration, warnings, errors) are
+	// surfaced under a "turbo" tab instead of dropped — otherwise a failed or
+	// task-less run leaves the TUI blank and quits with no explanation.
+	routeTurbo := func(meta turbo.LineMeta, raw string) {
+		if meta.Label == "" {
+			if strings.TrimSpace(raw) != "" {
+				routeBasic("turbo", raw)
+			}
 			return
 		}
 		proc := pm.findProc(meta.Label)
@@ -205,7 +211,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 				line := stripNonColorANSI(scanner.Text())
 				switch mode {
 				case "turbo":
-					routeTurbo(turbo.ParseLine(line))
+					routeTurbo(turbo.ParseLine(line), line)
 				case "nx":
 					if hdrLabel, isHdr := parseNxHeader(line); isHdr {
 						currentNxLabel = hdrLabel
