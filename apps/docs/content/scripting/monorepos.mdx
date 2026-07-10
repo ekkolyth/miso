@@ -1,6 +1,6 @@
 # Monorepos
 
-Miso has first-class support for monorepos. Workspace membership is auto-detected — independent of the `repo` setting — from a `pnpm-workspace.yaml` (checked first) or a `workspaces` field in your root `package.json`. When members are found, you can run workspace-scoped scripts using the `@workspace/script` syntax, and Miso will automatically scope commands based on your current directory.
+Miso has first-class support for monorepos. Workspace membership is auto-detected — independent of the `repo` setting — from a `pnpm-workspace.yaml` (checked first) or a `workspaces` field in your root `package.json`. When members are found, you can run workspace-scoped scripts using the verb-first `miso <script> @scope` syntax, and Miso will automatically scope commands based on your current directory.
 
 ## Setup
 
@@ -64,17 +64,33 @@ my-monorepo/
 
 ## Running Workspace Scripts
 
-### From the Root — `@workspace/script` Syntax
+### From the Root — `miso <script> @scope`
 
-Target any workspace's scripts from the project root using the `@workspace/script` syntax:
+Target one or more workspaces' scripts from the project root by appending an `@scope` after the script name:
 
 ```bash
-miso @api/build    # runs apps/api/scripts/build.sh
-miso @web/dev             # runs apps/web/scripts/dev.sh
-miso @ui/build            # runs packages/ui/scripts/build.sh
+miso build @api   # runs apps/api/scripts/build.sh
+miso dev @web     # runs apps/web/scripts/dev.sh
+miso build @ui    # runs packages/ui/scripts/build.sh
 ```
 
-The workspace identifier is the part between `@` and the final `/`. By default this is the basename of the workspace directory — for example, `apps/api` → `api`, `packages/ui` → `ui`.
+The `@` sigil is required — it's what tells Miso a token is a scope rather than a passthrough argument.
+
+Pass more than one scope to run the same script across several workspaces:
+
+```bash
+miso dev @web @api    # runs dev in both apps/web and apps/api
+```
+
+Anything after `--` is passed straight through to the underlying script and is never treated as a scope:
+
+```bash
+miso test @web -- --watch
+```
+
+An explicit `@scope` is always honored or Miso fails — if it doesn't resolve to a workspace, or the target isn't something Miso can scope, the command exits with an error rather than quietly running unscoped.
+
+> The old prefixed form, `miso @workspace/script`, has been removed in favor of `miso <script> @scope`.
 
 ### From Inside a Workspace — Automatic Scoping
 
@@ -99,28 +115,28 @@ Two things are **not** taken from a member's config:
 
 ## How Workspace Matching Works
 
-The identifier in `@identifier/script` is matched against every discovered workspace using three strategies, checked in order:
+A `@scope` token is matched against every discovered workspace using three strategies, checked in order:
 
-1. **Basename** — the final segment of the workspace directory path (e.g. `api` matches `packages/api`)
-2. **Relative path from root** — the full path from the repo root (e.g. `packages/api` matches `packages/api`)
-3. **`package.json` name** — the `name` field in the workspace's `package.json` (e.g. `@myorg/api`)
+1. **Full `package.json` name** — the `name` field in the workspace's `package.json` (e.g. `@myorg/api`)
+2. **Short-name or directory basename** — the segment after the last `/` in the package name, or the workspace directory's basename when it has none (e.g. `api` matches `packages/api`)
+3. **Relative path from root** — the full path from the repo root (e.g. `packages/api` matches `packages/api`)
 
 So for a workspace at `packages/api` with `"name": "@myorg/api"` in its `package.json`, all three of the following are equivalent:
 
 ```bash
-miso @api/build            # matched by basename
-miso @packages/api/build   # matched by relative path
-miso @myorg/api/build      # matched by package.json name
+miso build @myorg/api      # matched by full package.json name
+miso build @api            # matched by short-name / basename
+miso build @packages/api   # matched by relative path
 ```
 
-If the identifier matches more than one workspace, Miso exits with an error listing the conflicting paths so you can use a more specific form:
+If a scope matches more than one workspace, Miso exits with an error listing the conflicting names so you can use a more specific form:
 
 ```
-workspace "api" is ambiguous — matches multiple workspaces: apps/api, packages/api (use a more specific identifier)
+scope "@api" is ambiguous — matches @myorg/api, @other/api; use the full @scope/name
 ```
 
-If no workspace matches, Miso exits with an error listing the available workspace names:
+If no workspace matches, Miso exits with an error listing the available scopes:
 
 ```
-workspace "typo" not found (available: api, web, ui)
+scope "@typo" matched no workspace (available: @myorg/api, @myorg/web, @myorg/ui)
 ```
