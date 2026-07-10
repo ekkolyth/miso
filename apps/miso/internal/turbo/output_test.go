@@ -8,6 +8,34 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
+func TestParseLineColoredPrefix(t *testing.T) {
+	// FORCE_COLOR / a color terminal makes turbo wrap the prefix in SGR:
+	// "\x1b[35mmcp:dev: \x1b[0mtext". These must still parse (real ekko output).
+	m := ParseLine("\x1b[35mmcp:dev: \x1b[0mcache bypass, force executing \x1b[2mabc123\x1b[0m")
+	if m.Skip {
+		t.Fatal("colored task line was dropped (Skip); every workspace's output would vanish")
+	}
+	if m.Label != "mcp:dev" {
+		t.Errorf("Label = %q, want mcp:dev", m.Label)
+	}
+
+	scoped := ParseLine("\x1b[34m@ekko/ui:dev: \x1b[0mStorybook ready")
+	if scoped.Skip || scoped.Label != "@ekko/ui:dev" {
+		t.Errorf("scoped colored label = %q (skip=%v), want @ekko/ui:dev", scoped.Label, scoped.Skip)
+	}
+}
+
+func TestParseLineColoredExitAndCache(t *testing.T) {
+	ex := ParseLine("\x1b[36mapi:dev: \x1b[0m\x1b[31mexited with code 1\x1b[0m")
+	if !ex.IsExit || ex.ExitCode != 1 {
+		t.Errorf("colored exit line: IsExit=%v ExitCode=%d, want true/1", ex.IsExit, ex.ExitCode)
+	}
+	ch := ParseLine("\x1b[32mweb:build: \x1b[0m\x1b[2mcache hit, replaying logs\x1b[0m")
+	if ch.CacheHit == nil || !*ch.CacheHit {
+		t.Errorf("colored cache-hit not detected: %+v", ch)
+	}
+}
+
 func TestParseLineWorkspaceOutput(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -119,9 +147,9 @@ func TestParseLineExitCode(t *testing.T) {
 
 func TestParseLineCacheStatus(t *testing.T) {
 	tests := []struct {
-		name          string
-		line          string
-		wantCacheHit  *bool
+		name         string
+		line         string
+		wantCacheHit *bool
 	}{
 		{
 			name:         "cache hit",
