@@ -39,6 +39,28 @@ func TestReadLinesReassemblesAndCountsExactly(t *testing.T) {
 	}
 }
 
+func TestProcessManagerPinLast(t *testing.T) {
+	pm := NewProcessManager()
+	pm.Add(TuiScriptEntry{Label: "turbo"}, "", nil, "", nil) // meta tab created first
+	pm.Add(TuiScriptEntry{Label: "api:dev"}, "", nil, "", nil)
+	pm.PinLast("turbo")
+	pm.Add(TuiScriptEntry{Label: "web:dev"}, "", nil, "", nil)
+	pm.PinLast("turbo")
+
+	var order []string
+	for _, p := range pm.Processes {
+		order = append(order, p.Entry.Label)
+	}
+	if got := strings.Join(order, ","); got != "api:dev,web:dev,turbo" {
+		t.Errorf("tab order = %q, want api:dev,web:dev,turbo", got)
+	}
+
+	pm.PinLast("absent") // no-op
+	if pm.Processes[len(pm.Processes)-1].Entry.Label != "turbo" {
+		t.Error("PinLast(absent) must not change order")
+	}
+}
+
 func TestProcessManager_SpawnAndCapture(t *testing.T) {
 	pm := NewProcessManager()
 

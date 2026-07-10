@@ -100,6 +100,27 @@ func (pm *ProcessManager) Add(entry TuiScriptEntry, command string, args []strin
 	return p
 }
 
+// PinLast moves the process with the given label to the end of the list — used
+// to keep a meta tab (e.g. "turbo") below the real workspace tabs as they stream
+// in. No-op if the label isn't present or is already last.
+func (pm *ProcessManager) PinLast(label string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	idx := -1
+	for i, p := range pm.Processes {
+		if p.Entry.Label == label {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 || idx == len(pm.Processes)-1 {
+		return
+	}
+	p := pm.Processes[idx]
+	pm.Processes = append(pm.Processes[:idx], pm.Processes[idx+1:]...)
+	pm.Processes = append(pm.Processes, p)
+}
+
 // Start spawns the process, captures stdout and stderr in separate goroutines,
 // and manages the process lifecycle.
 func (pm *ProcessManager) Start(p *Process) error {

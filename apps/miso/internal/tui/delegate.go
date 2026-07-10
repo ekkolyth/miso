@@ -29,6 +29,10 @@ func parseNxHeader(line string) (label string, isHeader bool) {
 	return m[1], true
 }
 
+// metaTabLabel is the synthetic tab carrying turbo's own (non-task) output; it
+// is pinned below the real workspace tabs.
+const metaTabLabel = "turbo"
+
 // FORCE_COLOR=1 unless the caller already set FORCE_COLOR or opted out via
 // NO_COLOR (NO_COLOR wins, matching turbo/nx and the no-color.org convention).
 func delegatedColorEnv(base []string) []string {
@@ -155,6 +159,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 			proc = pm.Add(entry, "", nil, root, nil)
 			proc.State = StateRunning
 			pm.sendState(proc, StateRunning, 0)
+			pm.PinLast(metaTabLabel)
 		}
 		proc.Buffer.Write(text)
 		pm.sendOutput(proc, text)
@@ -167,7 +172,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	routeTurbo := func(meta turbo.LineMeta, raw string) {
 		if meta.Label == "" {
 			if strings.TrimSpace(raw) != "" {
-				routeBasic("turbo", raw)
+				routeBasic(metaTabLabel, raw)
 			}
 			return
 		}
@@ -177,6 +182,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 			proc = pm.Add(entry, "", nil, root, nil)
 			proc.State = StateRunning
 			pm.sendState(proc, StateRunning, 0)
+			pm.PinLast(metaTabLabel)
 		}
 		if meta.IsExit {
 			proc.mu.Lock()
