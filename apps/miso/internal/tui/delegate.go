@@ -41,6 +41,25 @@ func delegatedColorEnv(base []string) []string {
 	return append(base, "FORCE_COLOR=1")
 }
 
+// delegateFilterArgs builds the scope-filter flags for a delegated run. turbo
+// takes one --filter=<name> per member; nx takes a single comma-joined
+// --projects=<a>,<b>.
+func delegateFilterArgs(mode string, filters []string) []string {
+	if len(filters) == 0 {
+		return nil
+	}
+	switch mode {
+	case "nx":
+		return []string{"--projects=" + strings.Join(filters, ",")}
+	default: // turbo
+		out := make([]string, 0, len(filters))
+		for _, name := range filters {
+			out = append(out, "--filter="+name)
+		}
+		return out
+	}
+}
+
 // DelegateLaunch spawns turbo or nx as a single process and renders its output
 // in the miso TUI. Returns (true, nil) if the TUI ran successfully.
 //
@@ -49,7 +68,7 @@ func delegatedColorEnv(base []string) []string {
 // child processes — and turbo runs its own TTY-aware UI — so miso supplies only
 // the chrome (sidebar/tabs + log rendering) and leaves process lifecycle and
 // stdin to them. A pty here would collide with turbo's own terminal UI.
-func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs []string) (bool, error) {
+func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs []string, filters []string) (bool, error) {
 	if !cfg.TuiEnabled() {
 		return false, nil
 	}
@@ -71,9 +90,10 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	var delegateArgs []string
 	switch mode {
 	case "turbo":
-		delegateArgs = append([]string{"run", scriptName, "--log-order=stream"}, extraArgs...)
+		delegateArgs = append([]string{"run", scriptName, "--log-order=stream"}, delegateFilterArgs(mode, filters)...)
+		delegateArgs = append(delegateArgs, extraArgs...)
 	case "nx":
-		delegateArgs = []string{"run-many", "--target=" + scriptName}
+		delegateArgs = append([]string{"run-many", "--target=" + scriptName}, delegateFilterArgs(mode, filters)...)
 	default:
 		return false, fmt.Errorf("unsupported delegated mode: %s", mode)
 	}

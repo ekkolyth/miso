@@ -225,7 +225,7 @@ func main() {
 
 		// TUI interception for simple mode
 		if cfg.TuiEnabled() {
-			ran, err := tui.Launch(cfg, cmd, projectRoot, nil)
+			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -306,11 +306,18 @@ func main() {
 			// script or the built-in dev/run action, where miso reconstructs
 			// `turbo run <name>` itself.
 			switch parsed.Action {
-			case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON:
+			case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough:
 				scriptName := parsed.ScriptName
-				if parsed.Action == cli.ActionDev {
+				scriptArgs := parsed.ScriptArgs
+				switch parsed.Action {
+				case cli.ActionDev:
 					scriptName = "dev"
+				case cli.ActionPassthrough:
+					scriptName = parsed.Command
+					scriptArgs = parsed.Args
 				}
+
+				filters := scopeFilterNames(parsed.Scopes, projectRoot, cfg, logger)
 
 				if cfg.IsDelegated() {
 					// Check if this task is overridden by miso's direct orchestration
@@ -320,7 +327,7 @@ func main() {
 						if !ok {
 							cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
 						}
-						ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr)
+						ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters)
 						if err != nil {
 							cli.Fail(logger, err, false)
 						}
@@ -332,8 +339,8 @@ func main() {
 						turboCfg, turboErr := turbo.LoadConfig(projectRoot)
 						if turboErr == nil {
 							if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
-								_, turboFlags := turbo.SplitFlags(parsed.ScriptArgs, cfg.TuiEnabled())
-								ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags)
+								_, turboFlags := turbo.SplitFlags(scriptArgs, cfg.TuiEnabled())
+								ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
 								if err != nil {
 									cli.Fail(logger, err, false)
 								}
@@ -348,7 +355,7 @@ func main() {
 					if !ok {
 						cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
 					}
-					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr)
+					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters)
 					if err != nil {
 						cli.Fail(logger, err, false)
 					}
@@ -356,7 +363,8 @@ func main() {
 						return
 					}
 				}
-				// TUI was not applicable — fall through to normal execution
+				// TUI/delegation not applicable — fall through. The Task 4
+				// fail-safe rejects any explicit scope that reached here.
 			}
 		}
 	}
@@ -457,6 +465,25 @@ func main() {
 	default:
 		cli.Fail(logger, fmt.Errorf("unknown action"), true)
 	}
+}
+
+// scopeFilterNames resolves parsed.Scopes to full member package names. An
+// unknown or ambiguous scope token the user typed is fatal — miso refuses to
+// run when it can't honor an explicit scope.
+func scopeFilterNames(scopes []string, projectRoot string, cfg config.Config, logger *log.Logger) []string {
+	if len(scopes) == 0 {
+		return nil
+	}
+	members, _ := workspace.DiscoverMembers(projectRoot, cfg)
+	resolved, err := workspace.ResolveScopes(scopes, members, projectRoot)
+	if err != nil {
+		cli.Fail(logger, err, false)
+	}
+	names := make([]string, 0, len(resolved))
+	for _, member := range resolved {
+		names = append(names, member.Name)
+	}
+	return names
 }
 
 // runEnvIfRequested checks for --env in effective args (config flags + CLI args).

@@ -30,7 +30,7 @@ func folderSpawn(scriptPath, shell, managerName string) (string, []string, error
 // Returns (true, nil) if the TUI ran successfully.
 // Returns (false, nil) if the TUI was not applicable (caller should fall through to normal execution).
 // Returns (false, err) on error.
-func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager) (bool, error) {
+func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string) (bool, error) {
 	if !cfg.TuiEnabled() {
 		return false, nil
 	}

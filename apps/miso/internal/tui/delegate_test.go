@@ -29,6 +29,20 @@ func TestDelegatedColorEnv(t *testing.T) {
 	})
 }
 
+func TestDelegateFilterArgs(t *testing.T) {
+	turbo := delegateFilterArgs("turbo", []string{"@ekko/web", "@ekko/api"})
+	if len(turbo) != 2 || turbo[0] != "--filter=@ekko/web" || turbo[1] != "--filter=@ekko/api" {
+		t.Errorf("turbo filters = %v", turbo)
+	}
+	nx := delegateFilterArgs("nx", []string{"web", "api"})
+	if len(nx) != 1 || nx[0] != "--projects=web,api" {
+		t.Errorf("nx filters = %v", nx)
+	}
+	if len(delegateFilterArgs("turbo", nil)) != 0 {
+		t.Error("no filters -> no args")
+	}
+}
+
 func TestParseNxHeader(t *testing.T) {
 	tests := []struct {
 		line  string
