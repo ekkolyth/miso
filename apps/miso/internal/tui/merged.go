@@ -168,7 +168,7 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
 				_, rowSeqs := m.buildLogVisualRows(m.logHeight(), SelectionState{})
-				if row < len(rowSeqs) {
+				if row < len(rowSeqs) && rowSeqs[row] >= 0 {
 					seq := rowSeqs[row]
 					m.sel = SelectionState{active: true, startSeq: seq, endSeq: seq}
 				}
@@ -180,7 +180,7 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
 				_, rowSeqs := m.buildLogVisualRows(m.logHeight(), SelectionState{})
-				if row < len(rowSeqs) {
+				if row < len(rowSeqs) && rowSeqs[row] >= 0 {
 					m.sel.endSeq = rowSeqs[row]
 				}
 			}
@@ -254,9 +254,15 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// headerHeight is the rendered line count of the filter bar (header + tab row +
+// selector). Derived, not fixed, because the tab/selector rows wrap on narrow
+// widths — so the log-area offset self-corrects on resize.
+func (m MergedModel) headerHeight() int {
+	return lipgloss.Height(m.renderFilterBar())
+}
+
 func (m MergedModel) logHeight() int {
-	// header (1) + tab row (1) + selector/divider (1), rest is logs
-	h := m.height - 3
+	h := m.height - m.headerHeight()
 	if h < 0 {
 		return 0
 	}
@@ -272,10 +278,8 @@ func (m MergedModel) View() tea.View {
 	logHeight := m.logHeight()
 
 	logOutput, _ := m.buildLogVisualRows(logHeight, m.sel)
-	// Pad to fill.
-	for len(logOutput) < logHeight {
-		logOutput = append(logOutput, "")
-	}
+	// buildLogVisualRows already pads to logHeight — empty rows on top, content
+	// pinned to the bottom.
 
 	// Note: selection highlighting is applied inside buildLogVisualRows, where
 	// the label and text are still separate pieces. Applying selectedBg.Render()
@@ -448,8 +452,7 @@ func (m MergedModel) copyAllText() string {
 // mouseToLogRow converts absolute terminal coordinates to a 0-based visual
 // log row index. Returns -1 if the coordinate is above the log area.
 func (m MergedModel) mouseToLogRow(_, y int) int {
-	logPanelTop := 3 // row 0=header, 1=tabs, 2=selector, 3+=logs
-	row := y - logPanelTop
+	row := y - m.headerHeight()
 	if row < 0 {
 		return -1
 	}
@@ -550,5 +553,5 @@ func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) ([]st
 		logOutput = logOutput[len(logOutput)-logHeight:]
 		seqs = seqs[len(seqs)-logHeight:]
 	}
-	return logOutput, seqs
+	return padTop(logOutput, seqs, logHeight)
 }
