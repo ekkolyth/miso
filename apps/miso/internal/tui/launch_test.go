@@ -6,6 +6,20 @@ import (
 	"testing"
 )
 
+func TestFilterEntriesByWorkspace(t *testing.T) {
+	entries := []TuiScriptEntry{
+		{Label: "web", WorkspaceName: "@ekko/web"},
+		{Label: "api", WorkspaceName: "@ekko/api"},
+	}
+	got := filterEntriesByWorkspace(entries, []string{"@ekko/web"})
+	if len(got) != 1 || got[0].WorkspaceName != "@ekko/web" {
+		t.Errorf("got %v, want only @ekko/web", got)
+	}
+	if len(filterEntriesByWorkspace(entries, nil)) != 2 {
+		t.Error("nil filter keeps all entries")
+	}
+}
+
 func TestFolderSpawn_ShellScript(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "task.sh")
 	if err := os.WriteFile(path, []byte("echo hi\n"), 0o644); err != nil {

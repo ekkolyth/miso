@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/log"
 
@@ -367,6 +368,21 @@ func main() {
 				// fail-safe rejects any explicit scope that reached here.
 			}
 		}
+	}
+
+	// An explicit @scope must have been honored by a scope-aware run above.
+	// Reaching here with scopes set means none fired (TUI off, no TTY, the
+	// target isn't a turbo/nx task, or the script exists in no target member) —
+	// refuse to run unscoped.
+	if len(parsed.Scopes) > 0 {
+		target := parsed.ScriptName
+		if parsed.Action == cli.ActionPassthrough {
+			target = parsed.Command
+		}
+		cli.Fail(logger, fmt.Errorf(
+			"cannot scope %q to %s — scoped runs need an interactive terminal and a workspace-aware target (a turbo/nx task or a script defined in the target workspace)",
+			target, strings.Join(parsed.Scopes, " "),
+		), false)
 	}
 
 	// Route to command handlers

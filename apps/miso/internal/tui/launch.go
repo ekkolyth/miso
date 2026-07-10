@@ -26,6 +26,25 @@ func folderSpawn(scriptPath, shell, managerName string) (string, []string, error
 	return interp, append(interpArgs, scriptPath), nil
 }
 
+// filterEntriesByWorkspace keeps only entries whose WorkspaceName is in names.
+// A nil/empty names keeps all entries (no scope requested).
+func filterEntriesByWorkspace(entries []TuiScriptEntry, names []string) []TuiScriptEntry {
+	if len(names) == 0 {
+		return entries
+	}
+	keep := make(map[string]bool, len(names))
+	for _, name := range names {
+		keep[name] = true
+	}
+	var out []TuiScriptEntry
+	for _, entry := range entries {
+		if keep[entry.WorkspaceName] {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
 // Launch starts the TUI with the given config, script name, and manager.
 // Returns (true, nil) if the TUI ran successfully.
 // Returns (false, nil) if the TUI was not applicable (caller should fall through to normal execution).
@@ -46,6 +65,14 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	}
 	if len(entries) == 0 {
 		return false, nil // fall through to normal execution
+	}
+
+	if len(filterNames) > 0 {
+		filtered := filterEntriesByWorkspace(entries, filterNames)
+		if len(filtered) == 0 {
+			return false, fmt.Errorf("no %q script in workspace(s) %s", scriptName, strings.Join(filterNames, ", "))
+		}
+		entries = filtered
 	}
 
 	pm := NewProcessManager()
