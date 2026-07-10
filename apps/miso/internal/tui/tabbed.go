@@ -2,12 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // allExitedMsg fires after all processes have exited and the 2-second delay has passed.
@@ -619,39 +621,61 @@ func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) ([]string, []in
 	return rows, seqs
 }
 
-// wrapLine splits a single log line into multiple visual rows of at most `width`
-// printable columns. It is rune-aware. Always returns at least one row.
+const ansiReset = "\x1b[0m"
+
+var sgrSeq = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// wrapLine splits a single log line into visual rows of at most `width`
+// printable columns. It is grapheme- and ANSI-aware: escape sequences are
+// never split, and any SGR style still active at a wrap point is re-emitted at
+// the start of the next row (then closed at each row's end) so wrapped colored
+// lines keep their color on every continuation row. Always returns at least
+// one row.
 func wrapLine(line string, width int) []string {
-	if width <= 0 {
+	if width <= 0 || lipgloss.Width(line) <= width {
 		return []string{line}
 	}
-	runes := []rune(line)
-	if lipgloss.Width(line) <= width {
-		return []string{line}
-	}
-	var rows []string
-	for len(runes) > 0 {
-		// If remaining runes fit entirely, take them all.
-		if lipgloss.Width(string(runes)) <= width {
-			rows = append(rows, string(runes))
-			break
+	rows := strings.Split(ansi.HardwrapWc(line, width, true), "\n")
+	pen := ""
+	for i, row := range rows {
+		next := penAfter(pen, row)
+		if i > 0 {
+			row = pen + row
 		}
-		// Binary-search for the largest rune-boundary prefix that fits.
-		lo, hi := 0, len(runes)
-		for lo+1 < hi {
-			mid := (lo + hi) / 2
-			if lipgloss.Width(string(runes[:mid])) <= width {
-				lo = mid
-			} else {
-				hi = mid
-			}
+		if next != "" {
+			row += ansiReset
 		}
-		if lo == 0 {
-			// Single rune is wider than width (e.g. full-width terminal art) — take it anyway.
-			lo = 1
-		}
-		rows = append(rows, string(runes[:lo]))
-		runes = runes[lo:]
+		rows[i] = row
+		pen = next
 	}
 	return rows
+}
+
+// penAfter returns the SGR sequence(s) still active after `row`, given the
+// styles `pen` active on entry. A reset param (0 or empty) clears the
+// accumulation; any other param appends.
+func penAfter(pen, row string) string {
+	for _, seq := range sgrSeq.FindAllString(row, -1) {
+		pen = applyPen(pen, seq)
+	}
+	return pen
+}
+
+func applyPen(pen, seq string) string {
+	inner := strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b["), "m")
+	reset, setsMore := false, false
+	for _, param := range strings.Split(inner, ";") {
+		if param == "" || param == "0" {
+			reset = true
+		} else {
+			setsMore = true
+		}
+	}
+	if reset {
+		if setsMore {
+			return seq
+		}
+		return ""
+	}
+	return pen + seq
 }

@@ -177,6 +177,26 @@ func TestWrapLine(t *testing.T) {
 			width: 4,
 			want:  []string{"你好", "世界"}, // 2 chars × 2 cols = 4 each
 		},
+		{
+			name:  "ansi color re-emitted on every wrapped row",
+			line:  "\x1b[31mAAAAAAAAAA\x1b[0m", // red, 10 cols
+			width: 4,
+			want: []string{
+				"\x1b[31mAAAA\x1b[0m",
+				"\x1b[31mAAAA\x1b[0m",
+				"\x1b[31mAA\x1b[0m",
+			},
+		},
+		{
+			name:  "carry stops after mid-line reset",
+			line:  "\x1b[31mAAAA\x1b[0mBBBBBB",
+			width: 4,
+			want: []string{
+				"\x1b[31mAAAA\x1b[0m",
+				"BBBB",
+				"BB",
+			},
+		},
 	}
 
 	for _, tt := range tests {
