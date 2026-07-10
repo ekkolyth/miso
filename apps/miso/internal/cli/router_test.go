@@ -32,75 +32,62 @@ func TestParseDevConflictErrors(t *testing.T) {
 	}
 }
 
-func TestParseAtWorkspaceScript(t *testing.T) {
-	parsed, err := ParseCLI([]string{"@api/test"}, monoCfg(), t.TempDir())
+func TestParseDevWithScope(t *testing.T) {
+	parsed, err := ParseCLI([]string{"dev", "@web"}, monoCfg(), t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if parsed.Action != ActionWorkspaceScript {
-		t.Errorf("Action = %v, want ActionWorkspaceScript", parsed.Action)
+	if parsed.Action != ActionDev {
+		t.Errorf("Action = %v, want ActionDev", parsed.Action)
 	}
-	if parsed.WorkspaceName != "api" {
-		t.Errorf("WorkspaceName = %q, want %q", parsed.WorkspaceName, "api")
-	}
-	if parsed.ScriptName != "test" {
-		t.Errorf("ScriptName = %q, want %q", parsed.ScriptName, "test")
+	if len(parsed.Scopes) != 1 || parsed.Scopes[0] != "@web" {
+		t.Errorf("Scopes = %v, want [@web]", parsed.Scopes)
 	}
 }
 
-func TestParseAtWorkspaceColonScript(t *testing.T) {
-	parsed, err := ParseCLI([]string{"@api/test:unit"}, monoCfg(), t.TempDir())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestParseScopeStopsAtDoubleDash(t *testing.T) {
+	parsed, _ := ParseCLI([]string{"dev", "@web", "--", "@notascope"}, monoCfg(), t.TempDir())
+	if len(parsed.Scopes) != 1 || parsed.Scopes[0] != "@web" {
+		t.Errorf("Scopes = %v, want [@web]", parsed.Scopes)
 	}
-	if parsed.WorkspaceName != "api" {
-		t.Errorf("WorkspaceName = %q, want %q", parsed.WorkspaceName, "api")
-	}
-	if parsed.ScriptName != "test:unit" {
-		t.Errorf("ScriptName = %q, want %q", parsed.ScriptName, "test:unit")
+	if len(parsed.ScriptArgs) != 1 || parsed.ScriptArgs[0] != "@notascope" {
+		t.Errorf("ScriptArgs = %v, want [@notascope]", parsed.ScriptArgs)
 	}
 }
 
-func TestParseAtScopedWorkspace(t *testing.T) {
-	parsed, err := ParseCLI([]string{"@myorg/api/build"}, monoCfg(), t.TempDir())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if parsed.WorkspaceName != "myorg/api" {
-		t.Errorf("WorkspaceName = %q, want %q", parsed.WorkspaceName, "myorg/api")
-	}
-	if parsed.ScriptName != "build" {
-		t.Errorf("ScriptName = %q, want %q", parsed.ScriptName, "build")
+func TestParseMultipleScopes(t *testing.T) {
+	parsed, _ := ParseCLI([]string{"build", "@web", "@api"}, monoCfg(), t.TempDir())
+	if len(parsed.Scopes) != 2 {
+		t.Errorf("Scopes = %v, want 2 scopes", parsed.Scopes)
 	}
 }
 
-func TestParseAtWorkspaceMissingSlashErrors(t *testing.T) {
-	_, err := ParseCLI([]string{"@api"}, monoCfg(), t.TempDir())
+func TestParseAddScopeIsPackageNotScope(t *testing.T) {
+	// @-args to add/remove are npm package names, NOT workspace scopes
+	parsed, _ := ParseCLI([]string{"add", "@types/node"}, monoCfg(), t.TempDir())
+	if len(parsed.Scopes) != 0 {
+		t.Errorf("Scopes = %v, want empty (add takes package names)", parsed.Scopes)
+	}
+}
+
+func TestPrefixedFormRemoved(t *testing.T) {
+	_, err := ParseCLI([]string{"@api/test"}, monoCfg(), t.TempDir())
 	if err == nil {
-		t.Error("expected error for @workspace with no slash, got nil")
+		t.Error("expected @scope/script prefixed form to error (removed in favor of `miso <script> @scope`)")
 	}
 }
 
-func TestParseAtPathWorkspace(t *testing.T) {
-	parsed, err := ParseCLI([]string{"@packages/api/build"}, monoCfg(), t.TempDir())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestParsePassthroughCarriesScopes(t *testing.T) {
+	// bare non-verb script (e.g. a turbo task) keeps its @scope for main.go to honor
+	parsed, _ := ParseCLI([]string{"build", "@web"}, monoCfg(), t.TempDir())
+	if parsed.Action != ActionPassthrough {
+		t.Errorf("Action = %v, want ActionPassthrough", parsed.Action)
 	}
-	if parsed.WorkspaceName != "packages/api" {
-		t.Errorf("WorkspaceName = %q, want %q", parsed.WorkspaceName, "packages/api")
+	if parsed.Command != "build" {
+		t.Errorf("Command = %q, want build", parsed.Command)
 	}
-	if parsed.ScriptName != "build" {
-		t.Errorf("ScriptName = %q, want %q", parsed.ScriptName, "build")
-	}
-}
-
-func TestParseAtWorkspaceScriptInSingleRepo(t *testing.T) {
-	parsed, err := ParseCLI([]string{"@api/test"}, singleCfg(), t.TempDir())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if parsed.Action != ActionWorkspaceScript {
-		t.Errorf("Action = %v, want ActionWorkspaceScript (should work outside mono mode)", parsed.Action)
+	if len(parsed.Scopes) != 1 || parsed.Scopes[0] != "@web" {
+		t.Errorf("Scopes = %v, want [@web]", parsed.Scopes)
 	}
 }
 
