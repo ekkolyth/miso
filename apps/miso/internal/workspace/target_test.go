@@ -180,3 +180,36 @@ func TestFind_AmbiguousByName(t *testing.T) {
 		t.Errorf("expected ambiguous error for duplicate names, got: %v", err)
 	}
 }
+
+func TestResolveScopesShortAndFull(t *testing.T) {
+	root := t.TempDir()
+	members := []Member{
+		{Name: "@ekko/web", Dir: filepath.Join(root, "apps/web")},
+		{Name: "@ekko/api", Dir: filepath.Join(root, "apps/api")},
+	}
+	got, err := ResolveScopes([]string{"@web", "@ekko/api"}, members, root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 || got[0].Name != "@ekko/web" || got[1].Name != "@ekko/api" {
+		t.Errorf("got %v, want [@ekko/web @ekko/api]", got)
+	}
+}
+
+func TestResolveScopesUnknownErrors(t *testing.T) {
+	_, err := ResolveScopes([]string{"@nope"}, []Member{{Name: "@ekko/web", Dir: "apps/web"}}, ".")
+	if err == nil {
+		t.Error("expected error for unknown scope @nope")
+	}
+}
+
+func TestResolveScopesAmbiguousErrors(t *testing.T) {
+	members := []Member{
+		{Name: "@ekko/web", Dir: "apps/web"},
+		{Name: "@other/web", Dir: "packages/web"},
+	}
+	_, err := ResolveScopes([]string{"@web"}, members, ".")
+	if err == nil {
+		t.Error("expected ambiguity error for @web matching two members")
+	}
+}

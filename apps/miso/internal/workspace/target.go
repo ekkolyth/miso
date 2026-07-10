@@ -3,6 +3,7 @@ package workspace
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/ekkolyth/miso/internal/config"
 )
@@ -108,6 +109,53 @@ func resolveMembers(name string, members []Member, root string) []Member {
 		return explicit
 	}
 	return byBasename
+}
+
+// ResolveScopes maps each @-prefixed scope token to exactly one member. A token
+// matches by full package name (@ekko/web), by package short-name or dir
+// basename (@web), or by relpath. Unknown or ambiguous tokens are errors.
+func ResolveScopes(scopes []string, members []Member, root string) ([]Member, error) {
+	seen := make(map[string]bool)
+	var out []Member
+	for _, token := range scopes {
+		bare := strings.TrimPrefix(token, "@")
+		var matched []Member
+		for _, member := range members {
+			if scopeMatches(bare, member, root) {
+				matched = append(matched, member)
+			}
+		}
+		switch len(matched) {
+		case 1:
+			if !seen[matched[0].Name] {
+				seen[matched[0].Name] = true
+				out = append(out, matched[0])
+			}
+		case 0:
+			return nil, fmt.Errorf("scope %q matched no workspace (available: %s)", token, memberNames(members))
+		default:
+			return nil, fmt.Errorf("scope %q is ambiguous — matches %s; use the full @scope/name", token, memberNames(matched))
+		}
+	}
+	return out, nil
+}
+
+// scopeMatches reports whether bare (the token minus its @) identifies member by
+// full package name, package short-name, dir basename, or relpath.
+func scopeMatches(bare string, member Member, root string) bool {
+	if member.Name != "" {
+		if member.Name == "@"+bare || member.Name == bare {
+			return true
+		}
+		if slash := strings.LastIndex(member.Name, "/"); slash >= 0 && member.Name[slash+1:] == bare {
+			return true
+		}
+	}
+	if filepath.Base(member.Dir) == bare {
+		return true
+	}
+	rel, err := filepath.Rel(root, member.Dir)
+	return err == nil && filepath.ToSlash(rel) == bare
 }
 
 func memberNames(members []Member) string {
