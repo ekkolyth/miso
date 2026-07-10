@@ -278,8 +278,8 @@ func (m MergedModel) View() tea.View {
 	logHeight := m.logHeight()
 
 	logOutput, _ := m.buildLogVisualRows(logHeight, m.sel)
-	// buildLogVisualRows already pads to logHeight — empty rows on top, content
-	// pinned to the bottom.
+	// buildLogVisualRows already pads to logHeight — content at the top while
+	// underfilled, tailing to the bottom once full.
 
 	// Note: selection highlighting is applied inside buildLogVisualRows, where
 	// the label and text are still separate pieces. Applying selectedBg.Render()
@@ -553,5 +553,5 @@ func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) ([]st
 		logOutput = logOutput[len(logOutput)-logHeight:]
 		seqs = seqs[len(seqs)-logHeight:]
 	}
-	return padTop(logOutput, seqs, logHeight)
+	return padBottom(logOutput, seqs, logHeight)
 }

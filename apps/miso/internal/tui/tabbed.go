@@ -503,8 +503,9 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	}
 
 	visualRows, rowSeqs := m.buildLogVisualRows(width, logHeight)
-	// buildLogVisualRows already pads to logHeight — empty rows on top, content
-	// pinned to the bottom — so rowSeqs indexes 1:1 with visualRows below.
+	// buildLogVisualRows already pads to logHeight — content at the top while
+	// underfilled, tailing to the bottom once full — so rowSeqs indexes 1:1 with
+	// visualRows below.
 
 	// Highlight rows whose source buffer line is in the selection range.
 	for i := range visualRows {
@@ -531,12 +532,15 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-len(s))
 }
 
-// padTop prepends empty rows (seq -1) so an underfilled panel pins its content
-// to the bottom. Shared by both models' buildLogVisualRows so the rendered rows
-// and the click-time row→seq mapping are always the same slice shape — clicks in
-// the top padding land on seq -1 and are ignored. Returns the input unchanged
-// when already at or over logHeight.
-func padTop(rows []string, seqs []int64, logHeight int) ([]string, []int64) {
+// padBottom appends empty rows (seq -1) so an underfilled panel keeps its content
+// at the top and grows downward — like a terminal filling before it starts to
+// tail. Once the buffer overflows the panel, buildLogVisualRows tail-slices and
+// no padding is added, so the newest output pins to the bottom. Shared by both
+// models' buildLogVisualRows so the rendered rows and the click-time row→seq
+// mapping are always the same slice shape — clicks in the bottom padding land on
+// seq -1 and are ignored. Returns the input unchanged when already at or over
+// logHeight.
+func padBottom(rows []string, seqs []int64, logHeight int) ([]string, []int64) {
 	pad := logHeight - len(rows)
 	if pad <= 0 {
 		return rows, seqs
@@ -545,7 +549,7 @@ func padTop(rows []string, seqs []int64, logHeight int) ([]string, []int64) {
 	for i := range padSeqs {
 		padSeqs[i] = -1
 	}
-	return append(make([]string, pad), rows...), append(padSeqs, seqs...)
+	return append(rows, make([]string, pad)...), append(seqs, padSeqs...)
 }
 
 // mouseToTabIdx converts a mouse click to a process index in the sidebar.
@@ -678,7 +682,7 @@ func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) ([]string, []in
 		rows = rows[len(rows)-logHeight:]
 		seqs = seqs[len(seqs)-logHeight:]
 	}
-	return padTop(rows, seqs, logHeight)
+	return padBottom(rows, seqs, logHeight)
 }
 
 const ansiReset = "\x1b[0m"

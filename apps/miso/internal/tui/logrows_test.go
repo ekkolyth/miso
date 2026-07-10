@@ -5,9 +5,10 @@ import (
 	"testing"
 )
 
-// #26: an underfilled log panel must pin content to the bottom, with empty
-// top-padding rows carrying seq -1 so clicks there are no-ops.
-func TestTabbedBuildLogVisualRowsBottomAligns(t *testing.T) {
+// #26: an underfilled log panel keeps content at the TOP and grows downward
+// (like a terminal filling before it tails); the empty bottom-padding rows carry
+// seq -1 so clicks there are no-ops.
+func TestTabbedBuildLogVisualRowsTopAlignsWhileSparse(t *testing.T) {
 	rb := NewRingBuffer(100)
 	rb.Write("alpha")
 	rb.Write("bravo")
@@ -20,21 +21,21 @@ func TestTabbedBuildLogVisualRowsBottomAligns(t *testing.T) {
 	if len(rows) != logHeight || len(seqs) != logHeight {
 		t.Fatalf("rows/seqs len = %d/%d, want %d", len(rows), len(seqs), logHeight)
 	}
-	for i := 0; i < 3; i++ {
-		if rows[i] != "" || seqs[i] != -1 {
-			t.Errorf("top-padding row %d = %q seq %d, want empty/-1", i, rows[i], seqs[i])
-		}
-	}
 	base := rb.BaseSeq()
-	if seqs[3] != base || seqs[4] != base+1 {
-		t.Errorf("content seqs = %d,%d, want %d,%d", seqs[3], seqs[4], base, base+1)
+	if rows[0] != "alpha" || rows[1] != "bravo" {
+		t.Errorf("top rows = %q,%q, want alpha/bravo", rows[0], rows[1])
 	}
-	if rows[3] != "alpha" || rows[4] != "bravo" {
-		t.Errorf("bottom rows = %q,%q, want alpha/bravo", rows[3], rows[4])
+	if seqs[0] != base || seqs[1] != base+1 {
+		t.Errorf("content seqs = %d,%d, want %d,%d", seqs[0], seqs[1], base, base+1)
+	}
+	for i := 2; i < logHeight; i++ {
+		if rows[i] != "" || seqs[i] != -1 {
+			t.Errorf("bottom-padding row %d = %q seq %d, want empty/-1", i, rows[i], seqs[i])
+		}
 	}
 }
 
-func TestMergedBuildLogVisualRowsBottomAligns(t *testing.T) {
+func TestMergedBuildLogVisualRowsTopAlignsWhileSparse(t *testing.T) {
 	pm := &ProcessManager{Processes: []*Process{{Entry: TuiScriptEntry{Label: "web"}}}}
 	m := MergedModel{pm: pm, visible: map[int]bool{0: true}, width: 80, height: 10}
 	m.logSeq++
@@ -48,16 +49,16 @@ func TestMergedBuildLogVisualRowsBottomAligns(t *testing.T) {
 	if len(rows) != logHeight || len(seqs) != logHeight {
 		t.Fatalf("rows/seqs len = %d/%d, want %d", len(rows), len(seqs), logHeight)
 	}
-	for i := 0; i < 3; i++ {
+	if !strings.Contains(rows[0], "one") || !strings.Contains(rows[1], "two") {
+		t.Errorf("top rows = %q,%q, want one/two", rows[0], rows[1])
+	}
+	if seqs[0] != 1 || seqs[1] != 2 {
+		t.Errorf("content seqs = %d,%d, want 1,2", seqs[0], seqs[1])
+	}
+	for i := 2; i < logHeight; i++ {
 		if rows[i] != "" || seqs[i] != -1 {
-			t.Errorf("top-padding row %d = %q seq %d, want empty/-1", i, rows[i], seqs[i])
+			t.Errorf("bottom-padding row %d = %q seq %d, want empty/-1", i, rows[i], seqs[i])
 		}
-	}
-	if seqs[3] != 1 || seqs[4] != 2 {
-		t.Errorf("content seqs = %d,%d, want 1,2", seqs[3], seqs[4])
-	}
-	if !strings.Contains(rows[3], "one") || !strings.Contains(rows[4], "two") {
-		t.Errorf("bottom rows = %q,%q, want one/two", rows[3], rows[4])
 	}
 }
 
