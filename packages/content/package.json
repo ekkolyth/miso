@@ -1,0 +1,11 @@
+{
+  "name": "@ekkolyth/miso-content",
+  "version": "0.1.0",
+  "description": "Canonical command documentation for miso — one source of truth for CLI help and the docs site",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ekkolyth/miso",
+    "directory": "packages/content"
+  }
+}

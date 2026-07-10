@@ -1,0 +1,21 @@
+Installs all dependencies from your lockfile using the project's package manager.
+
+### When to use
+
+After cloning a project, or after pulling changes that touched `package.json` or the lockfile.
+
+### How it works
+
+Miso detects your package manager (bun, npm, pnpm, yarn) and runs its install. Aliased as `miso i`.
+
+### Examples
+
+```bash
+miso install
+miso i
+```
+
+### Gotchas
+
+- In simple mode (`"packageManager": false`) there are no built-in commands — `install` resolves as a script instead.
+- A `scripts/` entry or a `package.json` script named `install` shadows this command.
