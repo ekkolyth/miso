@@ -94,17 +94,17 @@ An explicit `@scope` is always honored or Miso fails — if it doesn't resolve t
 
 > Scoping needs a package manager. In [simple mode](/working-with-miso/simple-mode) (`"packageManager": false`), workspace discovery is disabled and `@scope` is passed through to the script as a literal argument instead of being resolved.
 
-### From Inside a Workspace — Automatic Scoping
+### From Inside a Workspace
 
-When you're already inside a workspace directory, Miso automatically scopes to that workspace. No special syntax needed:
+Miso resolves scripts against the nearest `miso.json`, walking up from your current directory. So when a workspace carries its own [`miso.json`](#per-workspace-misojson), running Miso from inside it targets that member — no `@scope` needed:
 
 ```bash
-cd apps/api
-miso build    # resolves to apps/api/scripts/build.sh
-miso deploy   # resolves to apps/api/scripts/deploy.sh
+cd apps/api          # apps/api has its own miso.json
+miso build           # runs apps/api/scripts/build.sh
+miso deploy          # runs apps/api/scripts/deploy.sh
 ```
 
-This matches the same behaviour you'd expect from tools like Turborepo's automatic package scoping.
+A member without its own `miso.json` resolves against the repo root instead — target it from the root with `miso build @api`.
 
 ## Per-Workspace `miso.json`
 

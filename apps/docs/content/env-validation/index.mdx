@@ -63,10 +63,11 @@ miso build --env
 miso env && miso dev
 ```
 
-Each entry is validated independently. If a variable fails in the `api` entry, the error will say so:
+Each entry is validated independently, and every failure is reported in one pass — grouped under its label, one variable per line:
 
 ```
-api: missing required variable: REDIS_URL
+  api
+    REDIS_URL: missing required variable
 ```
 
 ## Auto-Discovery
@@ -88,7 +89,7 @@ In a monorepo, auto-discovery searches that member's own directory rather than t
 
 Once you add an `env` block, each root entry needs a `scope` — a target name or `"global"` — so miso knows which command it applies to. Resolving the env for a run target layers global entries, then entries scoped to that target, then (for a member target) the member's own `<member>/miso.json` entries, later winning on key conflict. The result still yields to anything already set in your shell.
 
-`miso env` enforces `scope` strictly and fails on a missing one; loading env into a running script is permissive and just skips entries that don't match. See [Configure](/env-validation/config#scope) for the full breakdown.
+`miso env` enforces `scope` strictly and fails on a missing one; loading env into a running script is permissive and just skips entries that don't match. Both are miso-mode behaviors — in a delegated repo (`repo: "turbo"`/`"nx"`) the delegate owns env, so `miso env` only type-checks the declared root entries. See [Configure](/env-validation/config#scope) for the full breakdown.
 
 ## Generating env templates
 

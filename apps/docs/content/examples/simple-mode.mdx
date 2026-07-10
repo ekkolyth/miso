@@ -11,6 +11,6 @@ A package-manager-free `miso.json` for non-JavaScript projects. Uses miso as a p
 ## What's Different from a Normal Config
 
 - No `flags` — there's no package manager to pass flags to
-- No `repo.mode` — workspace discovery from `package.json` is not available
+- No `repo` mode — workspace discovery from `package.json` is not available
 - `package.json` scripts are ignored even if a `package.json` exists
-- All commands (except `env`, `scripts`, `init`, `version`, `upgrade`, `completion`) resolve as folder scripts
+- All commands except Miso's own utilities (`env`, `scripts`, `init`, `version`, `upgrade`, `completion`, `skills`, `help`) resolve as folder scripts

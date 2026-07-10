@@ -43,7 +43,7 @@ Configure the `env` key in `miso.json` as an array of entries — one per app or
 }`}
 />
 
-Miso validates each entry in order, stopping at the first failure and including the entry's label in the error message.
+Miso validates every entry and reports all the failures together, each grouped under its label — you see the whole list in one pass rather than fixing one, rerunning, and hitting the next.
 
 ### `scope`
 
@@ -77,14 +77,17 @@ The merged result is gap-filled under the ambient shell environment — a variab
 - **Validation** (`miso env`, `--env`) is strict — every root entry must declare a `scope`, or the command fails. It also warns if a `scope` doesn't match any discovered workspace member.
 - **Injection** (loading `.env` values into a running script) is permissive — an entry whose `scope` doesn't match the current target is silently skipped, no error. This lets a root `miso.json` carry entries for members that aren't relevant to the command you're currently running.
 
+Both behaviors are miso-mode only. In a delegated repo (`repo: "turbo"` or `"nx"`) the delegate owns env, so `miso env` just type-checks the declared root entries — `scope` isn't required and nothing is injected.
+
 ### `label`
 
 An optional name for this entry, used in log output and error messages. If omitted, Miso falls back to the entry's `path` value.
 
-Using a label is recommended in any project with more than one env file — it makes errors immediately actionable:
+Using a label is recommended in any project with more than one env file — it makes errors immediately actionable. Failures print grouped under the label, one variable per line:
 
 ```
-api: missing required variable: REDIS_URL
+  api
+    REDIS_URL: missing required variable
 ```
 
 ### `path`

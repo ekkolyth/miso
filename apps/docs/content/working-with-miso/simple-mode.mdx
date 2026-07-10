@@ -31,7 +31,7 @@ Select **"Run in simple mode"** and miso will create a `miso.json` with package 
 
 ### How It Works
 
-In simple mode, there are no built-in commands. Every argument you pass to miso is resolved as a script name from the `scripts/` folder:
+In simple mode, the package-management commands and `package.json` fallback are gone. Miso's utility commands still work — `help`, `init`, `version`, `upgrade`, `completion`, `skills`, `env`, and `scripts` — and every other argument resolves as a script name from the `scripts/` folder:
 
 ```bash
 miso build              # runs scripts/build.sh

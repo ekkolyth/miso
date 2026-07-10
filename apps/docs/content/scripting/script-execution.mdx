@@ -12,7 +12,8 @@ Miso selects the interpreter based on the file extension:
 
 | Extension      | Interpreter | Notes                         |
 | -------------- | ----------- | ----------------------------- |
-| `.sh`, `.bash` | `sh`        | POSIX shell (default)         |
+| `.sh`          | `sh`        | POSIX shell (default)         |
+| `.bash`        | `bash`      | Bash                          |
 | `.zsh`         | `zsh`       | Z shell                       |
 | `.js`, `.mjs`  | `node`      | Node.js                       |
 | `.ts`          | `bun` or `node` | `bun` when the project uses bun, otherwise `node` |
@@ -22,7 +23,7 @@ Miso selects the interpreter based on the file extension:
 | `.lua`         | `lua`       | Lua                           |
 | `.php`         | `php`       | PHP                           |
 
-> `.ts` runs on `bun` when a bun lockfile is present, otherwise `node`. Bare `node script.ts` needs Node 23.6+ (or 22.6+ with `--experimental-strip-types`); `bun` runs TypeScript with no extra setup.
+> `.ts` runs on `bun` when your project uses bun — detected from the `packageManager` field in `package.json`, then from a bun lockfile — and otherwise on `node`. Bare `node script.ts` needs Node 23.6+ (or 22.6+ with `--experimental-strip-types`); `bun` runs TypeScript with no extra setup.
 
 ### 2. Configure the Default Shell in miso.json
 

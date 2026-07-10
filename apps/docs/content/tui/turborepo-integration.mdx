@@ -29,8 +29,10 @@ When you run `miso dev` or `miso build` with turbo mode:
 
 1. Miso spawns `turbo run <task>` as a single process
 2. Turbo handles dependency ordering, caching, and parallelism
-3. Miso displays the process output it in the TUI with per-workspace tabs
+3. Miso displays the process output in the TUI with per-workspace tabs
 4. Each workspace gets its own tab with independent scroll, exit code, and cache status
+
+You can still target specific workspaces with an `@scope` — miso passes it through as `turbo --filter` (or `nx --projects`).
 
 ### With TUI enabled
 

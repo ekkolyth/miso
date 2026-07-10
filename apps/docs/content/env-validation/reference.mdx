@@ -46,7 +46,7 @@ Defaults to `false`. If `true`, a missing value passes validation — only prese
 
 Type-specific range constraints:
 
-- **string** — character length. `min` defaults to `1`, `max` defaults to `255`.
+- **string** — character length. `min` defaults to `1`; `max` is unbounded unless you set it.
 - **int / int+ / float** — numeric value range.
 
 ### `pattern`
@@ -105,7 +105,7 @@ Arrays of strings used to parse `bool` values. Defaults:
 - `trueValues`: `["true", "1", "yes", "on"]`
 - `falseValues`: `["false", "0", "no", "off"]`
 
-Unknown `VarConfig` keys cause an error (strict mode).
+Miso's JSON schema flags unknown `VarConfig` keys in your editor; at runtime, unrecognized keys are ignored.
 
 ### Types
 

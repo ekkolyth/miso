@@ -65,6 +65,8 @@ Pick the surface based on the command's size:
 - **One-liners → `package.json` scripts.** A single command like `vite --config vite.config.ts` reads best as a `package.json` script — miso resolves it just like a folder script. (Exception: [simple mode](/working-with-miso/simple-mode) ignores `package.json`.)
 - **Multi-line or chained commands → `scripts/` folder.** Once a command spans multiple lines, chains with `&&`, or needs real logic, a `.sh` file in `scripts/` is far more readable than a cramped JSON string.
 
+Whichever you pick, give each command one home. If the same name lives in both your scripts folder and `package.json`, Miso treats it as ambiguous and stops with an error rather than guessing which one you meant.
+
 ## Helper Files
 
 Prefix files with `_` to exclude them from discovery. Miso skips them during scanning, so they're never exposed as runnable commands:
