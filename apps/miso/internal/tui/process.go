@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"os/exec"
 	"regexp"
@@ -273,16 +274,58 @@ func (pm *ProcessManager) StopAll() {
 func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	scanner := bufio.NewScanner(r)
-	const maxTokenSize = 1024 * 1024 // 1 MB
-	buf := make([]byte, maxTokenSize)
-	scanner.Buffer(buf, maxTokenSize)
-
-	for scanner.Scan() {
-		line := strings.TrimSuffix(scanner.Text(), "\r")
+	// Retain up to 1MB per line; anything beyond is dropped from the stored line
+	// but still consumed, so a child that writes a huge unbroken line (electron/
+	// vite minified bundles) can't stall the pty and freeze the TUI.
+	const maxLine = 1024 * 1024
+	readLines(r, maxLine, func(raw string) {
+		line := strings.TrimSuffix(raw, "\r")
 		line = stripNonColorANSI(line)
 		p.Buffer.Write(line)
 		pm.sendOutput(p, line)
+	})
+}
+
+// readLines calls emit once per '\n'-terminated line (newline excluded), plus
+// any unterminated remainder at EOF. A line longer than maxLine is truncated in
+// what's passed to emit but still fully drained from r, so an oversized line
+// can never block the writer on the other end of a pty.
+func readLines(r io.Reader, maxLine int, emit func(string)) {
+	reader := bufio.NewReader(r)
+	buf := make([]byte, 32*1024)
+	var line []byte
+	overflow := false
+	for {
+		n, err := reader.Read(buf)
+		chunk := buf[:n]
+		for len(chunk) > 0 {
+			segment := chunk
+			complete := false
+			if idx := bytes.IndexByte(chunk, '\n'); idx >= 0 {
+				segment, chunk, complete = chunk[:idx], chunk[idx+1:], true
+			} else {
+				chunk = nil
+			}
+			if !overflow {
+				if room := maxLine - len(line); len(segment) >= room {
+					line = append(line, segment[:room]...)
+					overflow = true
+				} else {
+					line = append(line, segment...)
+				}
+			}
+			if complete {
+				emit(string(line))
+				line = line[:0]
+				overflow = false
+			}
+		}
+		if err != nil {
+			if len(line) > 0 {
+				emit(string(line))
+			}
+			return
+		}
 	}
 }
 

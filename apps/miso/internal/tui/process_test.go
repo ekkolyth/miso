@@ -6,6 +6,39 @@ import (
 	"time"
 )
 
+func TestReadLinesTruncatesButKeepsDraining(t *testing.T) {
+	// A single line far longer than the cap must not stall the reader: it is
+	// truncated in what's emitted but fully consumed, so the lines after it
+	// still arrive. This is the electron/vite bundle-line hang (#33).
+	big := strings.Repeat("x", 50)           // > maxLine below
+	input := big + "\n" + "after\n" + "tail" // "tail" = trailing partial, no newline
+
+	var got []string
+	readLines(strings.NewReader(input), 10, func(s string) { got = append(got, s) })
+
+	if len(got) != 3 {
+		t.Fatalf("emitted %d lines, want 3: %#v", len(got), got)
+	}
+	if len(got[0]) != 10 {
+		t.Errorf("oversized line should be truncated to cap 10, got len %d", len(got[0]))
+	}
+	if got[1] != "after" {
+		t.Errorf("line after the huge line = %q, want %q (reader kept draining)", got[1], "after")
+	}
+	if got[2] != "tail" {
+		t.Errorf("trailing partial line = %q, want %q", got[2], "tail")
+	}
+}
+
+func TestReadLinesReassemblesAndCountsExactly(t *testing.T) {
+	var got []string
+	readLines(strings.NewReader("a\nbb\nccc\n"), 1024, func(s string) { got = append(got, s) })
+	want := []string{"a", "bb", "ccc"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("got %#v, want %#v", got, want)
+	}
+}
+
 func TestProcessManager_SpawnAndCapture(t *testing.T) {
 	pm := NewProcessManager()
 
