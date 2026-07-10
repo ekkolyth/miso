@@ -117,24 +117,27 @@ Two things are **not** taken from a member's config:
 
 ## How Workspace Matching Works
 
-A `@scope` token is matched against every discovered workspace if it equals any of three forms — there's no precedence between them, so a token that happens to match more than one workspace across any combination of forms is always an ambiguity error, not resolved by trying one form before another:
+A `@scope` token resolves by identity in **priority order** — the first tier with a match wins, so a workspace's own name is never shadowed by an unrelated one that merely shares a folder or path segment:
 
-1. **Full `package.json` name** — the `name` field in the workspace's `package.json` (e.g. `@myorg/api`)
-2. **Short-name or directory basename** — the segment after the last `/` in the package name, or the workspace directory's basename when it has none (e.g. `api` matches `packages/api`)
-3. **Relative path from root** — the full path from the repo root (e.g. `packages/api` matches `packages/api`)
+1. **Full `package.json` name** — the `name` field (e.g. `@myorg/api`, or a bare `api`)
+2. **Scoped short-name** — the segment after the last `/` in a scoped name (`@myorg/api` → `api`)
+3. **Relative path from root** — the full path from the repo root (e.g. `packages/api`)
+4. **Directory basename** — the workspace folder's name, used only when nothing above matches
 
-So for a workspace at `packages/api` with `"name": "@myorg/api"` in its `package.json`, all three of the following are equivalent:
+Because name identity wins, `@web` resolves to the workspace **named** `web` even if another workspace lives in a folder called `web`.
+
+So for a workspace at `packages/api` with `"name": "@myorg/api"` in its `package.json`, all of these resolve to it:
 
 ```bash
-miso build @myorg/api      # matched by full package.json name
-miso build @api            # matched by short-name / basename
-miso build @packages/api   # matched by relative path
+miso build @myorg/api      # full package.json name
+miso build @api            # scoped short-name
+miso build @packages/api   # relative path
 ```
 
-If a scope matches more than one workspace, Miso exits with an error listing the conflicting names so you can use a more specific form:
+If two workspaces match within the **same tier** (e.g. two both named `api`), Miso exits with an error listing their paths so you can qualify by path:
 
 ```
-scope "@api" is ambiguous — matches @myorg/api, @other/api; use the full @scope/name
+scope "@api" is ambiguous — matches apps/api, packages/api; qualify by path (e.g. @apps/api)
 ```
 
 If no workspace matches, Miso exits with an error listing the available scopes:

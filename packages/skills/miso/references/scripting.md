@@ -97,29 +97,32 @@ Pick the surface by size:
 
 - **One-liner → `package.json` scripts.** A single command like `vite --config vite.config.ts` belongs in the `package.json` `scripts` block — miso resolves it the same as a folder script, and it's cleaner than a one-line `.sh`. (Simple mode ignores `package.json`, so folder scripts are the only option there.)
 - **Multi-line or `&&`-chained → `scripts/` folder.** Once a command spans multiple lines, chains with `&&`, or needs real logic, a `.sh` file reads far better than a cramped JSON string.
-- **Opt-in dev variants → `dev:<name>` in `package.json`.** A dev target that shouldn't run under a bare `miso dev` (an optional service, an alternate entry point) belongs in the workspace's `package.json` under a distinct name — `dev:ekklipse`, `dev:studio` — not a root launcher script. Start it with `miso @<workspace>/dev:ekklipse`. Bare `dev` stays the default set.
+- **Opt-in dev variants → `dev:<name>` in `package.json`.** A dev target that shouldn't run under a bare `miso dev` (an optional service, an alternate entry point) belongs in the workspace's `package.json` under a distinct name — `dev:ekklipse`, `dev:studio` — not a root launcher script. Start it with `miso dev:ekklipse @<workspace>`. Bare `dev` stays the default set.
 
 ---
 
 ## Workspace-Scoped Scripts (Monorepos)
 
-In a repo with workspaces (auto-detected from your package manager), run a script in a specific workspace using the `@workspace/script` syntax:
+In a repo with workspaces (auto-detected from your package manager), run a script against specific workspace(s) by adding one or more `@scope` targets **after** the script. The `@` sigil is required.
 
 ```bash
-miso @api/build           # run "build" in the workspace identified as "api"
-miso @myorg/api/test      # run "test" in the workspace with package name "@myorg/api"
-miso @packages/web/dev    # run "dev" in the workspace at path "packages/web"
-miso @api/test:unit       # run "test:unit" (colons are fine in script names)
+miso build @api            # run "build" in the workspace named "api"
+miso test @myorg/api       # "test" in the workspace whose package.json name is "@myorg/api"
+miso dev @packages/web     # "dev" in the workspace at path "packages/web"
+miso test:unit @api        # colons are fine in script names
+miso dev @web @api         # multiple scopes at once
 ```
 
-The workspace identifier can be any of:
-- **Directory basename** — `api` for a workspace at `packages/api`
-- **Relative path from root** — `packages/api`
-- **Package name** — the `name` field in the workspace's `package.json` (e.g. `@myorg/api`)
+A scope resolves by identity in **priority order** — first match wins, so a workspace's name is never shadowed by an unrelated one that just shares a folder name:
 
-If the identifier matches more than one workspace, miso will error and list the conflicting paths.
+1. **Full `package.json` name** — `@myorg/api`, or a bare `api`
+2. **Scoped short-name** — the segment after `/` in a scoped name (`@myorg/api` → `api`)
+3. **Relative path from root** — `packages/api`
+4. **Directory basename** — used only when nothing above matches
 
-Miso resolves the script from that workspace's own `scripts/` folder first, then falls back to its `package.json` scripts.
+If two workspaces match in the same tier, miso errors and lists their paths so you can qualify by path (`@packages/api`). In `turbo`/`nx` mode the scope becomes a `--filter` / `--projects`; in miso mode it filters the launched workspace tasks.
+
+> The old `miso @scope/script` prefixed form has been removed — always use `miso <script> @scope`.
 
 ---
 

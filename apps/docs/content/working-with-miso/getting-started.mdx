@@ -87,12 +87,12 @@ my-monorepo/
 
 ### Running Workspace Scripts from Root
 
-In a monorepo, use `@workspace/script` syntax to target a specific workspace's scripts folder from anywhere:
+In a monorepo, add an `@scope` target after the script to run it in a specific workspace from anywhere:
 
 ```bash
-miso @api/build           # runs apps/api/scripts/build.sh in apps/onboarding/
-miso @web/build           # runs apps/web/scripts/build.sh in apps/web/
-miso @ui/build            # runs packages/ui/scripts/build.sh in packages/ui/
+miso build @api           # runs apps/api/scripts/build.sh
+miso build @web           # runs apps/web/scripts/build.sh
+miso build @ui            # runs packages/ui/scripts/build.sh
 ```
 
 ### Automatic Scoping from Inside a Workspace
