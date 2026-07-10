@@ -11,6 +11,9 @@ import (
 
 var misoBin string
 
+// stamped into the e2e binary via -ldflags so `miso version` has a known value
+const testVersion = "9.9.9-e2e"
+
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "miso-e2e")
 	if err != nil {
@@ -23,7 +26,9 @@ func TestMain(m *testing.M) {
 		misoBin += ".exe"
 	}
 
-	build := exec.Command("go", "build", "-o", misoBin, "./cmd")
+	build := exec.Command("go", "build",
+		"-ldflags", "-X github.com/ekkolyth/miso/internal/cli/commands.Version="+testVersion,
+		"-o", misoBin, "./cmd")
 	build.Dir = ".." // apps/miso
 	if out, err := build.CombinedOutput(); err != nil {
 		panic("build miso: " + err.Error() + "\n" + string(out))
@@ -55,8 +60,8 @@ func TestE2E_Version(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("version exit = %d, want 0 (out: %s)", code, out)
 	}
-	if !strings.Contains(out, "miso") {
-		t.Errorf("version output %q, want to contain 'miso'", out)
+	if !strings.Contains(out, testVersion) {
+		t.Errorf("version output %q, want to contain %q", out, testVersion)
 	}
 }
 
