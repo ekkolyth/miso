@@ -12,6 +12,16 @@ Downloads the latest binary and swaps it in place, no sudo. Homebrew users run `
 
 > Windows binaries are no longer published. 0.6.0 ships macOS (Intel + Apple Silicon) and Linux (x86-64 + ARM64) only.
 
+### Refresh the skill
+
+The `miso` agent skill isn't bundled in the binary — `miso skills --add` pulls the current reference each time it runs. Re-run it after upgrading so your editor's skill matches the new binary:
+
+```bash
+miso skills --add
+```
+
+The binary and the skill aren't version-locked, so an upgraded binary can sit next to a stale skill until you re-add. Make `miso upgrade` → `miso skills --add` a habit — run the pair whenever a new miso ships to stay current.
+
 ## Breaking changes
 
 ### `repo` no longer accepts `single` or `mono`
