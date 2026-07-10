@@ -60,7 +60,7 @@ func main() {
 
 	// help and bare invocation print the command reference — works with no project
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		if len(args) >= 2 && args[0] == "help" {
+		if len(args) >= 2 && args[0] == "help" && !strings.HasPrefix(args[1], "-") {
 			if err := reference.RunCommandHelp(args[1]); err != nil {
 				os.Exit(1)
 			}

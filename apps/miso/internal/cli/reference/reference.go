@@ -19,7 +19,7 @@ import (
 //go:embed content/*.mdx
 var contentFS embed.FS
 
-// Body returns the raw markdown for a command, or false if none is embedded.
+// raw markdown for a command; false if none embedded
 func Body(name string) (string, bool) {
 	data, err := contentFS.ReadFile("content/" + name + ".mdx")
 	if err != nil {
@@ -38,7 +38,7 @@ func renderMarkdown(body string) string {
 
 func header(cmd cli.Command) string {
 	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7c3aed"))
-	muted := lipgloss.NewStyle().Foreground(lipgloss.Color("#e4e6e5"))
+	muted := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
 
 	usage := "miso " + cmd.Name
 	if cmd.Usage != "" {
@@ -55,7 +55,7 @@ func header(cmd cli.Command) string {
 	return out.String()
 }
 
-// Render builds the full help screen for a command; false if the name is not a builtin.
+// full help screen for a command; false if the name is not a builtin
 func Render(name string) (string, bool) {
 	cmd, ok := cli.LookupBuiltin(name)
 	if !ok {
@@ -71,7 +71,7 @@ func Render(name string) (string, bool) {
 	return out.String(), true
 }
 
-// RunCommandHelp prints per-command help, or an error for an unknown command.
+// prints per-command help; errors on an unknown command
 func RunCommandHelp(name string) error {
 	out, ok := Render(name)
 	if !ok {

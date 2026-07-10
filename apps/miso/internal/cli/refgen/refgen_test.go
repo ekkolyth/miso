@@ -102,4 +102,26 @@ func TestDrift_GeneratedMatchesCommitted(t *testing.T) {
 			t.Errorf("embed copy %s.mdx is stale — run `go generate ./...` in apps/miso and commit", name)
 		}
 	}
+
+	entries, err := os.ReadDir(embedDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".mdx") {
+			continue
+		}
+		embedded[strings.TrimSuffix(entry.Name(), ".mdx")] = true
+	}
+	for name := range bodies {
+		if !embedded[name] {
+			t.Errorf("embed dir missing %s.mdx — run `go generate ./...` in apps/miso and commit", name)
+		}
+	}
+	for name := range embedded {
+		if _, ok := bodies[name]; !ok {
+			t.Errorf("embed dir has orphan %s.mdx with no matching source — run `go generate ./...` in apps/miso and commit", name)
+		}
+	}
 }

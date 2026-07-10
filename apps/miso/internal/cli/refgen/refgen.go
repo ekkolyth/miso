@@ -12,7 +12,7 @@ import (
 	"github.com/ekkolyth/miso/internal/cli"
 )
 
-// RepoRoot walks up from start to the directory whose package.json names "miso".
+// walks up from start to the directory whose package.json names "miso"
 func RepoRoot(start string) (string, error) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
@@ -36,7 +36,7 @@ func RepoRoot(start string) (string, error) {
 	}
 }
 
-// LoadSourceBodies reads packages/content/commands/*.mdx into name→body.
+// reads packages/content/commands/*.mdx into name→body
 func LoadSourceBodies(root string) (map[string]string, error) {
 	dir := filepath.Join(root, "packages", "content", "commands")
 	entries, err := os.ReadDir(dir)
@@ -57,7 +57,7 @@ func LoadSourceBodies(root string) (map[string]string, error) {
 	return bodies, nil
 }
 
-// CheckCorrespondence fails if the content file set differs from the builtin set.
+// fails if the content file set differs from the builtin set
 func CheckCorrespondence(bodies map[string]string) error {
 	want := make(map[string]bool, len(cli.Builtins))
 	for _, cmd := range cli.Builtins {
@@ -89,7 +89,7 @@ func metaLine(cmd cli.Command) string {
 	return strings.Join(parts, " · ")
 }
 
-// CommandsDoc renders the aggregated command reference page.
+// the aggregated command reference page
 func CommandsDoc(bodies map[string]string) string {
 	var out strings.Builder
 	out.WriteString("---\ntitle: Commands\n---\n\n")
@@ -103,7 +103,7 @@ func CommandsDoc(bodies map[string]string) string {
 	return out.String()
 }
 
-// ReservedKeywordsDoc renders the reserved-keywords reference page.
+// the reserved-keywords reference page
 func ReservedKeywordsDoc() string {
 	var out strings.Builder
 	out.WriteString("---\ntitle: Reserved Keywords\n---\n\n")
@@ -125,10 +125,26 @@ func ReservedKeywordsDoc() string {
 	return out.String()
 }
 
-// WriteEmbedCopy writes each content body to dir/<name>.mdx for the CLI to embed.
+// mirrors bodies into dir/<name>.mdx, removing any stale file left over
+// from a renamed or deleted command
 func WriteEmbedCopy(dir string, bodies map[string]string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".mdx") {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), ".mdx")
+		if _, ok := bodies[name]; !ok {
+			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
+				return err
+			}
+		}
 	}
 	for name, body := range bodies {
 		if err := os.WriteFile(filepath.Join(dir, name+".mdx"), []byte(body), 0o644); err != nil {
