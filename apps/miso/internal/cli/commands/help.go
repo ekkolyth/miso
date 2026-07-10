@@ -35,12 +35,18 @@ func renderCommandGroup(styles ui.Styles, title string, meta bool) string {
 		if cmd.Meta != meta {
 			continue
 		}
-		left := strings.Join(append([]string{cmd.Name}, cmd.Aliases...), ", ")
+		name := strings.Join(append([]string{cmd.Name}, cmd.Aliases...), ", ")
 		if cmd.Usage != "" {
-			left += " " + cmd.Usage
+			name += " " + cmd.Usage
 		}
 		// pad the plain string before styling so ANSI codes don't skew the column
-		_, _ = fmt.Fprintf(&out, "  %s %s\n", styles.Accent.Render(fmt.Sprintf("%-28s", left)), styles.Muted.Render(cmd.Summary))
+		plain := "miso " + name
+		pad := ""
+		if gap := 33 - len(plain); gap > 0 {
+			pad = strings.Repeat(" ", gap)
+		}
+		cell := styles.Flavor.Render("miso") + " " + styles.Bright.Render(name) + pad
+		_, _ = fmt.Fprintf(&out, "  %s %s\n", cell, styles.Muted.Render(cmd.Summary))
 	}
 	return out.String()
 }

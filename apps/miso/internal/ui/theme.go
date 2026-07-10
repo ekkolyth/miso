@@ -13,6 +13,7 @@ type Styles struct {
 	Muted   lipgloss.Style
 	Label   lipgloss.Style
 	Flavor  lipgloss.Style
+	Bright  lipgloss.Style
 	Error   lipgloss.Style
 }
 
@@ -36,6 +37,7 @@ func Default() Styles {
 	heading := lipgloss.Color("#ec4899") // pink
 	muted := lipgloss.Color("#64748b")
 	flavor := lipgloss.Color("#0ea5e9")      // blue
+	bright := lipgloss.Color("#ffffff")      // white
 	destructive := lipgloss.Color("#ef4444") // red
 
 	return Styles{
@@ -44,6 +46,7 @@ func Default() Styles {
 		Muted:   lipgloss.NewStyle().Foreground(muted),
 		Label:   lipgloss.NewStyle().Bold(true).Foreground(accent),
 		Flavor:  lipgloss.NewStyle().Foreground(flavor),
+		Bright:  lipgloss.NewStyle().Foreground(bright),
 		Error:   lipgloss.NewStyle().Bold(true).Foreground(destructive),
 	}
 }
