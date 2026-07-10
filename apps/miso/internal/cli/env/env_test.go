@@ -308,7 +308,7 @@ func TestRun_ReservedGlobalMemberName_IsError(t *testing.T) {
 	}
 }
 
-func TestRun_UnknownScope_WarnsNotError(t *testing.T) {
+func TestRun_UnknownScope_NotAnError(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -329,11 +329,13 @@ func TestRun_UnknownScope_WarnsNotError(t *testing.T) {
 	var buf strings.Builder
 	logger := log.NewWithOptions(&buf, log.Options{})
 
+	// a scope may name a root script/task, so a non-member scope is neither an
+	// error nor a warning — the entry just validates as a root entry.
 	if err := Run(dir, cfg, logger); err != nil {
-		t.Fatalf("expected no error for unknown scope (warn-only), got: %v", err)
+		t.Fatalf("unknown scope must not error, got: %v", err)
 	}
-	if !strings.Contains(buf.String(), "scope matches no known member") {
-		t.Errorf("expected warn log for unknown scope, got: %s", buf.String())
+	if strings.Contains(buf.String(), "scope matches no known member") {
+		t.Errorf("unknown scope must not warn, got: %s", buf.String())
 	}
 }
 

@@ -124,7 +124,7 @@ Fan-out (`miso dev` across members) resolves each member's env independently, so
 - `miso env` (and `--env`) **validates** the declared entries in every mode — a pre-build gate that works for `miso`, `turbo`, and `nx` repos alike. In miso mode it also validates every scope (global, target-scoped, and member-local).
 - **Injection** happens only in **miso mode**, using the resolved subset above. In `turbo`/`nx` mode miso injects nothing — the delegate owns env.
 
-In miso mode, a scope that names no known member isn't a hard error (it may name a root script or task) — miso surfaces it as a warning.
+In miso mode a scope names the target its vars inject for — a member, or a root script/task. A scope that matches no known member is not an error (it may name a root script/task); those vars simply inject only when that target runs, and never leak into another target's environment.
 
 ---
 

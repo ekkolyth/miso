@@ -89,23 +89,17 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 			logger.Error("failed to discover workspaces", "error", err)
 			return fmt.Errorf("discover members: %w", err)
 		}
-		memberNames := make(map[string]bool, len(members))
 		for _, member := range members {
 			if member.Name == "global" {
 				fmt.Fprintln(os.Stderr)
 				logger.Error("member uses the reserved name \"global\"", "dir", member.Dir)
 				return fmt.Errorf("member %q uses the reserved name \"global\"", member.Dir)
 			}
-			memberNames[member.Name] = true
 		}
 		var unscoped []string
 		for _, entry := range cfg.Env {
 			if entry.Scope == "" {
 				unscoped = append(unscoped, entry.Path)
-				continue
-			}
-			if entry.Scope != "global" && !memberNames[entry.Scope] {
-				logger.Warn("env entry scope matches no known member", "scope", entry.Scope, "path", entry.Path)
 			}
 		}
 		if len(unscoped) > 0 {

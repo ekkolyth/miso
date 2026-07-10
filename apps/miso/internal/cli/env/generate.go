@@ -54,7 +54,7 @@ func ParseGenerateFlags(args []string) (bool, GenerateOptions, error) {
 	return generate, opts, nil
 }
 
-// variableKeys returns the declared variable names for an entry (array preserved, object unordered).
+// declared variable names (array preserved, object unordered)
 func variableKeys(vars config.EnvVariables) []string {
 	if len(vars.Array) > 0 {
 		return append([]string(nil), vars.Array...)
@@ -66,7 +66,7 @@ func variableKeys(vars config.EnvVariables) []string {
 	return keys
 }
 
-// renderEnvFile emits the header then one KEY=value line per key, in the given order.
+// header, then one KEY=value line per key, in order
 func renderEnvFile(header string, keys []string, values map[string]string) string {
 	var out strings.Builder
 	out.WriteString(header + "\n")
@@ -79,7 +79,7 @@ func renderEnvFile(header string, keys []string, values map[string]string) strin
 	return out.String()
 }
 
-// readEnvSoft returns an empty map for a missing file; parse errors on an existing file surface.
+// empty map for a missing file; parse errors on an existing file surface
 func readEnvSoft(path string) (map[string]string, error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
@@ -90,17 +90,16 @@ func readEnvSoft(path string) (map[string]string, error) {
 	return godotenv.Read(path)
 }
 
-// scopeDir resolves a scope to the directory its .env.generated is written in:
-// "global" is the repo root; any other scope is that member's directory.
-func scopeDir(scope, projectRoot string, members []workspace.Member) (string, error) {
+// destination dir for a scope's .env.generated: a member scope → member dir;
+// "global" or any root-level scope (a root script/task name) → the repo root.
+func scopeDir(scope, projectRoot string, members []workspace.Member) string {
 	if scope == "global" {
-		return projectRoot, nil
+		return projectRoot
 	}
-	member, err := workspace.Find(scope, members, projectRoot)
-	if err != nil {
-		return "", err
+	if member, err := workspace.Find(scope, members, projectRoot); err == nil {
+		return member.Dir
 	}
-	return member.Dir, nil
+	return projectRoot
 }
 
 // scopedEntry pairs an env entry with the directory its path/override resolve from.
@@ -205,7 +204,7 @@ func validateEntryValues(values map[string]string, entry *config.EnvEntry) []err
 	return nil
 }
 
-// Command is the `miso env` entry point: parse flags, then generate or validate.
+// miso env entry point: parse flags, then generate or validate
 func Command(projectRoot string, cfg config.Config, logger *log.Logger, args []string) error {
 	generate, opts, err := ParseGenerateFlags(args)
 	if err != nil {
@@ -219,7 +218,8 @@ func Command(projectRoot string, cfg config.Config, logger *log.Logger, args []s
 	return Run(projectRoot, cfg, logger)
 }
 
-// Generate writes one .env.generated per scope. With -p/-o it validates the
+// one .env.generated per destination dir — root-level scopes (global + any
+// non-member scope) merge into the root file. With -p/-o it validates the
 // resolved values first and writes nothing if any scope fails.
 func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts GenerateOptions) error {
 	members, err := workspace.DiscoverMembers(projectRoot, cfg)
@@ -253,14 +253,21 @@ func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts Ge
 	var outputs []output
 	var failures []entryErrors
 
+	// group scopes by the directory their file lands in; global + any root-level
+	// scope share the repo root, so their keys merge into a single file.
+	dirEntries := map[string][]scopedEntry{}
+	var dirOrder []string
 	for _, scope := range scopeNames {
-		entries := scopes[scope]
-		dir, err := scopeDir(scope, projectRoot, members)
-		if err != nil {
-			fmt.Fprintln(os.Stderr)
-			logger.Error("env generate: cannot resolve scope to a directory", "scope", scope, "error", err)
-			return err
+		dir := scopeDir(scope, projectRoot, members)
+		if _, seen := dirEntries[dir]; !seen {
+			dirOrder = append(dirOrder, dir)
 		}
+		dirEntries[dir] = append(dirEntries[dir], scopes[scope]...)
+	}
+	sort.Strings(dirOrder)
+
+	for _, dir := range dirOrder {
+		entries := dirEntries[dir]
 		var keys []string
 		var values map[string]string
 		if opts.Example {
@@ -269,14 +276,14 @@ func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts Ge
 			keys, values, err = buildScopeEnv(entries, opts)
 			if err != nil {
 				fmt.Fprintln(os.Stderr)
-				logger.Error("env generate: failed to build scope env", "scope", scope, "error", err)
+				logger.Error("env generate: failed to build env", "dir", dir, "error", err)
 				return err
 			}
 			if opts.Populate || opts.Override {
 				for _, scoped := range entries {
 					if errs := validateEntryValues(values, scoped.entry); len(errs) > 0 {
 						failures = append(failures, entryErrors{
-							label: scope + ": " + entryLabel(scoped.entry),
+							label: entryLabel(scoped.entry),
 							errs:  errs,
 						})
 					}
