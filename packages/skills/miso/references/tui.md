@@ -29,7 +29,9 @@ When no terminal is attached — CI, piped output, `docker` without `-t`, an age
 
 ## ANSI Colors
 
-Because each child runs in a real pseudo-terminal, its ANSI color output renders in the TUI — including slog-style loggers that emit color only when they detect a TTY. Cursor and erase control sequences are stripped; color (SGR) sequences are preserved.
+In `miso` mode each child runs in its own real pseudo-terminal, so its ANSI color output renders in the TUI — including slog-style loggers that emit color only when they detect a TTY. Cursor and erase control sequences are stripped; color (SGR) sequences are preserved.
+
+In delegated (`turbo`/`nx`) mode there is no per-child pty — the delegate pipes each task's stdout — so miso sets `FORCE_COLOR=1` on the delegate (respecting `NO_COLOR`), matching what `turbo run`/`nx` emit attached to a terminal. Tools that honor `FORCE_COLOR` (most Node tooling) color; tools that only key off an attached TTY or `CLICOLOR_FORCE` (e.g. some Go `termenv`/slog loggers) may still not, since the delegate forwards `FORCE_COLOR` but not `CLICOLOR_FORCE`.
 
 ---
 
