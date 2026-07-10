@@ -1,6 +1,8 @@
 package refgen
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -58,5 +60,46 @@ func TestReservedKeywordsDoc_ListsEveryBuiltin(t *testing.T) {
 	}
 	if !strings.Contains(out, "| `v` |") && !strings.Contains(out, "`v`") {
 		t.Error("ReservedKeywordsDoc missing version alias")
+	}
+}
+
+func TestDrift_GeneratedMatchesCommitted(t *testing.T) {
+	root, err := RepoRoot(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodies, err := LoadSourceBodies(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checks := []struct {
+		path string
+		want string
+	}{
+		{filepath.Join(root, "apps", "docs", "content", "reference", "commands.mdx"), CommandsDoc(bodies)},
+		{filepath.Join(root, "apps", "docs", "content", "reference", "reserved-keywords.mdx"), ReservedKeywordsDoc()},
+	}
+	for _, ch := range checks {
+		got, err := os.ReadFile(ch.path)
+		if err != nil {
+			t.Errorf("read %s: %v", ch.path, err)
+			continue
+		}
+		if string(got) != ch.want {
+			t.Errorf("%s is stale — run `go generate ./...` in apps/miso and commit", ch.path)
+		}
+	}
+
+	embedDir := filepath.Join(root, "apps", "miso", "internal", "cli", "reference", "content")
+	for name, body := range bodies {
+		got, err := os.ReadFile(filepath.Join(embedDir, name+".mdx"))
+		if err != nil {
+			t.Errorf("read embed copy %s: %v", name, err)
+			continue
+		}
+		if string(got) != body {
+			t.Errorf("embed copy %s.mdx is stale — run `go generate ./...` in apps/miso and commit", name)
+		}
 	}
 }
