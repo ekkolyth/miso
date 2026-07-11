@@ -74,7 +74,7 @@ The merged result is gap-filled under the ambient shell environment — a variab
 
 `scope` is enforced differently depending on what's using it:
 
-- **Validation** (`miso env`, `--env`) is strict — every root entry must declare a `scope`, or the command fails. It also warns if a `scope` doesn't match any discovered workspace member.
+- **Validation** (`miso env`, `--env`) is strict — every root entry must declare a `scope`, or the command fails.
 - **Injection** (loading `.env` values into a running script) is permissive — an entry whose `scope` doesn't match the current target is silently skipped, no error. This lets a root `miso.json` carry entries for members that aren't relevant to the command you're currently running.
 
 Both behaviors are miso-mode only. In a delegated repo (`repo: "turbo"` or `"nx"`) the delegate owns env, so `miso env` just type-checks the declared root entries — `scope` isn't required and nothing is injected.
@@ -105,7 +105,7 @@ If omitted, Miso falls back to the same discovery order used when no `env` confi
 
 Path to this scope's override file, relative to the project root (or the member's directory for a member-local entry). Used by `miso env -g -o`: its values are layered on top of the baseline values (populated by `-p` when given), winning on key conflict. One override file per scope — at the root level for `"global"`, or one per member entry.
 
-See [Generating env templates](/env-validation#generating-env-templates) for the full `--generate` workflow.
+See [Env generation](/env-validation/generate) for the full `--generate` workflow.
 
 ### `required`
 

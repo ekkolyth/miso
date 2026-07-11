@@ -33,7 +33,7 @@ Alternatively, a `pnpm-workspace.yaml` with a `packages:` list works the same wa
 \t- "packages/*"`}
 />
 
-**2. Leave `repo` unset (or set it to `"miso"`).** Discovery and fan-out happen automatically — no monorepo-specific `repo` mode is required. Set `repo` to `"turbo"` or `"nx"` only if you want to delegate orchestration to one of those tools instead.
+**2. Leave `repo` unset (or set it to `"miso"`).** Workspace discovery happens automatically — no monorepo-specific `repo` mode is required. Native fan-out and `@scope` runs execute through Miso's TUI — see [Running Workspace Scripts](#running-workspace-scripts). Set `repo` to `"turbo"` or `"nx"` only if you want to delegate orchestration to one of those tools instead.
 
 ## Workspace Scripts
 
@@ -89,6 +89,8 @@ miso test @web -- --watch
 ```
 
 An explicit `@scope` is always honored or Miso fails — if it doesn't resolve to a workspace, or the target isn't something Miso can scope, the command exits with an error rather than quietly running unscoped.
+
+> With `repo` unset or `"miso"`, `@scope` execution runs through Miso's TUI: set `tui` to `"tabbed"` or `"merged"` and run from an interactive terminal, or the command fails rather than running unscoped. Delegated repos (`repo: "turbo"` or `"nx"`) scope through the delegate's own filter (`--filter` / `--projects`) and need no TUI.
 
 > The old prefixed form, `miso @workspace/script`, has been removed in favor of `miso <script> @scope`.
 
