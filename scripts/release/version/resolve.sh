@@ -42,9 +42,11 @@ VERSION="${MAJOR}.${MINOR}.${PATCH}"
 TITLE=$(gh pr view "$PR_NUM" --json title -q '.title')
 
 echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+# random delimiter so a PR title can't close the heredoc early
+DELIM="EOF_NOTES_$(openssl rand -hex 8)"
 {
-    echo "notes<<EOF_NOTES"
+    echo "notes<<$DELIM"
     echo "$TITLE"
-    echo "EOF_NOTES"
+    echo "$DELIM"
 } >> "$GITHUB_OUTPUT"
 echo "Resolved $LEVEL bump from PR #$PR_NUM: $LATEST -> $VERSION"
