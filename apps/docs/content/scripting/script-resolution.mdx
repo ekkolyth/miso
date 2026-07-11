@@ -40,6 +40,8 @@ scripts/
     staging.sh   → miso deploy/staging
 ```
 
+A file is discovered if it has executable permissions or a recognized extension (`.sh`, `.ts`, `.py`, and the rest — see [Script Execution](/scripting/script-execution#changing-the-interpreter)); files starting with `.` or `_` are skipped. The extension is optional when you invoke it, and an `index` file is a directory's default — `scripts/publish/index.sh` runs as `miso publish`.
+
 If two scripts resolve to the same command name, Miso stops with an error instead of guessing which one you meant.
 
 ### 3. Package-Management Commands

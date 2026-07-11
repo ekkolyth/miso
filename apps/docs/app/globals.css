@@ -15,3 +15,81 @@
     --x-color-primary-950: oklch(28.3% 0.141 291.089);
     --x-color-nextra-bg: var(--neutral-950);
 }
+
+/* Callouts pack inline code chips tightly and render links in the loud primary
+   violet. Loosen the line rhythm so wrapped chips breathe, and drop links to the
+   callout's own text color (underline still marks them) instead of purple. */
+.nextra-callout {
+    line-height: 1.8;
+}
+
+.nextra-callout a {
+    color: inherit;
+    text-decoration-color: color-mix(in oklab, currentColor 40%, transparent);
+    text-underline-offset: 2px;
+}
+
+/* Generated command docs put the command in backticks as the heading
+   (## `miso dev`). At heading size the inline-code pill balloons into a giant
+   block. Keep it monospace, sized to the heading, and drop the chip chrome.
+   Carries `.nextra-code` so it outranks Nextra's own inline-code styling. */
+article :is(h1, h2, h3, h4) code.nextra-code {
+    font-size: 0.9em;
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+/* Inline code in prose sits in a chip with a white/10 fill AND a white/10
+   border in dark mode — the border is what makes every term read as a hard
+   block. Soften both so chips blend into the sentence (Turbo-style) instead of
+   shouting. Dark-scoped; the light chip is already faint. */
+.dark
+    article
+    :is(p, li, td, blockquote, a)
+    code.nextra-code:not([class*='twoslash-']) {
+    background-color: color-mix(in oklab, #ffffff 6%, transparent);
+    border-color: color-mix(in oklab, #ffffff 4%, transparent);
+}
+
+/* Prose links: soften the underline everywhere, and lift the brand violet to
+   the lighter 400 in dark mode so it's legible on near-black without shouting.
+   Scoped to body text — heading permalinks keep their own treatment. */
+article :is(p, li, td) a {
+    text-underline-offset: 2px;
+    text-decoration-color: color-mix(in oklab, currentColor 40%, transparent);
+}
+
+.dark article :is(p, li, td) a {
+    color: var(--x-color-primary-400);
+}
+
+/* Match the paragraph line-height on list items so dense lists breathe. */
+article li {
+    line-height: 1.75;
+}
+
+/* The page background lifts to a soft charcoal (set via the layout's
+   backgroundColor prop) so content reads like the Turbo docs. The navbar's
+   frosted bar tracks that same bg var by default — pin it back to true black so
+   the top bar stays a distinct dark band above the lighter content. */
+.nextra-navbar .nextra-navbar-blur {
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+/* The sidebar (and mobile nav) are transparent and show the page bg through —
+   now that the page is charcoal they'd read grey. Pin them to black so the left
+   rail matches the navbar band. The sticky sidebar footer sets its own
+   bg-nextra-bg, so cover it too. */
+.nextra-sidebar,
+.nextra-mobile-nav,
+.nextra-sidebar-footer {
+    background-color: #000;
+}
+
+/* Smooth the type and set the base body weight to medium. */
+body {
+    font-weight: 500;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}

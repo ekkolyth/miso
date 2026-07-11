@@ -28,13 +28,13 @@ export function DocHeading({ children, id }: DocHeadingProps) {
             <button
                 type='button'
                 onClick={copyLink}
-                className='opacity-20 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-neutral-800'
+                className='opacity-60 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-neutral-800'
                 title='Copy link to this section'
             >
                 {copied ? (
                     <Check className='h-4 w-4 text-green-400' />
                 ) : (
-                    <Link className='h-4 w-4 text-neutral-500' />
+                    <Link className='h-4 w-4 text-neutral-400' />
                 )}
             </button>
             {children}

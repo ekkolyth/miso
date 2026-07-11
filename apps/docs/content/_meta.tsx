@@ -6,9 +6,7 @@ export default {
     'env-validation': 'Env Validation',
     scripting: 'Scripting',
     tui: 'Terminal UI (TUI)',
-    examples: 'Examples',
     _reference: { type: 'separator', title: 'Reference' },
     reference: 'Reference',
-    _more: { type: 'separator', title: '' },
-    contributing: 'Contributing to Miso',
+    examples: 'Examples',
 }

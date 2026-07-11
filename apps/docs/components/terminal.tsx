@@ -98,7 +98,7 @@ export function Terminal({
 
     return (
         <div
-            className={`relative border border-neutral-700 rounded-md overflow-hidden ${className ?? ''}`}
+            className={`relative border border-neutral-800 rounded-md overflow-hidden ${className ?? ''}`}
             style={{ backgroundColor: 'rgb(13, 13, 13)' }}
         >
             <div

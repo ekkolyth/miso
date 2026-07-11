@@ -57,6 +57,17 @@ which python3
 which ruby
 ```
 
+## Working Directory
+
+Scripts run from the project root, no matter where they sit in the scripts folder. Write paths relative to the root:
+
+```bash
+# scripts/build/miso.sh
+cd apps/miso && go build ./cmd
+```
+
+So you can reference project files consistently without caring where the script lives.
+
 ## Local Binaries on PATH
 
 Miso prepends `node_modules/.bin` to each script's `PATH`, walking from the target directory up to the project root (nearest first). Locally-installed CLIs run bare — no `npx` or package-manager prefix:

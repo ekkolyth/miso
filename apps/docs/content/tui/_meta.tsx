@@ -1,7 +1,6 @@
 export default {
     index: 'Overview',
     configuration: 'Configuration',
-    'tabbed-mode': 'Tabbed Mode',
-    'merged-mode': 'Merged Mode',
+    modes: 'Modes',
     'turborepo-integration': 'Turborepo Integration'
 }

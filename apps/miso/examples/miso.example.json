@@ -4,7 +4,7 @@
 	"tui": "tabbed",
 	"repo": {
 		"tasks": {
-			"dev": { "concurrent": ["services"] }
+			"dev": { "concurrent": ["convex"] }
 		}
 	},
 	"flags": {
