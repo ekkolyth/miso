@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
+	"github.com/charmbracelet/x/term"
 
 	"github.com/ekkolyth/miso/internal/cli"
 	"github.com/ekkolyth/miso/internal/cli/commands"
@@ -153,6 +154,10 @@ func main() {
 							chosen = append(chosen, entry.Agent)
 						}
 					} else {
+						if !term.IsTerminal(os.Stdin.Fd()) {
+							cli.Fail(logger, fmt.Errorf("no interactive terminal; re-run with --yes to install the miso skill into all detected harnesses"), false)
+							return
+						}
 						selected, serr := harness.Select(installed)
 						if serr != nil {
 							cli.Fail(logger, serr, false)
