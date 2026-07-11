@@ -78,20 +78,27 @@ func TestProcessManager_SpawnAndCapture(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// Wait for process to finish
-	time.Sleep(500 * time.Millisecond)
-
-	lines := p.Buffer.Lines()
-	if len(lines) == 0 {
-		t.Fatal("expected at least one line in buffer, got none")
-	}
-
+	// PTY flush timing varies by runner; poll for the child's output rather
+	// than sleeping a fixed interval.
+	var lines []string
 	found := false
-	for _, line := range lines {
-		if strings.Contains(line, "hello world") {
-			found = true
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		lines = p.Buffer.Lines()
+		for _, line := range lines {
+			if strings.Contains(line, "hello world") {
+				found = true
+				break
+			}
+		}
+		if found {
 			break
 		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if len(lines) == 0 {
+		t.Fatal("expected at least one line in buffer, got none")
 	}
 	if !found {
 		t.Errorf("expected 'hello world' in buffer, got: %v", lines)
