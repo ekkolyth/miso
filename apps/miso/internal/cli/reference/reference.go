@@ -78,6 +78,6 @@ func RunCommandHelp(name string) error {
 		fmt.Fprintf(os.Stderr, "no help for %q — run `miso help` to see all commands\n", name)
 		return fmt.Errorf("unknown command %q", name)
 	}
-	fmt.Fprint(os.Stdout, out)
+	_, _ = fmt.Fprint(os.Stdout, out)
 	return nil
 }

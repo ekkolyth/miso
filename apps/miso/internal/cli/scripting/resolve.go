@@ -42,7 +42,7 @@ func scriptsFolder(cfg config.Config, root string) string {
 // matchFolderScript finds the single folder script for name — an explicit
 // extension match first, then a bare-key match. Returns nil when none matches,
 // and ErrAmbiguousScript when two files share the key.
-func matchFolderScript(discovered map[string][]ScriptInfo, name, ext, key string) (*ScriptInfo, error) {
+func matchFolderScript(discovered map[string][]ScriptInfo, _, ext, key string) (*ScriptInfo, error) {
 	if ext != "" {
 		if scripts, ok := discovered[key]; ok {
 			for i := range scripts {

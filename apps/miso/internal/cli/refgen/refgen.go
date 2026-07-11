@@ -120,7 +120,7 @@ func ReservedKeywordsDoc() string {
 		if cmd.Meta {
 			pre = "yes"
 		}
-		out.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s |\n", cmd.Name, aliases, pre, cmd.Summary))
+		fmt.Fprintf(&out, "| `%s` | %s | %s | %s |\n", cmd.Name, aliases, pre, cmd.Summary)
 	}
 	return out.String()
 }
