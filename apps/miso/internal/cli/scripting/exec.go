@@ -115,8 +115,9 @@ func ExecScriptFile(scriptPath string, args []string, workDir, defaultShell, man
 	case sig := <-sigCh:
 		pid := cmd.Process.Pid
 		_ = proc.KillGroup(pid, syscall.SIGTERM)
-		time.AfterFunc(2*time.Second, func() { _ = proc.KillGroup(pid, syscall.SIGKILL) })
+		killTimer := time.AfterFunc(2*time.Second, func() { _ = proc.KillGroup(pid, syscall.SIGKILL) })
 		<-done
+		killTimer.Stop() // child already exited; don't SIGKILL a recycled pid
 		return fmt.Errorf("interrupted by signal %v", sig)
 	case err := <-done:
 		return err
