@@ -69,7 +69,10 @@ func TestProcessManager_SpawnAndCapture(t *testing.T) {
 		ScriptName: "echo",
 	}
 
-	p := pm.Add(entry, "echo", []string{"hello world"}, "", nil)
+	// The child lingers after writing so the reader drains the pty before the
+	// slave closes. macOS drops in-flight pty data when a fast-exiting child
+	// closes the last slave fd while the master read is racing it (#38).
+	p := pm.Add(entry, "sh", []string{"-c", `printf 'hello world\n'; sleep 0.2`}, "", nil)
 	if p == nil {
 		t.Fatal("expected non-nil process")
 	}
@@ -213,7 +216,9 @@ func TestCaptureOutputTrimsCarriageReturn(t *testing.T) {
 	// The child emits bare "\n"; the pty's ONLCR maps it to "\r\n" on the
 	// master, so captured lines carry a trailing "\r" that must be trimmed.
 	pm := NewProcessManager()
-	p := pm.Add(TuiScriptEntry{Label: "cr"}, "printf", []string{`one\ntwo\n`}, "", nil)
+	// Linger after writing so the reader drains before the slave closes — see
+	// TestProcessManager_SpawnAndCapture for the macOS pty race (#38).
+	p := pm.Add(TuiScriptEntry{Label: "cr"}, "sh", []string{"-c", `printf 'one\ntwo\n'; sleep 0.2`}, "", nil)
 	if err := pm.Start(p); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
