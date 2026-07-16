@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -243,11 +244,41 @@ func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiSc
 	return discoverMemberFanOut(cfg, scriptName, root, members)
 }
 
+// resolves one concurrent entry. A bare name is local scope: the root when
+// local is nil, otherwise that member. "@member/script" resolves script inside
+// the named member regardless of local scope.
+func resolveConcurrent(cfg config.Config, concName, root string, local *WorkspaceInfo, members []workspace.Member) ([]TuiScriptEntry, error) {
+	if strings.HasPrefix(concName, "@") {
+		parts := strings.SplitN(strings.TrimPrefix(concName, "@"), "/", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("concurrent %q: expected @member/script", concName)
+		}
+		memberName, script := parts[0], parts[1]
+		for _, member := range members {
+			if member.Name != memberName && filepath.Base(member.Dir) != memberName {
+				continue
+			}
+			effective := workspace.EffectiveConfig(cfg, member)
+			ws := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
+			return DiscoverTuiScripts(script, []WorkspaceInfo{ws}, cfg.Scripts)
+		}
+		return nil, fmt.Errorf("concurrent %q: no member named %q", concName, memberName)
+	}
+	if local == nil {
+		return ResolveSingleRepoScripts([]string{concName}, root, cfg)
+	}
+	return DiscoverTuiScripts(concName, []WorkspaceInfo{*local}, cfg.Scripts)
+}
+
 // adds concurrent companions to an already-resolved main entry
 func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries []TuiScriptEntry) ([]TuiScriptEntry, error) {
+	members, err := workspace.DiscoverMembers(root, cfg)
+	if err != nil {
+		return nil, err
+	}
 	entries := mainEntries
 	for _, concName := range cfg.TaskConcurrent(scriptName) {
-		concEntries, err := ResolveSingleRepoScripts([]string{concName}, root, cfg)
+		concEntries, err := resolveConcurrent(cfg, concName, root, nil, members)
 		if err != nil {
 			return nil, err
 		}
@@ -258,7 +289,7 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 
 // one process per member that defines the script, plus each member's own
 // concurrent companions resolved within that same member
-func discoverMemberFanOut(cfg config.Config, scriptName, _ string, members []workspace.Member) ([]TuiScriptEntry, error) {
+func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []workspace.Member) ([]TuiScriptEntry, error) {
 	var entries []TuiScriptEntry
 	for _, member := range members {
 		effective := workspace.EffectiveConfig(cfg, member)
@@ -278,7 +309,7 @@ func discoverMemberFanOut(cfg config.Config, scriptName, _ string, members []wor
 		entries = append(entries, memberEntries...)
 
 		for _, concName := range effective.TaskConcurrent(scriptName) {
-			concEntries, err := DiscoverTuiScripts(concName, []WorkspaceInfo{ws}, cfg.Scripts)
+			concEntries, err := resolveConcurrent(cfg, concName, root, &ws, members)
 			if err != nil {
 				return nil, err
 			}

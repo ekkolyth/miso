@@ -491,3 +491,38 @@ func contains(s []string, want string) bool {
 	}
 	return false
 }
+
+// TestDiscoverEntriesRootConcurrentTargetsMemberScope verifies a root-scope
+// concurrent entry written as "@member/script" resolves script inside that
+// member, not against the root scope.
+func TestDiscoverEntriesRootConcurrentTargetsMemberScope(t *testing.T) {
+	root := t.TempDir()
+	rootScripts := filepath.Join(root, "scripts")
+	if err := os.MkdirAll(rootScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, rootScripts, "dev") // root scripts/dev.sh → root-first single process
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	webScripts := filepath.Join(webDir, "scripts")
+	if err := os.MkdirAll(webScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, webScripts, "studio") // apps/web/scripts/studio.sh
+
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"@web/studio"}}},
+	}
+	entries, err := discoverEntries(cfg, "dev", root)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	labels := labelsOf(entries)
+	if !contains(labels, "web") && !contains(labels, "web/studio") {
+		t.Fatalf("want a studio entry from the web member, got %v", labels)
+	}
+}
