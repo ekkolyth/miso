@@ -415,6 +415,33 @@ func TestDiscoverTuiScriptsErrorsWhenScriptInBothSources(t *testing.T) {
 	}
 }
 
+// TestDiscoverEntriesRootScriptWinsOverFanOut verifies a script resolving at
+// the root wins over fan-out, even when a member also defines it.
+func TestDiscoverEntriesRootScriptWinsOverFanOut(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"],"scripts":{"dev":"echo root"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(webDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePackageJSON(t, webDir, map[string]string{"dev": "vite"})
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 root entry (no fan-out), got %d: %v", len(entries), labelsOf(entries))
+	}
+	if entries[0].WorkspaceDir != root {
+		t.Errorf("entry dir = %q, want root %q", entries[0].WorkspaceDir, root)
+	}
+}
+
 // labelsOf returns the Label field from each entry in order.
 func labelsOf(entries []TuiScriptEntry) []string {
 	out := make([]string, len(entries))

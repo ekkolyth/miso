@@ -216,78 +216,63 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	return true, err
 }
 
+// root wins over members — fan out only when the root doesn't have the script
 func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiScriptEntry, error) {
+	var rootResolved []TuiScriptEntry
+	var err error
+	if cfg.SimpleMode() {
+		rootResolved, err = ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
+	} else {
+		rootResolved, err = ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(rootResolved) > 0 {
+		return discoverRootScope(cfg, scriptName, root, rootResolved)
+	}
+
 	members, err := workspace.DiscoverMembers(root, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("discover members: %w", err)
 	}
+	// simple mode does not support monorepo workspace discovery
+	if len(members) == 0 || cfg.SimpleMode() {
+		return nil, nil
+	}
+	return discoverMemberFanOut(cfg, scriptName, root, members)
+}
 
-	if len(members) > 0 {
-		// Simple mode does not support monorepo workspace discovery
-		if cfg.SimpleMode() {
-			return nil, nil
-		}
-
-		var wsInfos []WorkspaceInfo
-		for _, member := range members {
-			effective := workspace.EffectiveConfig(cfg, member)
-			wsInfos = append(wsInfos, WorkspaceInfo{
-				Name:          member.Name,
-				Dir:           member.Dir,
-				ScriptsFolder: effective.Scripts,
-				Shell:         effective.Shell,
-			})
-		}
-
-		entries, err := DiscoverTuiScripts(scriptName, wsInfos, cfg.Scripts)
+// adds concurrent companions to an already-resolved main entry
+func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries []TuiScriptEntry) ([]TuiScriptEntry, error) {
+	entries := mainEntries
+	for _, concName := range cfg.TaskConcurrent(scriptName) {
+		concEntries, err := ResolveSingleRepoScripts([]string{concName}, root, cfg)
 		if err != nil {
 			return nil, err
 		}
-
-		// Discover concurrent companion tasks
-		for _, concName := range cfg.TaskConcurrent(scriptName) {
-			concEntries, err := DiscoverTuiScripts(concName, wsInfos, cfg.Scripts)
-			if err != nil {
-				return nil, fmt.Errorf("discover concurrent %q: %w", concName, err)
-			}
-			entries = append(entries, concEntries...)
-		}
-
-		return DeduplicateLabels(entries), nil
+		entries = append(entries, concEntries...)
 	}
+	return DeduplicateLabels(entries), nil
+}
 
-	// Single repo with concurrent config
-	concurrent := cfg.TaskConcurrent(scriptName)
-	if len(concurrent) > 0 {
-		var mainEntries, concEntries []TuiScriptEntry
-		var err error
-
-		if cfg.SimpleMode() {
-			mainEntries, err = ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
-			if err != nil {
-				return nil, err
-			}
-			concEntries, err = ResolveSingleRepoScriptsFolderOnly(concurrent, root, cfg)
-		} else {
-			mainEntries, err = ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
-			if err != nil {
-				return nil, err
-			}
-			concEntries, err = ResolveSingleRepoScripts(concurrent, root, cfg)
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		return DeduplicateLabels(append(mainEntries, concEntries...)), nil
+// one process per member that defines the script
+func discoverMemberFanOut(cfg config.Config, scriptName, _ string, members []workspace.Member) ([]TuiScriptEntry, error) {
+	var wsInfos []WorkspaceInfo
+	for _, member := range members {
+		effective := workspace.EffectiveConfig(cfg, member)
+		wsInfos = append(wsInfos, WorkspaceInfo{
+			Name:          member.Name,
+			Dir:           member.Dir,
+			ScriptsFolder: effective.Scripts,
+			Shell:         effective.Shell,
+		})
 	}
-
-	// Single repo, no concurrent config — resolve the script itself so a
-	// single-process run still gets the TUI.
-	if cfg.SimpleMode() {
-		return ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
+	entries, err := DiscoverTuiScripts(scriptName, wsInfos, cfg.Scripts)
+	if err != nil {
+		return nil, err
 	}
-	return ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+	return DeduplicateLabels(entries), nil
 }
 
 func buildWSInfos(entries []TuiScriptEntry) []WorkspaceInfo {
