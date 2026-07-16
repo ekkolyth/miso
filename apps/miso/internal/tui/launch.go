@@ -194,40 +194,7 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	// Start all processes in a goroutine — prog.Send() blocks until the
 	// bubbletea event loop is running, so we can't call Start before p.Run().
 	go func() {
-		// Start concurrent companions immediately
-		for _, proc := range concurrentProcs {
-			if err := pm.Start(proc); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
-			}
-		}
-
-		if levels != nil {
-			for _, level := range levels {
-				var levelProcs []*Process
-				for _, entry := range level {
-					proc := pm.findProc(entry.Label)
-					if proc == nil {
-						continue
-					}
-					if err := pm.Start(proc); err != nil {
-						fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
-					}
-					levelProcs = append(levelProcs, proc)
-				}
-				pm.WaitAllExited(levelProcs)
-				for _, proc := range levelProcs {
-					if proc.ExitCode != 0 {
-						return
-					}
-				}
-			}
-		} else {
-			for _, proc := range pm.Processes {
-				if err := pm.Start(proc); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
-				}
-			}
-		}
+		startProcesses(pm, levels, concurrentProcs)
 	}()
 
 	_, err = p.Run()

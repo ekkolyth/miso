@@ -141,9 +141,11 @@ func (pm *ProcessManager) Start(p *Process) error {
 		p.mu.Lock()
 		p.State = StateExited
 		p.ExitCode = -1
-		close(p.done)
 		p.mu.Unlock()
 		pm.sendState(p, StateExited, -1)
+		p.mu.Lock()
+		close(p.done)
+		p.mu.Unlock()
 		return err
 	}
 
@@ -180,10 +182,13 @@ func (pm *ProcessManager) Start(p *Process) error {
 		p.mu.Lock()
 		p.State = StateExited
 		p.ExitCode = code
-		close(p.done)
 		p.mu.Unlock()
 
 		pm.sendState(p, StateExited, code)
+
+		p.mu.Lock()
+		close(p.done)
+		p.mu.Unlock()
 	}()
 
 	return nil
