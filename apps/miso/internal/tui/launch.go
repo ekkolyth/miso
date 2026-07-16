@@ -256,21 +256,34 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 	return DeduplicateLabels(entries), nil
 }
 
-// one process per member that defines the script
+// one process per member that defines the script, plus each member's own
+// concurrent companions resolved within that same member
 func discoverMemberFanOut(cfg config.Config, scriptName, _ string, members []workspace.Member) ([]TuiScriptEntry, error) {
-	var wsInfos []WorkspaceInfo
+	var entries []TuiScriptEntry
 	for _, member := range members {
 		effective := workspace.EffectiveConfig(cfg, member)
-		wsInfos = append(wsInfos, WorkspaceInfo{
+		ws := WorkspaceInfo{
 			Name:          member.Name,
 			Dir:           member.Dir,
 			ScriptsFolder: effective.Scripts,
 			Shell:         effective.Shell,
-		})
-	}
-	entries, err := DiscoverTuiScripts(scriptName, wsInfos, cfg.Scripts)
-	if err != nil {
-		return nil, err
+		}
+		memberEntries, err := DiscoverTuiScripts(scriptName, []WorkspaceInfo{ws}, cfg.Scripts)
+		if err != nil {
+			return nil, err
+		}
+		if len(memberEntries) == 0 {
+			continue
+		}
+		entries = append(entries, memberEntries...)
+
+		for _, concName := range effective.TaskConcurrent(scriptName) {
+			concEntries, err := DiscoverTuiScripts(concName, []WorkspaceInfo{ws}, cfg.Scripts)
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, concEntries...)
+		}
 	}
 	return DeduplicateLabels(entries), nil
 }

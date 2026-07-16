@@ -450,3 +450,44 @@ func labelsOf(entries []TuiScriptEntry) []string {
 	}
 	return out
 }
+
+// TestDiscoverEntriesMemberConcurrentRunsWithinMember verifies a member's own
+// concurrent task (declared in that member's miso.json) is resolved within
+// that member, alongside its main script.
+func TestDiscoverEntriesMemberConcurrentRunsWithinMember(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/explorer"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	appDir := filepath.Join(root, "apps", "explorer")
+	scriptsDir := filepath.Join(appDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePackageJSON(t, appDir, map[string]string{"dev": "vite"})
+	writeScript(t, scriptsDir, "convex") // apps/explorer/scripts/convex.sh
+	if err := os.WriteFile(filepath.Join(appDir, "miso.json"),
+		[]byte(`{"repo":{"tasks":{"dev":{"concurrent":["convex"]}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	labels := labelsOf(entries)
+	if !contains(labels, "explorer/dev") || !contains(labels, "explorer/convex") {
+		t.Fatalf("want explorer/dev + explorer/convex, got %v", labels)
+	}
+}
+
+func contains(s []string, want string) bool {
+	for _, v := range s {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
