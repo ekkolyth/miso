@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -34,7 +35,8 @@ type TuiScriptEntry struct {
 // directory (e.g. "./scripts"). It is used in monorepo mode.
 //
 // Prefix matching: command "dev" matches "dev", "dev:worker", "dev/worker", etc.
-// Scripts folder takes precedence over package.json for the same script name.
+// A name defined in both the scripts folder and package.json within the same
+// workspace is ambiguous and returns scripting.ErrAmbiguousScript.
 // Labels: single match per workspace → workspace name; multiple matches → "workspace/scriptName".
 // Results are sorted alphabetically by label.
 func DiscoverTuiScripts(command string, workspaces []WorkspaceInfo, scriptsFolder string) ([]TuiScriptEntry, error) {
@@ -84,7 +86,7 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 		return nil, err
 	}
 
-	// collect matching script names; folder takes precedence over package.json
+	// collect matching script names; a name in both sources is an error, not a pick
 	type match struct {
 		name   string
 		source string
@@ -106,11 +108,16 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 		}
 	}
 
-	// package.json scripts: prefix match, only if not already found in folder
+	// package.json scripts: prefix match. Same name in both sources is ambiguous.
 	for name := range pkgScripts {
-		if !seen[name] && matchesPrefix(command, name) {
-			matches = append(matches, match{name: name, source: "packagejson", path: ""})
+		if !matchesPrefix(command, name) {
+			continue
 		}
+		if seen[name] {
+			return nil, fmt.Errorf("%w: %q in %s is defined in both scripts/ and package.json — rename one",
+				scripting.ErrAmbiguousScript, name, ws.Name)
+		}
+		matches = append(matches, match{name: name, source: "packagejson", path: ""})
 	}
 
 	if len(matches) == 0 {

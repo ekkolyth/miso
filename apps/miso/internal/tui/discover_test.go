@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
 
+	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
 )
 
@@ -389,6 +391,27 @@ func TestDeduplicateLabels_NoDuplicates(t *testing.T) {
 	labels := labelsOf(result)
 	if labels[0] != "app" || labels[1] != "api" {
 		t.Errorf("labels changed unexpectedly: %v", labels)
+	}
+}
+
+// TestDiscoverTuiScriptsErrorsWhenScriptInBothSources verifies a member
+// defining the same script name in both scripts/ and package.json errors
+// instead of silently picking the folder script.
+func TestDiscoverTuiScriptsErrorsWhenScriptInBothSources(t *testing.T) {
+	dir := t.TempDir()
+	scriptsDir := filepath.Join(dir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, scriptsDir, "dev")
+	writePackageJSON(t, dir, map[string]string{"dev": "vite"})
+
+	_, err := DiscoverTuiScripts("dev", []WorkspaceInfo{{Name: "web", Dir: dir}}, "./scripts")
+	if err == nil {
+		t.Fatal("expected ambiguous-script error when dev is defined in both sources")
+	}
+	if !errors.Is(err, scripting.ErrAmbiguousScript) {
+		t.Errorf("error = %v, want ErrAmbiguousScript", err)
 	}
 }
 
