@@ -32,7 +32,7 @@ type Config struct {
 	Env            []*EnvEntry           `json:"env,omitempty"`
 	Repo           string                `json:"repo,omitempty"` // "miso" (default), "turbo", or "nx"
 	Tasks          map[string]TaskConfig `json:"-"`              // populated from repo object form; not serialized directly
-	TuiMode        string                `json:"tui,omitempty"`  // "off" (default), "tabbed", or "merged"
+	TuiMode        string                `json:"tui,omitempty"`  // "tabbed" (default), "off", or "merged"
 	TuiCleanExit   bool                  `json:"-"`              // populated from tui object form; not serialized directly
 }
 
@@ -206,7 +206,7 @@ func Load(root string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
 
-	tuiMode := "off"
+	tuiMode := "tabbed"
 	tuiCleanExit := false
 	if len(load.TuiRaw) > 0 {
 		var err error

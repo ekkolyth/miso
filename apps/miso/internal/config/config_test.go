@@ -41,8 +41,8 @@ func TestLoadTuiConfigDefaults(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if cfg.TuiMode != "off" {
-		t.Errorf("Tui = %q, want %q (default)", cfg.TuiMode, "off")
+	if cfg.TuiMode != "tabbed" {
+		t.Errorf("Tui = %q, want %q", cfg.TuiMode, "tabbed")
 	}
 }
 
