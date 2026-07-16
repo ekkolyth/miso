@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -246,7 +245,8 @@ func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiSc
 
 // resolves one concurrent entry. A bare name is local scope: the root when
 // local is nil, otherwise that member. "@member/script" resolves script inside
-// the named member regardless of local scope.
+// the named member regardless of local scope, via the same name-first tiered
+// matching as an explicit CLI @scope (workspace.ResolveScopes).
 func resolveConcurrent(cfg config.Config, concName, root string, local *WorkspaceInfo, members []workspace.Member) ([]TuiScriptEntry, error) {
 	if strings.HasPrefix(concName, "@") {
 		parts := strings.SplitN(strings.TrimPrefix(concName, "@"), "/", 2)
@@ -254,30 +254,51 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 			return nil, fmt.Errorf("concurrent %q: expected @member/script", concName)
 		}
 		memberName, script := parts[0], parts[1]
-		for _, member := range members {
-			if member.Name != memberName && filepath.Base(member.Dir) != memberName {
-				continue
-			}
-			effective := workspace.EffectiveConfig(cfg, member)
-			ws := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
-			return DiscoverTuiScripts(script, []WorkspaceInfo{ws}, cfg.Scripts)
+		resolved, err := workspace.ResolveScopes([]string{"@" + memberName}, members, root)
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("concurrent %q: no member named %q", concName, memberName)
+		member := resolved[0]
+		effective := workspace.EffectiveConfig(cfg, member)
+		ws := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
+		return DiscoverTuiScripts(script, []WorkspaceInfo{ws}, cfg.Scripts)
 	}
 	if local == nil {
+		if cfg.SimpleMode() {
+			return ResolveSingleRepoScriptsFolderOnly([]string{concName}, root, cfg)
+		}
 		return ResolveSingleRepoScripts([]string{concName}, root, cfg)
 	}
 	return DiscoverTuiScripts(concName, []WorkspaceInfo{*local}, cfg.Scripts)
 }
 
+// only "@"-prefixed entries need the member list
+func concurrentNeedsMembers(concurrent []string) bool {
+	for _, name := range concurrent {
+		if strings.HasPrefix(name, "@") {
+			return true
+		}
+	}
+	return false
+}
+
 // adds concurrent companions to an already-resolved main entry
 func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries []TuiScriptEntry) ([]TuiScriptEntry, error) {
-	members, err := workspace.DiscoverMembers(root, cfg)
-	if err != nil {
-		return nil, err
+	concurrent := cfg.TaskConcurrent(scriptName)
+
+	// a broken workspace file must not block a script with no @-ref — only
+	// fetch members when one is actually present (bare names resolve at root)
+	var members []workspace.Member
+	if concurrentNeedsMembers(concurrent) {
+		var err error
+		members, err = workspace.DiscoverMembers(root, cfg)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	entries := mainEntries
-	for _, concName := range cfg.TaskConcurrent(scriptName) {
+	for _, concName := range concurrent {
 		concEntries, err := resolveConcurrent(cfg, concName, root, nil, members)
 		if err != nil {
 			return nil, err

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 // writePackageJSON writes a minimal package.json with the given scripts map to dir.
@@ -524,5 +525,120 @@ func TestDiscoverEntriesRootConcurrentTargetsMemberScope(t *testing.T) {
 	labels := labelsOf(entries)
 	if !contains(labels, "web") && !contains(labels, "web/studio") {
 		t.Fatalf("want a studio entry from the web member, got %v", labels)
+	}
+}
+
+// TestDiscoverEntriesMemberConcurrentCrossReferencesOtherMember verifies a
+// member's own concurrent entry written as "@other/script" resolves inside
+// that other member, not the declaring member — discoverMemberFanOut calling
+// resolveConcurrent with a non-nil local scope and an @-ref.
+func TestDiscoverEntriesMemberConcurrentCrossReferencesOtherMember(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/explorer","apps/worker"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	explorerDir := filepath.Join(root, "apps", "explorer")
+	if err := os.MkdirAll(explorerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePackageJSON(t, explorerDir, map[string]string{"dev": "vite"})
+	if err := os.WriteFile(filepath.Join(explorerDir, "miso.json"),
+		[]byte(`{"repo":{"tasks":{"dev":{"concurrent":["@worker/queue"]}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	workerScripts := filepath.Join(root, "apps", "worker", "scripts")
+	if err := os.MkdirAll(workerScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, workerScripts, "queue") // apps/worker/scripts/queue.sh
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	labels := labelsOf(entries)
+	if !contains(labels, "explorer") {
+		t.Fatalf("want explorer's own dev entry, got %v", labels)
+	}
+	if !contains(labels, "worker") {
+		t.Fatalf("want @worker/queue to resolve inside the worker member, got %v", labels)
+	}
+}
+
+// TestResolveConcurrentAtRefErrors verifies malformed and unknown @-refs in a
+// concurrent entry return errors instead of silently doing nothing.
+func TestResolveConcurrentAtRefErrors(t *testing.T) {
+	root := t.TempDir()
+	members := []workspace.Member{{Name: "web", Dir: filepath.Join(root, "apps", "web")}}
+	cfg := config.Config{Scripts: "./scripts"}
+
+	t.Run("missing slash", func(t *testing.T) {
+		if _, err := resolveConcurrent(cfg, "@web", root, nil, members); err == nil {
+			t.Fatal("expected error for @member with no /script")
+		}
+	})
+
+	t.Run("unknown member", func(t *testing.T) {
+		if _, err := resolveConcurrent(cfg, "@nope/script", root, nil, members); err == nil {
+			t.Fatal("expected error for unknown member @nope")
+		}
+	})
+}
+
+// TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename verifies an
+// "@member/script" concurrent entry resolves the member NAMED "web", not an
+// unrelated member whose directory basename happens to be "web" — the same
+// name-first tiering ResolveScopes already applies to explicit CLI @scopes.
+// The basename-collision workspace is listed first so an any-match, first-hit
+// loop (the pre-fix behavior) would have picked it by mistake.
+func TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename(t *testing.T) {
+	root := t.TempDir()
+	rootScripts := filepath.Join(root, "scripts")
+	if err := os.MkdirAll(rootScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, rootScripts, "dev") // root scripts/dev.sh → root-first single process
+
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["projects/legacy/web","apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyDir := filepath.Join(root, "projects", "legacy", "web")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "package.json"),
+		[]byte(`{"name":"legacy-web","scripts":{"build":"vite build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	webDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(webDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "package.json"),
+		[]byte(`{"name":"web","scripts":{"build":"vite build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"@web/build"}}},
+	}
+	entries, err := discoverEntries(cfg, "dev", root)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	labels := labelsOf(entries)
+	if !contains(labels, "web") {
+		t.Fatalf("want @web/build to resolve the member named web, got %v", labels)
+	}
+	if contains(labels, "legacy-web") {
+		t.Fatalf("resolved the dir-basename collision instead of the member named web: %v", labels)
 	}
 }
