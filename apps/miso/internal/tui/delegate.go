@@ -139,7 +139,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	}
 
 	p := tea.NewProgram(model)
-	pm.SetProgram(p)
+	pm.SetSink(programSink{prog: p})
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

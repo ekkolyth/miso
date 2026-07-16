@@ -11,8 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/ekkolyth/miso/internal/proc"
 )
 
@@ -62,22 +60,22 @@ type Process struct {
 	mu     sync.Mutex
 }
 
-// ProcessManager owns the set of managed processes and dispatches tea messages.
+// ProcessManager owns the set of managed processes and dispatches output/state to a sink.
 type ProcessManager struct {
 	Processes []*Process
 	mu        sync.Mutex
-	program   *tea.Program
+	sink      OutputSink
 }
 
 func NewProcessManager() *ProcessManager {
 	return &ProcessManager{}
 }
 
-// SetProgram registers the bubbletea program used for sending messages.
-func (pm *ProcessManager) SetProgram(p *tea.Program) {
+// SetSink registers the destination for process output and state.
+func (pm *ProcessManager) SetSink(sink OutputSink) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	pm.program = p
+	pm.sink = sink
 }
 
 func (pm *ProcessManager) Add(entry TuiScriptEntry, command string, args []string, dir string, environ []string) *Process {
@@ -349,14 +347,14 @@ func readLines(r io.Reader, maxLine int, emit func(string)) {
 	}
 }
 
-// sendOutput dispatches a ProcessOutputMsg to the registered bubbletea program.
+// sendOutput dispatches process output to the registered sink.
 func (pm *ProcessManager) sendOutput(p *Process, line string) {
 	pm.mu.Lock()
-	prog := pm.program
+	sink := pm.sink
 	pm.mu.Unlock()
 
-	if prog != nil {
-		prog.Send(ProcessOutputMsg{Label: p.Entry.Label, Line: line})
+	if sink != nil {
+		sink.OnOutput(p.Entry.Label, line)
 	}
 }
 
@@ -421,14 +419,14 @@ func (pm *ProcessManager) findProc(label string) *Process {
 	return nil
 }
 
-// sendState dispatches a ProcessStateMsg to the registered bubbletea program.
+// sendState dispatches process state to the registered sink.
 func (pm *ProcessManager) sendState(p *Process, state ProcessState, code int) {
 	pm.mu.Lock()
-	prog := pm.program
+	sink := pm.sink
 	pm.mu.Unlock()
 
-	if prog != nil {
-		prog.Send(ProcessStateMsg{Label: p.Entry.Label, State: state, Code: code})
+	if sink != nil {
+		sink.OnState(p.Entry.Label, state, code)
 	}
 }
 

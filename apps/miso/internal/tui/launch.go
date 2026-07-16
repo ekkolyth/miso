@@ -179,7 +179,7 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	}
 
 	p := tea.NewProgram(model)
-	pm.SetProgram(p)
+	pm.SetSink(programSink{prog: p})
 
 	// Catch OS signals — tell bubbletea to quit cleanly so it restores
 	// the alt screen. Process cleanup happens after p.Run() returns below.
