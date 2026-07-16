@@ -133,6 +133,7 @@ func (pm *ProcessManager) Start(p *Process) error {
 		p.cmd.Env = p.Environ
 	}
 	cmd := p.cmd
+	done := p.done
 	p.mu.Unlock()
 
 	// A pty (unix) or pipes (Windows) — gives children a TTY + live stdin.
@@ -143,9 +144,7 @@ func (pm *ProcessManager) Start(p *Process) error {
 		p.ExitCode = -1
 		p.mu.Unlock()
 		pm.sendState(p, StateExited, -1)
-		p.mu.Lock()
-		close(p.done)
-		p.mu.Unlock()
+		close(done)
 		return err
 	}
 
@@ -186,9 +185,7 @@ func (pm *ProcessManager) Start(p *Process) error {
 
 		pm.sendState(p, StateExited, code)
 
-		p.mu.Lock()
-		close(p.done)
-		p.mu.Unlock()
+		close(done)
 	}()
 
 	return nil

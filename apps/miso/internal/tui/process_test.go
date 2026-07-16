@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -188,6 +189,79 @@ func TestProcessManager_StopAll(t *testing.T) {
 
 	if finalState != StateExited {
 		t.Errorf("expected StateExited after StopAll, got %v", finalState)
+	}
+}
+
+// pausingSink blocks the first StateExited notification until released, so a
+// test can force a Restart to land inside the exit goroutine's window
+// between sendState and close(done).
+type pausingSink struct {
+	once    sync.Once
+	reached chan struct{}
+	proceed chan struct{}
+}
+
+func (s *pausingSink) OnOutput(_, _ string) {}
+
+func (s *pausingSink) OnState(_ string, state ProcessState, _ int) {
+	if state != StateExited {
+		return
+	}
+	s.once.Do(func() {
+		close(s.reached)
+		<-s.proceed
+	})
+}
+
+func TestProcessManager_RestartDuringExitDoesNotDoubleCloseDone(t *testing.T) {
+	pm := NewProcessManager()
+	entry := TuiScriptEntry{Label: "restart-race", ScriptName: "echo"}
+	p := pm.Add(entry, "echo", []string{"hi"}, "", nil)
+
+	sink := &pausingSink{reached: make(chan struct{}), proceed: make(chan struct{})}
+	pm.SetSink(sink)
+
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	select {
+	case <-sink.reached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("exit goroutine never reached sendState(StateExited)")
+	}
+
+	p.mu.Lock()
+	oldDone := p.done
+	p.mu.Unlock()
+
+	// Stop() observes StateExited (already set before sendState blocked
+	// above) and returns immediately; Start() then swaps in a new done
+	// channel while the original exit goroutine is still paused.
+	if err := pm.Restart(p); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+
+	p.mu.Lock()
+	newDone := p.done
+	p.mu.Unlock()
+
+	if oldDone == newDone {
+		t.Fatal("Restart should have replaced p.done with a new channel")
+	}
+
+	close(sink.proceed) // release the original exit goroutine
+
+	select {
+	case <-oldDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("original done channel was never closed")
+	}
+
+	select {
+	case <-newDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("restarted process's done channel was never closed")
 	}
 }
 
