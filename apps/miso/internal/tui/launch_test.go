@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/manager/bun"
 )
 
 func TestFilterEntriesByWorkspace(t *testing.T) {
@@ -71,6 +73,42 @@ func TestBuildRunRootScriptArgsReachScript(t *testing.T) {
 
 	if out := buf.String(); !strings.Contains(out, "got:[staging]") {
 		t.Errorf("script args did not reach the script; output:\n%s", out)
+	}
+}
+
+// TestBuildRunPackageJSONScriptArgsReachScript is the regression fence for the
+// package.json spawn path: a root single-script run resolved from
+// package.json (not a scripts/ folder file) must thread its invocation args
+// into mgr.BuildRun instead of dropping them.
+func TestBuildRunPackageJSONScriptArgsReachScript(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"scripts":{"deploy":"echo deploying"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Scripts: "./scripts"}
+	pm, _, _, ran, err := buildRun(cfg, "deploy", root, bun.Bun{}, nil, []string{"staging"})
+	if err != nil {
+		t.Fatalf("buildRun: %v", err)
+	}
+	if !ran {
+		t.Fatal("buildRun returned not-applicable")
+	}
+
+	proc := pm.findProc("deploy")
+	if proc == nil {
+		t.Fatal("no process for label \"deploy\"")
+		return
+	}
+	gotCommand, gotArgs := proc.Command, proc.Args
+
+	want := bun.Bun{}.BuildRun("deploy", []string{"staging"})
+	if gotCommand != want.Command {
+		t.Errorf("Command = %q, want %q", gotCommand, want.Command)
+	}
+	if !reflect.DeepEqual(gotArgs, want.Args) {
+		t.Errorf("Args = %v, want %v", gotArgs, want.Args)
 	}
 }
 
