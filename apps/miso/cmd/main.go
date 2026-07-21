@@ -358,12 +358,23 @@ func main() {
 						if !ok {
 							cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
 						}
-						ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
-						if err != nil {
-							cli.Fail(logger, err, false)
-						}
-						if ran {
-							return
+						switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
+						case tui.RendererChrome:
+							ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+							if err != nil {
+								cli.Fail(logger, err, false)
+							}
+							if ran {
+								return
+							}
+						case tui.RendererPlain:
+							ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+							if err != nil {
+								cli.Fail(logger, err, false)
+							}
+							if ran {
+								return
+							}
 						}
 					} else {
 						// Only delegate to turbo/nx if the script is actually a pipeline task
@@ -412,8 +423,8 @@ func main() {
 	}
 
 	// An explicit @scope must have been honored by a scope-aware run above.
-	// Reaching here with scopes set means none fired (TUI off, no TTY, the
-	// target isn't a turbo/nx task, or the script exists in no target member) —
+	// Reaching here with scopes set means none fired (TUI off, the target
+	// isn't a turbo/nx task, or the script exists in no target member) —
 	// refuse to run unscoped.
 	if len(parsed.Scopes) > 0 {
 		target := parsed.ScriptName
