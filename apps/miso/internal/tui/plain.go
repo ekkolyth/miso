@@ -31,8 +31,8 @@ func (s *stdoutSink) OnState(label string, state ProcessState, code int) {
 }
 
 // starts concurrent companions immediately, then runs dependsOn levels
-// sequentially (blocking per level) or the remaining processes in parallel.
-// Mirrors the goroutine formerly inline in Launch.
+// sequentially (blocking per level), or every process in parallel when there
+// are no levels
 func startProcesses(pm *ProcessManager, levels [][]TuiScriptEntry, concurrentProcs []*Process) {
 	for _, proc := range concurrentProcs {
 		if err := pm.Start(proc); err != nil {
@@ -68,9 +68,10 @@ func startProcesses(pm *ProcessManager, levels [][]TuiScriptEntry, concurrentPro
 	}
 }
 
-// RunPlain orchestrates without chrome: streams "[label] line" to w and blocks
-// until every process exits or SIGINT/SIGTERM arrives. Returns (true, nil) once
-// it has run.
+// orchestrates without chrome: streams "[label] line" to w and blocks until
+// every process exits or SIGINT/SIGTERM arrives. Returns (true, nil) on a clean
+// run, (true, err) when a child exited non-zero, (false, nil) when there was
+// nothing to run
 func RunPlain(pm *ProcessManager, w io.Writer, levels [][]TuiScriptEntry, concurrentProcs []*Process) (bool, error) {
 	if len(pm.Processes) == 0 {
 		return false, nil
@@ -95,7 +96,7 @@ func RunPlain(pm *ProcessManager, w io.Writer, levels [][]TuiScriptEntry, concur
 
 	pm.StopAll()
 	if failed := pm.FailedCount(); failed > 0 {
-		fmt.Fprintf(os.Stderr, "miso: %d of %d tasks failed\n", failed, len(pm.Processes))
+		return true, fmt.Errorf("%d of %d tasks failed", failed, len(pm.Processes))
 	}
 	return true, nil
 }
