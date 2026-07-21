@@ -52,14 +52,20 @@ Fallback interpreter used when a script has no shebang and no recognized extensi
 **Type:** `"miso" | "turbo" | "nx" | object`
 **Default:** `"miso"`
 
-Controls **orchestration** — who runs the processes. Workspace *membership* is detected separately and automatically (see Workspace discovery below), so this field never gates whether workspaces are found.
+Controls **orchestration** — who runs the processes. Independent of `tui`,
+which only controls how the result renders (see `tui` below); turning `tui`
+off doesn't turn orchestration off. Workspace *membership* is detected
+separately and automatically (see Workspace discovery below), so this field
+never gates whether workspaces are found.
 
-- `"miso"` (default) — miso orchestrates natively. Discovers workspace members and fans out one process per member; with no members it runs a single root process. Full tooling, including per-process restart.
+- `"miso"` (default) — miso orchestrates natively. Resolves the script at the root first (its `scripts/` folder + `package.json`); found there → one root process, no fan-out. Not found at root → fans out one process per workspace member that defines it. Full tooling, including per-process restart.
 - `"turbo"` — delegates to Turborepo; miso wraps the TUI + tooling. Turbo owns process lifecycle, so no per-process restart.
 - `"nx"` — delegates to Nx (`nx run-many --target=<script>`); same wrap as turbo.
 - Object form: `{ "mode": "turbo", "tasks": { ... } }` — use when you need `tasks` config. `mode` is optional (defaults to `"miso"`). Write `{ "tasks": { ... } }` for task config in a non-delegated project.
 
 Recognized values are exactly `miso`, `turbo`, `nx` (empty → `miso`). The legacy `"single"` and `"mono"` values are **removed** — always-on discovery made them behave identically to `"miso"`, so both collapse into it. Setting `repo` to `"single"`, `"mono"`, or any other unrecognized value is a **load-time config error**.
+
+See `miso-tui` for the full root-first resolution algorithm.
 
 ---
 
@@ -70,7 +76,7 @@ Workspace members are auto-detected from the package manager's own config — al
 - **pnpm** → `pnpm-workspace.yaml` (`packages:`)
 - **bun / npm / yarn** → `workspaces` in `package.json`
 
-There is no miso-specific workspace list. A member may carry its own `<member>/miso.json`, whose `scripts`, `shell`, `flags`, `tui`, and `tasks` fields override the root per-field for that member. A member's own `repo` is ignored (members are leaves), and `env` is handled by scope rather than the generic merge (see `miso-env`).
+There is no miso-specific workspace list. A member may carry its own `<member>/miso.json`, whose `scripts`, `shell`, `flags`, and `tui` fields override the root value for that member. A member's `tasks` (its own `concurrent`) is honored too — when a script fans out to that member, its `concurrent` companions resolve within it, alongside its own copy of the script. This doesn't delegate orchestration to the member — miso still drives the run from the root. A member's own `repo` is ignored (members are leaves), and `env` is handled by scope rather than the generic merge (see `miso-env`).
 
 ---
 
@@ -120,13 +126,20 @@ See `miso-tui` for the full `concurrent` and `dependsOn` reference.
 
 ### `tui`
 **Type:** `"off" | "tabbed" | "merged" | object`
-**Default:** `"off"`
+**Default:** `"tabbed"`
 
-Multi-process TUI display mode:
-- `"off"` — standard output, no TUI
-- `"tabbed"` — sidebar with per-process log panes, arrow key navigation, `r` to restart
+Controls the **renderer** only — independent of `repo`, which controls
+orchestration (see above). Whatever `tui` is set to, a `miso <script>` run
+still discovers workspace members, runs `concurrent` companions, and orders
+`dependsOn`; `tui` just decides whether that gets drawn as chrome or
+streamed as plain text.
+
+- `"tabbed"` — default. Sidebar with per-process log panes, arrow key navigation, `r` to restart
 - `"merged"` — interleaved output with color-coded process labels and filter bar
+- `"off"` — no chrome. Plain `[label] line` output per process; orchestration is unaffected
 - Object form: `{ "mode": "tabbed", "cleanExit": true }`
+
+Chrome (`tabbed`/`merged`) needs an interactive terminal — with no TTY (CI, an agent, piped output) miso renders plain regardless of this setting.
 
 See `miso-tui` for full TUI configuration including concurrent tasks and task ordering.
 

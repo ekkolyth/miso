@@ -80,7 +80,7 @@
 				{
 					"type": "string",
 					"enum": ["off", "tabbed", "merged"],
-					"description": "TUI mode shorthand. 'off' disables TUI (default), 'tabbed' shows panes in separate tabs, 'merged' shows all output in a single stream."
+					"description": "TUI mode shorthand. 'tabbed' shows panes in separate tabs (default), 'merged' shows all output in a single stream, 'off' disables the chrome — orchestration (fan-out, concurrent, dependsOn) still runs, output streams as plain prefixed lines."
 				},
 				{
 					"type": "object",
@@ -100,7 +100,7 @@
 					"additionalProperties": false
 				}
 			],
-			"default": "off",
+			"default": "tabbed",
 			"description": "Multi-terminal UI mode. String shorthand or object with mode and cleanExit option."
 		},
 		"env": {

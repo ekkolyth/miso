@@ -1,6 +1,6 @@
 # Migrating to 0.6.0
 
-Upgrading from 0.5.x (e.g. 0.5.2) to 0.6.0. Most projects need one or two small edits — the `repo` field, and a `scope` on each env entry if you validate env. Everything else is either automatic or additive.
+Upgrading from 0.5.x (e.g. 0.5.2) to 0.6.0. Most projects need one or two small edits — the `repo` field, a `scope` on each env entry if you validate env, and possibly a `tui` or root-script tweak if you relied on the old orchestration defaults. Everything else is either automatic or additive.
 
 ## Upgrade the binary
 
@@ -46,6 +46,33 @@ Drop the field (it defaults to `miso`) or set it explicitly:
 ```
 
 `turbo` and `nx` are unchanged, in both the string and object (`{ "mode": "turbo", "tasks": { … } }`) forms. Workspace membership is auto-detected from `package.json` workspaces or `pnpm-workspace.yaml` regardless of `repo` — see `miso-config`.
+
+### `tui` default flips from `off` to `tabbed`
+
+A repo with no `tui` field now renders the tabbed chrome on a TTY — including single-process repos, since there's no minimum process count for chrome. Set `tui: "off"` to keep the old plain look:
+
+```jsonc
+// before (0.5.x) — no tui field, default off, plain stdout
+{}
+
+// after (0.6.0) — no tui field, default tabbed, chrome on a TTY
+{}
+
+// to keep plain output
+{ "tui": "off" }
+```
+
+### `tui: "off"` no longer means "no orchestration"
+
+Previously `off` (or the pre-0.6.0 default) meant miso stepped aside and proxied straight to the package manager at the repo root — no fan-out, no `concurrent`, no `dependsOn`. Now `off` only drops the chrome: miso still discovers workspace members, starts `concurrent` companions, and orders `dependsOn` levels — it streams plain `[label] line` output instead of drawing tabs. Headless runs (no TTY — CI, agents) work the same way: plain output, full orchestration.
+
+A project that set `tui: "off"` specifically to avoid fan-out (not just the chrome) now gets it on every `miso <script>` run. See the next entry if that fan-out is hitting a root script unexpectedly.
+
+### A root script now wins over workspace fan-out
+
+`miso <script>` resolves the root scope first — its `scripts/` folder and its `package.json`. If the script exists at root, miso runs that one process and stops; it only fans out to workspace members when the root has no matching script. This applies to every script, not just `dev`.
+
+A repo that carries a root `"dev": "..."` (or `scripts/dev.sh`) expecting `miso dev` to fan out across every member now gets just the root script instead. Remove the root script to restore fan-out.
 
 ### Root `env` entries now require a `scope`
 

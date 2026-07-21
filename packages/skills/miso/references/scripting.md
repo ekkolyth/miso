@@ -53,12 +53,14 @@ miso <scriptname> --arg # passes --arg to the script
 
 ## Resolution Order
 
-When you run `miso <command>`, miso resolves it from **at most one** source:
+When you run `miso <command>`, miso resolves it from **at most one** source within a given scope:
 1. `scripts/` folder (script file match)
 2. `package.json` `scripts` block
 3. Passthrough to the package manager
 
 A name may live in only one of them. If the same name is defined in **both** the `scripts/` folder and `package.json`, miso **errors** and asks you to rename one — it will not silently pick a winner, because the two invoke different things (see below). Two files in the folder that share a name (`dev.sh` and `dev.ts`) are the same kind of error.
+
+In a monorepo, "scope" means the root first, then each workspace member — the same two-source, at-most-one-match rule applies independently within each. miso checks the root before fanning out to members; see `miso-tui` for the full resolution algorithm.
 
 ## Folder script vs package.json script — they are not interchangeable
 
