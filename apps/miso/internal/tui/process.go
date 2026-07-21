@@ -307,9 +307,10 @@ func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGr
 }
 
 // liveWriter maps a child's redraw stream onto in-place buffer edits so a tool
-// that repaints its output — docker compose's container block, a spinner —
-// overwrites recent lines instead of appending a fresh copy each tick. It
-// handles the linear "move up N lines, rewrite them" pattern only, not full
+// that repaints its output — docker compose's container block, a spinner, a
+// vite banner after a screen clear — overwrites or resets recent lines instead
+// of appending a fresh copy each tick. It handles the linear "move up N lines,
+// rewrite them" and "clear the screen, start over" patterns only, not full
 // cursor addressing.
 type liveWriter struct {
 	buf *RingBuffer
@@ -318,14 +319,22 @@ type liveWriter struct {
 }
 
 // feed resolves one newline-terminated segment, writes it to the buffer at the
-// current cursor (overwriting or appending), advances the cursor, and returns
-// the cleaned line.
+// current cursor (resetting the pane on a screen clear, otherwise overwriting or
+// appending), advances the cursor, and returns the cleaned line.
 func (lw *liveWriter) feed(raw string) string {
 	raw = strings.TrimSuffix(raw, "\r")
+	cleared := strings.IndexByte(raw, '\x1b') >= 0 && screenResetRe.MatchString(raw)
 	moveUp, raw := extractCursorUp(raw)
 	raw = collapseCarriageReturns(raw)
 	raw = stripNonColorANSI(raw)
 
+	if cleared {
+		lw.buf.Clear()
+		lw.up = 0
+		if raw == "" {
+			return raw // a bare screen clear commits no line
+		}
+	}
 	if moveUp > 0 {
 		lw.up += moveUp
 		if room := lw.buf.Len(); lw.up > room {
@@ -340,6 +349,12 @@ func (lw *liveWriter) feed(raw string) string {
 	}
 	return raw
 }
+
+// screenResetRe matches full-screen clears a redrawing child emits before
+// repainting: erase-display (ESC[2J), erase-scrollback (ESC[3J), and cursor-home
+// (ESC[H and its 0/1 row;col forms). It deliberately excludes arbitrary cursor
+// addressing (ESC[<row>;<col>H) and partial erases (ESC[0J/ESC[1J).
+var screenResetRe = regexp.MustCompile(`\x1b\[[23]J|\x1b\[[01]?(?:;[01]?)?H`)
 
 // cursorUpRe matches cursor-up sequences (ESC[<n>A). ESC[A and ESC[0A both mean
 // up one line.

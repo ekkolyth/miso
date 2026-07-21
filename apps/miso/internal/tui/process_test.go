@@ -401,6 +401,53 @@ func TestCaptureOutputInPlacePreservesColor(t *testing.T) {
 	}
 }
 
+func TestCaptureOutputScreenClearResetsPane(t *testing.T) {
+	// vite clears the terminal before printing its banner on each reload. The
+	// stripped clear used to let pre-clear output accumulate, overflowing the
+	// panel so it tailed and the banner sank to the bottom. A clear must wipe the
+	// pane so only post-clear content remains.
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "web"}, "", nil, "", nil)
+
+	stream := "line1\nline2\n\x1b[2J\x1b[Hfresh banner\n"
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	pm.captureOutput(p, strings.NewReader(stream), &wg)
+	wg.Wait()
+
+	got := p.Buffer.Lines()
+	want := []string{"fresh banner"}
+	if len(got) != len(want) {
+		t.Fatalf("buffer has %d lines, want %d: %#v", len(got), len(want), got)
+	}
+	if got[0] != want[0] {
+		t.Errorf("line = %q, want %q", got[0], want[0])
+	}
+}
+
+func TestCaptureOutputHomeEraseResetsPane(t *testing.T) {
+	// home + erase-below (ESC[H ESC[0J) is the other full-screen clear idiom.
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "web"}, "", nil, "", nil)
+
+	stream := "stale one\nstale two\n\x1b[H\x1b[0J\x1b[32mready\x1b[0m\n"
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	pm.captureOutput(p, strings.NewReader(stream), &wg)
+	wg.Wait()
+
+	got := p.Buffer.Lines()
+	want := []string{"\x1b[32mready\x1b[0m"}
+	if len(got) != len(want) {
+		t.Fatalf("buffer has %d lines, want %d: %#v", len(got), len(want), got)
+	}
+	if got[0] != want[0] {
+		t.Errorf("line = %q, want %q (color must survive)", got[0], want[0])
+	}
+}
+
 func TestProcessManager_ResizeAll(t *testing.T) {
 	type call struct{ rows, cols int }
 	var calls []call
