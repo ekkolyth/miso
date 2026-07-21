@@ -45,22 +45,12 @@ func filterEntriesByWorkspace(entries []TuiScriptEntry, names []string) []TuiScr
 	return out
 }
 
-// Launch starts the TUI with the given config, script name, and manager.
-// Returns (true, nil) if the TUI ran successfully.
-// Returns (false, nil) if the TUI was not applicable (caller should fall through to normal execution).
-// Returns (false, err) on error.
+// renders the resolved script + concurrent companions as bubbletea chrome.
+// Every call site gates on SelectRenderer first, so the TTY/mode checks live
+// there. Returns (true, nil) on a clean run, (true, err) when the program
+// errored or a child exited non-zero, (false, nil) when nothing resolved so
+// the caller falls through to normal execution
 func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (bool, error) {
-	if !cfg.TuiEnabled() {
-		return false, nil
-	}
-
-	if !hasInteractiveTTY() {
-		if len(filterNames) == 0 {
-			fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
-		}
-		return false, nil
-	}
-
 	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs)
 	if err != nil {
 		return false, err
@@ -108,18 +98,18 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	// Always clean up child processes when the TUI exits, regardless of how.
 	pm.StopAll()
 
-	// Print failure summary if any processes exited non-zero.
-	failed := pm.FailedCount()
-	if failed > 0 {
-		fmt.Fprintf(os.Stderr, "miso: %d of %d tasks failed\n", failed, len(pm.Processes))
+	if err != nil {
+		return true, err
 	}
-
-	return true, err
+	if failed := pm.FailedCount(); failed > 0 {
+		return true, fmt.Errorf("%d of %d tasks failed", failed, len(pm.Processes))
+	}
+	return true, nil
 }
 
-// LaunchPlain is the plain sibling of Launch: it shares buildRun's discovery and
-// process setup, then streams "[label] line" to stdout instead of rendering the
-// bubbletea chrome. Same (ran, err) contract as Launch.
+// the plain sibling of Launch: shares buildRun's discovery + process setup,
+// then streams "[label] line" to stdout instead of rendering bubbletea chrome.
+// Same (ran, err) contract as Launch
 func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (bool, error) {
 	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs)
 	if err != nil {
@@ -131,11 +121,10 @@ func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.
 	return RunPlain(pm, os.Stdout, levels, concurrentProcs)
 }
 
-// buildRun performs the shared discovery + process setup for both the chrome
-// (Launch) and plain (LaunchPlain) paths: resolves entries, applies workspace
-// filters, adds a process per entry with scoped env, and pre-computes dependency
-// levels. ran is false when no entries resolve — the caller falls through to
-// normal execution.
+// shared discovery + process setup for both the chrome (Launch) and plain
+// (LaunchPlain) paths: resolves entries, applies workspace filters, adds a
+// process per entry with scoped env, and pre-computes dependency levels. ran is
+// false when no entries resolve — the caller falls through to normal execution
 func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (*ProcessManager, [][]TuiScriptEntry, []*Process, bool, error) {
 	entries, err := discoverEntries(cfg, scriptName, root, scriptArgs)
 	if err != nil {
@@ -202,33 +191,16 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		pm.Add(entry, cmd, args, dir, processEnv)
 	}
 
-	// Pre-compute dependency levels if this command has dependsOn config.
-	// Only main task entries participate in dependency ordering — concurrent
-	// entries are started immediately.
+	// Pre-compute dependency levels when the command declares dependsOn. Only
+	// main entries participate in ordering; concurrent companions — marked at
+	// discovery — start immediately.
 	var levels [][]TuiScriptEntry
 	var concurrentProcs []*Process
 	if cfg.HasDependsOn(scriptName) {
-		// Split entries: main task entries vs concurrent entries.
-		// Use prefix matching (same as DiscoverTuiScripts) to identify
-		// concurrent entries — e.g., concurrent: ["services"] should match
-		// entries with ScriptName "services" AND "services:worker".
-		var mainEntries []TuiScriptEntry
-		concurrentPrefixes := cfg.TaskConcurrent(scriptName)
-		for _, e := range entries {
-			isConcurrent := false
-			for _, prefix := range concurrentPrefixes {
-				if e.ScriptName == prefix || strings.HasPrefix(e.ScriptName, prefix+":") || strings.HasPrefix(e.ScriptName, prefix+"/") {
-					isConcurrent = true
-					break
-				}
-			}
-			if isConcurrent {
-				proc := pm.findProc(e.Label)
-				if proc != nil {
-					concurrentProcs = append(concurrentProcs, proc)
-				}
-			} else {
-				mainEntries = append(mainEntries, e)
+		mainEntries, concurrentEntries := classifyEntries(entries)
+		for _, e := range concurrentEntries {
+			if proc := pm.findProc(e.Label); proc != nil {
+				concurrentProcs = append(concurrentProcs, proc)
 			}
 		}
 
@@ -280,7 +252,7 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 // resolves one concurrent entry. A bare name is local scope: the root when
 // local is nil, otherwise that member. "@member/script" resolves script inside
 // the named member regardless of local scope, via the same name-first tiered
-// matching as an explicit CLI @scope (workspace.ResolveScopes).
+// matching as an explicit CLI @scope (workspace.ResolveScopes)
 func resolveConcurrent(cfg config.Config, concName, root string, local *WorkspaceInfo, members []workspace.Member) ([]TuiScriptEntry, error) {
 	if strings.HasPrefix(concName, "@") {
 		parts := strings.SplitN(strings.TrimPrefix(concName, "@"), "/", 2)
@@ -318,7 +290,7 @@ func concurrentNeedsMembers(concurrent []string) bool {
 
 // adds concurrent companions to an already-resolved main entry. mainEntries is
 // always length 1 here (ResolveSingleRepoScripts* resolves one script name) —
-// that single entry gets scriptArgs; concurrent companions never do.
+// that single entry gets scriptArgs; concurrent companions never do
 func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries []TuiScriptEntry, scriptArgs []string) ([]TuiScriptEntry, error) {
 	if len(mainEntries) == 1 {
 		mainEntries[0].Args = scriptArgs
@@ -343,6 +315,7 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 		if err != nil {
 			return nil, err
 		}
+		markConcurrent(concEntries)
 		entries = append(entries, concEntries...)
 	}
 	return DeduplicateLabels(entries), nil
@@ -374,6 +347,7 @@ func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []
 			if err != nil {
 				return nil, err
 			}
+			markConcurrent(concEntries)
 			entries = append(entries, concEntries...)
 		}
 	}
@@ -390,4 +364,27 @@ func buildWSInfos(entries []TuiScriptEntry) []WorkspaceInfo {
 		}
 	}
 	return infos
+}
+
+// flags every entry as a concurrent companion, stamped at discovery so the
+// buildRun split classifies structurally instead of re-matching the root
+// concurrent list (which misses member-injected companions)
+func markConcurrent(entries []TuiScriptEntry) {
+	for i := range entries {
+		entries[i].IsConcurrent = true
+	}
+}
+
+// partitions entries into dependency-ordered main entries and concurrent
+// companions, keyed on the IsConcurrent marker — the marker is what lets a
+// member fan-out companion escape the dependsOn topo sort it would deadlock
+func classifyEntries(entries []TuiScriptEntry) (main, concurrent []TuiScriptEntry) {
+	for _, e := range entries {
+		if e.IsConcurrent {
+			concurrent = append(concurrent, e)
+		} else {
+			main = append(main, e)
+		}
+	}
+	return main, concurrent
 }

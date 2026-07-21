@@ -31,6 +31,10 @@ type TuiScriptEntry struct {
 	// user-supplied invocation args; set only on the single main entry when the
 	// run resolves unambiguously — nil for concurrent companions and fan-out members
 	Args []string
+	// concurrent companion — started immediately, exempt from dependsOn
+	// ordering; stamped at discovery so the buildRun split never sorts a
+	// member-injected companion into the dependency levels
+	IsConcurrent bool
 }
 
 // DiscoverTuiScripts finds all scripts matching the given command prefix across
@@ -111,7 +115,7 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 		}
 	}
 
-	// package.json scripts: prefix match. Same name in both sources is ambiguous.
+	// package.json scripts: prefix match; same name in both sources is ambiguous
 	for name := range pkgScripts {
 		if !matchesPrefix(command, name) {
 			continue

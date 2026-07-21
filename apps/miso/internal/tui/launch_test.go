@@ -199,3 +199,77 @@ func TestBuildRunMemberFanOutDropsArgs(t *testing.T) {
 		t.Errorf("fan-out entries unexpectedly received args; output:\n%s", out)
 	}
 }
+
+// TestClassifyEntriesPartitionsByMarker verifies the split keys on IsConcurrent,
+// keeping unmarked entries in the main partition and marked ones out of it.
+func TestClassifyEntriesPartitionsByMarker(t *testing.T) {
+	entries := []TuiScriptEntry{
+		{Label: "web/dev", ScriptName: "dev"},
+		{Label: "web/worker", ScriptName: "worker", IsConcurrent: true},
+		{Label: "api", ScriptName: "dev"},
+	}
+	main, concurrent := classifyEntries(entries)
+	if got := labelsOf(main); len(got) != 2 || got[0] != "web/dev" || got[1] != "api" {
+		t.Fatalf("main = %v, want [web/dev api]", got)
+	}
+	if got := labelsOf(concurrent); len(got) != 1 || got[0] != "web/worker" {
+		t.Fatalf("concurrent = %v, want [web/worker]", got)
+	}
+}
+
+// TestBuildRunMemberFanOutConcurrentCompanionExemptFromDependsOn fences the
+// dependsOn-split misclassification: a member's own concurrent companion
+// (injected during fan-out, absent from the root concurrent list) must be
+// classified concurrent — never sorted into the dependency levels the topo
+// sort would then block on.
+func TestBuildRunMemberFanOutConcurrentCompanionExemptFromDependsOn(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webScripts := filepath.Join(root, "apps", "web", "scripts")
+	if err := os.MkdirAll(webScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webScripts, "dev.sh"), []byte("exit 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webScripts, "worker.sh"), []byte("exit 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "apps", "web", "miso.json"),
+		[]byte(`{"repo":{"tasks":{"dev":{"concurrent":["worker"]}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Root declares a ^dev dependsOn (no root concurrent list) — this triggers
+	// the buildRun split. The member's "worker" companion is in no root
+	// concurrent list, so only the IsConcurrent marker can classify it.
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {DependsOn: []string{"^dev"}}},
+	}
+	_, levels, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRun: %v", err)
+	}
+	if !ran {
+		t.Fatal("buildRun returned not-applicable")
+	}
+
+	if len(concurrentProcs) != 1 || concurrentProcs[0].Entry.Label != "web/worker" {
+		var got []string
+		for _, p := range concurrentProcs {
+			got = append(got, p.Entry.Label)
+		}
+		t.Fatalf("concurrentProcs = %v, want [web/worker]", got)
+	}
+	for _, level := range levels {
+		for _, e := range level {
+			if e.Label == "web/worker" {
+				t.Fatalf("companion web/worker leaked into dependency levels: %v", levels)
+			}
+		}
+	}
+}
