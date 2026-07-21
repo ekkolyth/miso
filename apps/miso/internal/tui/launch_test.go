@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -251,6 +252,37 @@ func TestBuildRunMemberFanOutNoConfigMemberDropsRootConcurrent(t *testing.T) {
 			got = append(got, p.Entry.Label)
 		}
 		t.Errorf("Processes = %v, want only [web]", got)
+	}
+}
+
+// TestMarkPlain verifies LaunchPlain's pre-run marking: every process flips to
+// pipe-mode and gains FORCE_COLOR (unless NO_COLOR), and a nil Environ is seeded
+// from os.Environ rather than clobbered down to FORCE_COLOR alone.
+func TestMarkPlain(t *testing.T) {
+	pm := NewProcessManager()
+	withEnv := pm.Add(TuiScriptEntry{Label: "a"}, "sh", nil, "", []string{"PATH=/bin"})
+	noColor := pm.Add(TuiScriptEntry{Label: "b"}, "sh", nil, "", []string{"PATH=/bin", "NO_COLOR=1"})
+	inherit := pm.Add(TuiScriptEntry{Label: "c"}, "sh", nil, "", nil)
+
+	markPlain(pm.Processes)
+
+	for _, p := range pm.Processes {
+		if !p.NoPTY {
+			t.Errorf("%s: NoPTY not set", p.Entry.Label)
+		}
+	}
+	if !slices.Contains(withEnv.Environ, "FORCE_COLOR=1") {
+		t.Errorf("explicit env: FORCE_COLOR not added: %v", withEnv.Environ)
+	}
+	if slices.Contains(noColor.Environ, "FORCE_COLOR=1") {
+		t.Errorf("NO_COLOR env: FORCE_COLOR must not be added: %v", noColor.Environ)
+	}
+	// A nil Environ must be seeded from os.Environ (kept as a superset), not
+	// replaced by a lone FORCE_COLOR that would strip PATH/HOME from the child.
+	for _, kv := range os.Environ() {
+		if !slices.Contains(inherit.Environ, kv) {
+			t.Fatalf("nil Environ was clobbered, not seeded from os.Environ (missing %q)", kv)
+		}
 	}
 }
 

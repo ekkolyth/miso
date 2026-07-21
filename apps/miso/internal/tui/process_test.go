@@ -183,6 +183,71 @@ func TestProcessManager_SpawnAndCapture(t *testing.T) {
 	}
 }
 
+// TestStartNoPTYSpawnsPipes proves the pty-vs-pipe split: a NoPTY child sees
+// stdout is NOT a tty (`[ -t 1 ]` exits 1), the default pty child sees a tty
+// (exit 0). This is what makes docker/vite emit plain output under plain mode.
+func TestStartNoPTYSpawnsPipes(t *testing.T) {
+	run := func(noPTY bool) string {
+		pm := NewProcessManager()
+		// Linger after printing so the pty child's output drains before its slave
+		// closes (macOS pty race #38); harmless for the pipe child.
+		p := pm.Add(TuiScriptEntry{Label: "tty"}, "sh",
+			[]string{"-c", `[ -t 1 ]; echo notty=$?; sleep 0.2`}, "", nil)
+		p.NoPTY = noPTY
+		if err := pm.Start(p); err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			for _, line := range p.Buffer.Lines() {
+				if strings.HasPrefix(line, "notty=") {
+					return line
+				}
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Fatal("no notty= line captured")
+		return ""
+	}
+
+	if got := run(true); got != "notty=1" {
+		t.Errorf("pipe (NoPTY) child = %q, want notty=1 (stdout is not a tty)", got)
+	}
+	if got := run(false); got != "notty=0" {
+		t.Errorf("pty child = %q, want notty=0 (stdout is a tty)", got)
+	}
+}
+
+// TestStartNoPTYSuppressesCursorRedraw drives a child that only emits a cursor-up
+// redraw under a tty; on pipes it takes the plain branch, so the buffer holds one
+// clean line with no escape artifacts — no flood to collapse.
+func TestStartNoPTYSuppressesCursorRedraw(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "redraw"}, "sh",
+		[]string{"-c", `if [ -t 1 ]; then printf 'X\033[1Aredraw\n'; else printf 'plain\n'; fi`},
+		"", nil)
+	p.NoPTY = true
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	var lines []string
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		lines = p.Buffer.Lines()
+		if len(lines) == 1 && lines[0] == "plain" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(lines) != 1 || lines[0] != "plain" {
+		t.Fatalf("buffer = %#v, want [plain] (no tty ⇒ no cursor redraw)", lines)
+	}
+	if strings.ContainsRune(lines[0], '\x1b') {
+		t.Errorf("plain line retained an escape sequence: %q", lines[0])
+	}
+}
+
 func TestProcessManager_State(t *testing.T) {
 	pm := NewProcessManager()
 

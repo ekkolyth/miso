@@ -37,7 +37,8 @@ const metaTabLabel = "turbo"
 
 // FORCE_COLOR=1 unless the caller already set FORCE_COLOR or opted out via
 // NO_COLOR (NO_COLOR wins, matching turbo/nx and the no-color.org convention).
-func delegatedColorEnv(base []string) []string {
+// Shared by the delegate and plain paths — both pipe their children.
+func forceColorEnv(base []string) []string {
 	for _, kv := range base {
 		key, _, _ := strings.Cut(kv, "=")
 		if key == "NO_COLOR" || key == "FORCE_COLOR" {
@@ -102,7 +103,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	// FORCE_COLOR mirrors what a real terminal gives them: turbo/nx run their
 	// normal color path and forward FORCE_COLOR to tasks, matching a direct
 	// `turbo run`. NO_COLOR still wins per the shared convention.
-	env := delegatedColorEnv(os.Environ())
+	env := forceColorEnv(os.Environ())
 
 	hasTTY := hasInteractiveTTY()
 	if SelectRenderer(cfg, hasTTY) == RendererPlain {

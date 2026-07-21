@@ -69,6 +69,7 @@ type Process struct {
 	Args      []string
 	Dir       string   // working directory for the process
 	Environ   []string // environment variables for the process (nil = inherit)
+	NoPTY     bool     // plain mode: pipe stdio (no pty) so a tool self-formats for a non-tty
 	State     ProcessState
 	ExitCode  int
 	StartedAt time.Time
@@ -155,10 +156,18 @@ func (pm *ProcessManager) Start(p *Process) error {
 	}
 	cmd := p.cmd
 	done := p.done
+	noPTY := p.NoPTY
 	p.mu.Unlock()
 
-	// A pty (unix) or pipes (Windows) — gives children a TTY + live stdin.
-	res, err := spawnProcess(cmd, 0, 0)
+	// pipes when noPTY (plain mode — the tool sees a non-tty and self-formats to
+	// line output), else a pty so chrome children stay interactive and colored.
+	var res *spawnResult
+	var err error
+	if noPTY {
+		res, err = spawnPipes(cmd)
+	} else {
+		res, err = spawnProcess(cmd, 0, 0)
+	}
 	if err != nil {
 		p.mu.Lock()
 		p.State = StateExited

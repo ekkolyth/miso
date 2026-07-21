@@ -10,6 +10,24 @@ import (
 	"time"
 )
 
+func TestSpawnPipesWiring(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "exit 0")
+	res, err := spawnPipes(cmd)
+	if err != nil {
+		t.Fatalf("spawnPipes: %v", err)
+	}
+	t.Cleanup(func() { _ = cmd.Wait() })
+
+	if len(res.readers) != 2 {
+		t.Fatalf("pipe path should expose stdout+stderr, got %d readers", len(res.readers))
+	}
+	if res.stdin == nil {
+		t.Error("pipe path should expose a stdin writer")
+	}
+	res.resize(1, 1) // no-op, must not panic
+	res.closer()     // no-op, must not panic
+}
+
 func TestSpawnProcessPTYEchoesStdin(t *testing.T) {
 	cmd := exec.Command("cat")
 	res, err := spawnProcess(cmd, 24, 80)

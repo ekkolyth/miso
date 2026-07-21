@@ -6,16 +6,16 @@ import (
 	"testing"
 )
 
-func TestDelegatedColorEnv(t *testing.T) {
+func TestForceColorEnv(t *testing.T) {
 	t.Run("forces FORCE_COLOR when unset", func(t *testing.T) {
-		got := delegatedColorEnv([]string{"PATH=/bin", "TERM=xterm-256color"})
+		got := forceColorEnv([]string{"PATH=/bin", "TERM=xterm-256color"})
 		if !slices.Contains(got, "FORCE_COLOR=1") {
 			t.Errorf("expected FORCE_COLOR=1 to be appended, got %v", got)
 		}
 	})
 
 	t.Run("respects explicit NO_COLOR", func(t *testing.T) {
-		got := delegatedColorEnv([]string{"PATH=/bin", "NO_COLOR=1"})
+		got := forceColorEnv([]string{"PATH=/bin", "NO_COLOR=1"})
 		if slices.Contains(got, "FORCE_COLOR=1") {
 			t.Errorf("must not force color when NO_COLOR is set, got %v", got)
 		}
@@ -23,7 +23,7 @@ func TestDelegatedColorEnv(t *testing.T) {
 
 	t.Run("leaves a pre-set FORCE_COLOR untouched", func(t *testing.T) {
 		base := []string{"PATH=/bin", "FORCE_COLOR=3"}
-		got := delegatedColorEnv(base)
+		got := forceColorEnv(base)
 		if slices.Contains(got, "FORCE_COLOR=1") {
 			t.Errorf("must not override caller's FORCE_COLOR, got %v", got)
 		}

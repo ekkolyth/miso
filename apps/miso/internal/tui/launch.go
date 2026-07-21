@@ -118,7 +118,24 @@ func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.
 	if !ran {
 		return false, nil
 	}
+	markPlain(pm.Processes)
 	return RunPlain(pm, os.Stdout, levels, concurrentProcs)
+}
+
+// markPlain switches every process to pipe-mode (no pty) and adds FORCE_COLOR,
+// so a tool detects a non-tty — emitting plain line output instead of cursor
+// redraws — yet still prints color. NO_COLOR still wins. A nil Environ is seeded
+// from os.Environ so the augmented env inherits the ambient shell instead of
+// collapsing to FORCE_COLOR alone. Chrome (Launch) skips this and keeps the pty.
+func markPlain(procs []*Process) {
+	for _, proc := range procs {
+		proc.NoPTY = true
+		base := proc.Environ
+		if base == nil {
+			base = os.Environ()
+		}
+		proc.Environ = forceColorEnv(base)
+	}
 }
 
 // shared discovery + process setup for both the chrome (Launch) and plain
