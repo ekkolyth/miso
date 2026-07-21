@@ -14,3 +14,8 @@ var isTerminal = term.IsTerminal
 func hasInteractiveTTY() bool {
 	return isTerminal(os.Stdout.Fd()) && isTerminal(os.Stdin.Fd())
 }
+
+// exported so cmd/main can reach the package-private check
+func InteractiveTTY() bool {
+	return hasInteractiveTTY()
+}

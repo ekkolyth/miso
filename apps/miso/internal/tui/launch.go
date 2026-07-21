@@ -61,111 +61,12 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 		return false, nil
 	}
 
-	entries, err := discoverEntries(cfg, scriptName, root)
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames)
 	if err != nil {
 		return false, err
 	}
-	if len(entries) == 0 {
-		return false, nil // fall through to normal execution
-	}
-
-	if len(filterNames) > 0 {
-		filtered := filterEntriesByWorkspace(entries, filterNames)
-		if len(filtered) == 0 {
-			return false, fmt.Errorf("no %q script in workspace(s) %s", scriptName, strings.Join(filterNames, ", "))
-		}
-		entries = filtered
-	}
-
-	pm := NewProcessManager()
-
-	managerName := ""
-	if mgr != nil {
-		managerName = mgr.Name()
-	} else if detected, err := manager.DetectManager(root); err == nil {
-		managerName = detected
-	}
-
-	for _, entry := range entries {
-		var cmd string
-		var args []string
-		dir := entry.WorkspaceDir
-
-		if entry.ScriptSource == "folder" {
-			// member's effective shell wins, then root, then sh (see ResolveInterpreter)
-			shell := entry.Shell
-			if shell == "" {
-				shell = cfg.Shell
-			}
-			spawnCmd, spawnArgs, spawnErr := folderSpawn(entry.ScriptPath, shell, managerName)
-			if spawnErr != nil {
-				return false, spawnErr
-			}
-			cmd = spawnCmd
-			args = spawnArgs
-		} else {
-			// Run via package manager
-			if mgr == nil {
-				return false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
-			}
-			spec := mgr.BuildRun(entry.ScriptName, nil)
-			cmd = spec.Command
-			args = spec.Args
-		}
-
-		// Build env scoped to this member target
-		target := workspace.Target{Kind: workspace.TargetScript, Name: entry.ScriptName}
-		if entry.WorkspaceName != "" {
-			target = workspace.Target{Kind: workspace.TargetMember, Name: entry.WorkspaceName, Dir: dir}
-		}
-		processEnv, envErr := env.BuildTargetEnv(root, cfg, target)
-		if envErr != nil {
-			return false, fmt.Errorf("build env for %s: %w", entry.Label, envErr)
-		}
-
-		pm.Add(entry, cmd, args, dir, processEnv)
-	}
-
-	// Pre-compute dependency levels if this command has dependsOn config.
-	// Only main task entries participate in dependency ordering — concurrent
-	// entries are started immediately.
-	var levels [][]TuiScriptEntry
-	var concurrentProcs []*Process
-	if cfg.HasDependsOn(scriptName) {
-		// Split entries: main task entries vs concurrent entries.
-		// Use prefix matching (same as DiscoverTuiScripts) to identify
-		// concurrent entries — e.g., concurrent: ["services"] should match
-		// entries with ScriptName "services" AND "services:worker".
-		var mainEntries []TuiScriptEntry
-		concurrentPrefixes := cfg.TaskConcurrent(scriptName)
-		for _, e := range entries {
-			isConcurrent := false
-			for _, prefix := range concurrentPrefixes {
-				if e.ScriptName == prefix || strings.HasPrefix(e.ScriptName, prefix+":") || strings.HasPrefix(e.ScriptName, prefix+"/") {
-					isConcurrent = true
-					break
-				}
-			}
-			if isConcurrent {
-				proc := pm.findProc(e.Label)
-				if proc != nil {
-					concurrentProcs = append(concurrentProcs, proc)
-				}
-			} else {
-				mainEntries = append(mainEntries, e)
-			}
-		}
-
-		wsInfos := buildWSInfos(mainEntries)
-		graph, err := BuildDependencyGraph(wsInfos)
-		if err != nil {
-			return false, fmt.Errorf("build dependency graph: %w", err)
-		}
-		var sortErr error
-		levels, sortErr = TopoSort(mainEntries, graph)
-		if sortErr != nil {
-			return false, sortErr
-		}
+	if !ran {
+		return false, nil
 	}
 
 	var model tea.Model
@@ -214,6 +115,136 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	}
 
 	return true, err
+}
+
+// LaunchPlain is the plain sibling of Launch: it shares buildRun's discovery and
+// process setup, then streams "[label] line" to stdout instead of rendering the
+// bubbletea chrome. Same (ran, err) contract as Launch.
+func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string) (bool, error) {
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames)
+	if err != nil {
+		return false, err
+	}
+	if !ran {
+		return false, nil
+	}
+	return RunPlain(pm, os.Stdout, levels, concurrentProcs)
+}
+
+// buildRun performs the shared discovery + process setup for both the chrome
+// (Launch) and plain (LaunchPlain) paths: resolves entries, applies workspace
+// filters, adds a process per entry with scoped env, and pre-computes dependency
+// levels. ran is false when no entries resolve — the caller falls through to
+// normal execution.
+func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string) (*ProcessManager, [][]TuiScriptEntry, []*Process, bool, error) {
+	entries, err := discoverEntries(cfg, scriptName, root)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	if len(entries) == 0 {
+		return nil, nil, nil, false, nil // fall through to normal execution
+	}
+
+	if len(filterNames) > 0 {
+		filtered := filterEntriesByWorkspace(entries, filterNames)
+		if len(filtered) == 0 {
+			return nil, nil, nil, false, fmt.Errorf("no %q script in workspace(s) %s", scriptName, strings.Join(filterNames, ", "))
+		}
+		entries = filtered
+	}
+
+	pm := NewProcessManager()
+
+	managerName := ""
+	if mgr != nil {
+		managerName = mgr.Name()
+	} else if detected, err := manager.DetectManager(root); err == nil {
+		managerName = detected
+	}
+
+	for _, entry := range entries {
+		var cmd string
+		var args []string
+		dir := entry.WorkspaceDir
+
+		if entry.ScriptSource == "folder" {
+			// member's effective shell wins, then root, then sh (see ResolveInterpreter)
+			shell := entry.Shell
+			if shell == "" {
+				shell = cfg.Shell
+			}
+			spawnCmd, spawnArgs, spawnErr := folderSpawn(entry.ScriptPath, shell, managerName)
+			if spawnErr != nil {
+				return nil, nil, nil, false, spawnErr
+			}
+			cmd = spawnCmd
+			args = spawnArgs
+		} else {
+			// Run via package manager
+			if mgr == nil {
+				return nil, nil, nil, false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
+			}
+			spec := mgr.BuildRun(entry.ScriptName, nil)
+			cmd = spec.Command
+			args = spec.Args
+		}
+
+		// Build env scoped to this member target
+		target := workspace.Target{Kind: workspace.TargetScript, Name: entry.ScriptName}
+		if entry.WorkspaceName != "" {
+			target = workspace.Target{Kind: workspace.TargetMember, Name: entry.WorkspaceName, Dir: dir}
+		}
+		processEnv, envErr := env.BuildTargetEnv(root, cfg, target)
+		if envErr != nil {
+			return nil, nil, nil, false, fmt.Errorf("build env for %s: %w", entry.Label, envErr)
+		}
+
+		pm.Add(entry, cmd, args, dir, processEnv)
+	}
+
+	// Pre-compute dependency levels if this command has dependsOn config.
+	// Only main task entries participate in dependency ordering — concurrent
+	// entries are started immediately.
+	var levels [][]TuiScriptEntry
+	var concurrentProcs []*Process
+	if cfg.HasDependsOn(scriptName) {
+		// Split entries: main task entries vs concurrent entries.
+		// Use prefix matching (same as DiscoverTuiScripts) to identify
+		// concurrent entries — e.g., concurrent: ["services"] should match
+		// entries with ScriptName "services" AND "services:worker".
+		var mainEntries []TuiScriptEntry
+		concurrentPrefixes := cfg.TaskConcurrent(scriptName)
+		for _, e := range entries {
+			isConcurrent := false
+			for _, prefix := range concurrentPrefixes {
+				if e.ScriptName == prefix || strings.HasPrefix(e.ScriptName, prefix+":") || strings.HasPrefix(e.ScriptName, prefix+"/") {
+					isConcurrent = true
+					break
+				}
+			}
+			if isConcurrent {
+				proc := pm.findProc(e.Label)
+				if proc != nil {
+					concurrentProcs = append(concurrentProcs, proc)
+				}
+			} else {
+				mainEntries = append(mainEntries, e)
+			}
+		}
+
+		wsInfos := buildWSInfos(mainEntries)
+		graph, err := BuildDependencyGraph(wsInfos)
+		if err != nil {
+			return nil, nil, nil, false, fmt.Errorf("build dependency graph: %w", err)
+		}
+		var sortErr error
+		levels, sortErr = TopoSort(mainEntries, graph)
+		if sortErr != nil {
+			return nil, nil, nil, false, sortErr
+		}
+	}
+
+	return pm, levels, concurrentProcs, true, nil
 }
 
 // root wins over members — fan out only when the root doesn't have the script
