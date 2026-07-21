@@ -14,7 +14,11 @@ func EffectiveConfig(root config.Config, member Member) config.Config {
 	}
 	memberCfg, err := config.Load(member.Dir)
 	if err != nil {
-		return root
+		// same reasoning as the no-config branch above: an unreadable member
+		// config must not leak root's task list into this member's fan-out
+		effective := root
+		effective.Tasks = nil
+		return effective
 	}
 
 	merged := root

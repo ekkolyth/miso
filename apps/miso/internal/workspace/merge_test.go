@@ -79,6 +79,37 @@ func TestEffectiveConfig_NoConfigMemberDropsRootTasks(t *testing.T) {
 	}
 }
 
+// TestEffectiveConfig_MalformedMemberConfigDropsRootTasks fences the fan-out
+// broadcast bug for the parse-error path: a member whose miso.json fails to
+// parse must not inherit root's task list either, else a root-scope
+// concurrent broadcasts to every fan-out member regardless of whether its
+// own config is readable.
+func TestEffectiveConfig_MalformedMemberConfigDropsRootTasks(t *testing.T) {
+	root := t.TempDir()
+	memberDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"),
+		[]byte(`{not valid json`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := config.Config{
+		Shell:   "bash",
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"services"}}},
+	}
+	member := Member{Name: "web", Dir: memberDir, ConfigPath: filepath.Join(memberDir, "miso.json")}
+
+	got := EffectiveConfig(base, member)
+	if got.Tasks != nil {
+		t.Errorf("Tasks = %v, want nil (malformed member config must not inherit root's)", got.Tasks)
+	}
+	if got.Shell != "bash" || got.Scripts != "./scripts" {
+		t.Errorf("Shell/Scripts = %q/%q, want unchanged root (bash/./scripts)", got.Shell, got.Scripts)
+	}
+}
+
 // TestEffectiveConfig_MemberWithoutTasksDropsRootTasks fences the fan-out
 // broadcast bug: a member declaring no tasks of its own must not inherit root's
 // task list, else a root-scope concurrent fans out to every member.
