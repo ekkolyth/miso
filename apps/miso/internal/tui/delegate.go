@@ -287,13 +287,13 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		_ = proc.KillGroup(pgid, syscall.SIGTERM)
 	}
 
-	failed := pm.FailedCount()
-	if failed > 0 {
-		total := len(pm.Processes)
-		fmt.Fprintf(os.Stderr, "miso: %d of %d tasks failed\n", failed, total)
+	if err != nil {
+		return true, err
 	}
-
-	return true, err
+	if failed := pm.FailedCount(); failed > 0 {
+		return true, fmt.Errorf("%d of %d tasks failed", failed, len(pm.Processes))
+	}
+	return true, nil
 }
 
 // execs the delegate binary directly with inherited stdio — no pty, no
