@@ -200,6 +200,60 @@ func TestBuildRunMemberFanOutDropsArgs(t *testing.T) {
 	}
 }
 
+// TestBuildRunMemberFanOutNoConfigMemberDropsRootConcurrent fences the
+// EffectiveConfig no-config-early-return bug: a member with no miso.json must
+// not inherit root's task list either, else a root concurrent broadcasts into
+// every fan-out member even though that member never declared it.
+func TestBuildRunMemberFanOutNoConfigMemberDropsRootConcurrent(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webScripts := filepath.Join(root, "apps", "web", "scripts")
+	if err := os.MkdirAll(webScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webScripts, "dev.sh"), []byte("exit 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webScripts, "services.sh"), []byte("exit 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// apps/web has no miso.json of its own — ConfigPath resolves empty.
+
+	// root declares a concurrent for "dev" but has no root dev script, so
+	// resolution falls straight through to member fan-out.
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"services"}}},
+	}
+	pm, _, _, ran, err := buildRun(cfg, "dev", root, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRun: %v", err)
+	}
+	if !ran {
+		t.Fatal("buildRun returned not-applicable")
+	}
+
+	// single unambiguous match in the member keeps the bare workspace label —
+	// DeduplicateLabels only splits it to "web/dev" when a "web/services"
+	// companion also lands, which the fix must prevent.
+	if pm.findProc("web") == nil {
+		t.Fatal("expected fan-out entry web")
+	}
+	if proc := pm.findProc("web/services"); proc != nil {
+		t.Errorf("no-config member spawned root's \"services\" concurrent it never declared: %+v", proc.Entry)
+	}
+	if len(pm.Processes) != 1 {
+		var got []string
+		for _, p := range pm.Processes {
+			got = append(got, p.Entry.Label)
+		}
+		t.Errorf("Processes = %v, want only [web]", got)
+	}
+}
+
 // TestClassifyEntriesPartitionsByMarker verifies the split keys on IsConcurrent,
 // keeping unmarked entries in the main partition and marked ones out of it.
 func TestClassifyEntriesPartitionsByMarker(t *testing.T) {

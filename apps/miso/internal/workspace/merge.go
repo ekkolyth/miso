@@ -6,7 +6,11 @@ import "github.com/ekkolyth/miso/internal/config"
 // Env is resolved per-target elsewhere; member Repo is ignored (members are leaves).
 func EffectiveConfig(root config.Config, member Member) config.Config {
 	if member.ConfigPath == "" {
-		return root
+		// tasks are member-owned: a member with no miso.json must not inherit
+		// root's task list, else a root concurrent broadcasts to every fan-out member
+		effective := root
+		effective.Tasks = nil
+		return effective
 	}
 	memberCfg, err := config.Load(member.Dir)
 	if err != nil {

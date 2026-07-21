@@ -58,6 +58,27 @@ func TestEffectiveConfig_NoMemberConfig_ReturnsRoot(t *testing.T) {
 	}
 }
 
+// TestEffectiveConfig_NoConfigMemberDropsRootTasks fences the fan-out
+// broadcast bug for the no-miso.json path: a member with no config of its own
+// must not inherit root's task list either, else a root-scope concurrent
+// broadcasts to every fan-out member regardless of whether it has a miso.json.
+func TestEffectiveConfig_NoConfigMemberDropsRootTasks(t *testing.T) {
+	base := config.Config{
+		Shell:   "bash",
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"services"}}},
+	}
+	member := Member{Name: "web", Dir: t.TempDir(), ConfigPath: ""}
+
+	got := EffectiveConfig(base, member)
+	if got.Tasks != nil {
+		t.Errorf("Tasks = %v, want nil (no-config member must not inherit root's)", got.Tasks)
+	}
+	if got.Shell != "bash" || got.Scripts != "./scripts" {
+		t.Errorf("Shell/Scripts = %q/%q, want unchanged root (bash/./scripts)", got.Shell, got.Scripts)
+	}
+}
+
 // TestEffectiveConfig_MemberWithoutTasksDropsRootTasks fences the fan-out
 // broadcast bug: a member declaring no tasks of its own must not inherit root's
 // task list, else a root-scope concurrent fans out to every member.
