@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 
@@ -479,18 +480,9 @@ func TestDiscoverEntriesMemberConcurrentRunsWithinMember(t *testing.T) {
 		t.Fatalf("discoverEntries: %v", err)
 	}
 	labels := labelsOf(entries)
-	if !contains(labels, "explorer/dev") || !contains(labels, "explorer/convex") {
+	if !slices.Contains(labels, "explorer/dev") || !slices.Contains(labels, "explorer/convex") {
 		t.Fatalf("want explorer/dev + explorer/convex, got %v", labels)
 	}
-}
-
-func contains(s []string, want string) bool {
-	for _, v := range s {
-		if v == want {
-			return true
-		}
-	}
-	return false
 }
 
 // TestDiscoverEntriesRootConcurrentTargetsMemberScope verifies a root-scope
@@ -523,7 +515,7 @@ func TestDiscoverEntriesRootConcurrentTargetsMemberScope(t *testing.T) {
 		t.Fatalf("discoverEntries: %v", err)
 	}
 	labels := labelsOf(entries)
-	if !contains(labels, "web") && !contains(labels, "web/studio") {
+	if !slices.Contains(labels, "web") && !slices.Contains(labels, "web/studio") {
 		t.Fatalf("want a studio entry from the web member, got %v", labels)
 	}
 }
@@ -561,10 +553,10 @@ func TestDiscoverEntriesMemberConcurrentCrossReferencesOtherMember(t *testing.T)
 		t.Fatalf("discoverEntries: %v", err)
 	}
 	labels := labelsOf(entries)
-	if !contains(labels, "explorer") {
+	if !slices.Contains(labels, "explorer") {
 		t.Fatalf("want explorer's own dev entry, got %v", labels)
 	}
-	if !contains(labels, "worker") {
+	if !slices.Contains(labels, "worker") {
 		t.Fatalf("want @worker/queue to resolve inside the worker member, got %v", labels)
 	}
 }
@@ -635,10 +627,10 @@ func TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename(t *testing.T) {
 		t.Fatalf("discoverEntries: %v", err)
 	}
 	labels := labelsOf(entries)
-	if !contains(labels, "web") {
+	if !slices.Contains(labels, "web") {
 		t.Fatalf("want @web/build to resolve the member named web, got %v", labels)
 	}
-	if contains(labels, "legacy-web") {
+	if slices.Contains(labels, "legacy-web") {
 		t.Fatalf("resolved the dir-basename collision instead of the member named web: %v", labels)
 	}
 }

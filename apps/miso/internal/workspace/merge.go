@@ -27,8 +27,8 @@ func EffectiveConfig(root config.Config, member Member) config.Config {
 		merged.TuiMode = memberCfg.TuiMode
 		merged.TuiCleanExit = memberCfg.TuiCleanExit
 	}
-	if len(memberCfg.Tasks) > 0 {
-		merged.Tasks = memberCfg.Tasks
-	}
+	// tasks are member-owned: a member with none must not inherit root's task
+	// list, else a root concurrent broadcasts to every fan-out member
+	merged.Tasks = memberCfg.Tasks
 	return merged
 }

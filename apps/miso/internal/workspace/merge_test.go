@@ -57,3 +57,54 @@ func TestEffectiveConfig_NoMemberConfig_ReturnsRoot(t *testing.T) {
 		t.Errorf("got %+v, want unchanged root", got)
 	}
 }
+
+// TestEffectiveConfig_MemberWithoutTasksDropsRootTasks fences the fan-out
+// broadcast bug: a member declaring no tasks of its own must not inherit root's
+// task list, else a root-scope concurrent fans out to every member.
+func TestEffectiveConfig_MemberWithoutTasksDropsRootTasks(t *testing.T) {
+	root := t.TempDir()
+	memberDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"),
+		[]byte(`{"shell":"zsh"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := config.Config{
+		Shell:   "bash",
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"services"}}},
+	}
+	member := Member{Name: "web", Dir: memberDir, ConfigPath: filepath.Join(memberDir, "miso.json")}
+
+	got := EffectiveConfig(base, member)
+	if got.Tasks != nil {
+		t.Errorf("Tasks = %v, want nil (member owns none; must not inherit root's)", got.Tasks)
+	}
+}
+
+// TestEffectiveConfig_MemberTasksReplaceRoot verifies a member's own tasks fully
+// replace root's (member concurrent is member-owned), not merge with them.
+func TestEffectiveConfig_MemberTasksReplaceRoot(t *testing.T) {
+	root := t.TempDir()
+	memberDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"),
+		[]byte(`{"repo":{"tasks":{"dev":{"concurrent":["convex"]}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := config.Config{
+		Shell:   "bash",
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"services"}}},
+	}
+	member := Member{Name: "web", Dir: memberDir, ConfigPath: filepath.Join(memberDir, "miso.json")}
+
+	got := EffectiveConfig(base, member)
+	if conc := got.TaskConcurrent("dev"); len(conc) != 1 || conc[0] != "convex" {
+		t.Errorf("TaskConcurrent(dev) = %v, want [convex] (member owns tasks)", conc)
+	}
+}

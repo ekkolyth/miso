@@ -296,13 +296,13 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	return true, err
 }
 
-// delegateRunPlain execs the delegate binary directly with inherited stdio —
-// no pty, no ProcessManager, no bubbletea. turbo/nx render their own output
-// straight to the terminal (or pipe). SIGINT/SIGTERM stop miso itself, so they
-// are forwarded to the delegate's process group the same way ExecScriptFile
+// execs the delegate binary directly with inherited stdio — no pty, no
+// ProcessManager, no bubbletea. turbo/nx render their own output straight to
+// the terminal (or pipe). SIGINT/SIGTERM stop miso itself, so they are
+// forwarded to the delegate's process group the same way ExecScriptFile
 // forwards them to a spawned script: SIGTERM first, SIGKILL after a grace
 // period if it hasn't exited. A signal-triggered stop is not itself reported
-// as an error — only the delegate's own nonzero exit is.
+// as an error — only the delegate's own nonzero exit is
 func delegateRunPlain(mode, binary string, delegateArgs []string, root string, env []string) (bool, error) {
 	cmd := exec.Command(binary, delegateArgs...)
 	cmd.Dir = root
