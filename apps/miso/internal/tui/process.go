@@ -6,6 +6,7 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -289,8 +290,8 @@ func (pm *ProcessManager) StopAll() {
 	wg.Wait()
 }
 
-// captureOutput reads lines from r, strips non-color ANSI sequences, writes
-// them to the process buffer, and sends ProcessOutputMsg messages.
+// captureOutput reads lines from r, resolves in-place redraws against the
+// process buffer, and sends ProcessOutputMsg messages.
 func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -298,12 +299,81 @@ func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGr
 	// but still consumed, so a child that writes a huge unbroken line (electron/
 	// vite minified bundles) can't stall the pty and freeze the TUI.
 	const maxLine = 1024 * 1024
+	live := liveWriter{buf: p.Buffer}
 	readLines(r, maxLine, func(raw string) {
-		line := strings.TrimSuffix(raw, "\r")
-		line = stripNonColorANSI(line)
-		p.Buffer.Write(line)
+		line := live.feed(raw)
 		pm.sendOutput(p, line)
 	})
+}
+
+// liveWriter maps a child's redraw stream onto in-place buffer edits so a tool
+// that repaints its output — docker compose's container block, a spinner —
+// overwrites recent lines instead of appending a fresh copy each tick. It
+// handles the linear "move up N lines, rewrite them" pattern only, not full
+// cursor addressing.
+type liveWriter struct {
+	buf *RingBuffer
+	// rows above the append point the write cursor sits on; 0 = append
+	up int
+}
+
+// feed resolves one newline-terminated segment, writes it to the buffer at the
+// current cursor (overwriting or appending), advances the cursor, and returns
+// the cleaned line.
+func (lw *liveWriter) feed(raw string) string {
+	raw = strings.TrimSuffix(raw, "\r")
+	moveUp, raw := extractCursorUp(raw)
+	raw = collapseCarriageReturns(raw)
+	raw = stripNonColorANSI(raw)
+
+	if moveUp > 0 {
+		lw.up += moveUp
+		if room := lw.buf.Len(); lw.up > room {
+			lw.up = room
+		}
+	}
+	if lw.up == 0 {
+		lw.buf.Write(raw)
+	} else {
+		lw.buf.SetFromEnd(lw.up-1, raw)
+		lw.up--
+	}
+	return raw
+}
+
+// cursorUpRe matches cursor-up sequences (ESC[<n>A). ESC[A and ESC[0A both mean
+// up one line.
+var cursorUpRe = regexp.MustCompile(`\x1b\[([0-9]*)A`)
+
+// extractCursorUp removes cursor-up sequences and returns their summed line
+// count plus the remaining string.
+func extractCursorUp(s string) (int, string) {
+	if !strings.Contains(s, "\x1b[") {
+		return 0, s
+	}
+	total := 0
+	rest := cursorUpRe.ReplaceAllStringFunc(s, func(match string) string {
+		digits := cursorUpRe.FindStringSubmatch(match)[1]
+		n := 1
+		if digits != "" {
+			if v, err := strconv.Atoi(digits); err == nil && v > 0 {
+				n = v
+			}
+		}
+		total += n
+		return ""
+	})
+	return total, rest
+}
+
+// collapseCarriageReturns applies in-line carriage returns as full-line
+// rewrites: the text after the final CR wins, matching a redraw that reprints
+// the whole line from column 0.
+func collapseCarriageReturns(s string) string {
+	if i := strings.LastIndexByte(s, '\r'); i >= 0 {
+		return s[i+1:]
+	}
+	return s
 }
 
 // readLines calls emit once per '\n'-terminated line (newline excluded), plus

@@ -303,6 +303,104 @@ func TestCaptureOutputTrimsCarriageReturn(t *testing.T) {
 	}
 }
 
+func TestCaptureOutputInPlaceRedrawOverwrites(t *testing.T) {
+	// docker compose redraws its container block by moving the cursor up N
+	// lines and reprinting. The buffer must end holding the final N lines, not
+	// the accumulated flood of every frame.
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "compose"}, "", nil, "", nil)
+
+	stream := "web  Creating\ndb  Creating\n" + // frame 1
+		"\x1b[2Aweb  Created\ndb  Created\n" // up 2, reprint (frame 2)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	pm.captureOutput(p, strings.NewReader(stream), &wg)
+	wg.Wait()
+
+	got := p.Buffer.Lines()
+	want := []string{"web  Created", "db  Created"}
+	if len(got) != len(want) {
+		t.Fatalf("buffer has %d lines, want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestCaptureOutputInPlaceRedrawGrows(t *testing.T) {
+	// a redraw frame taller than the previous one overwrites what it can and
+	// appends the rest.
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "compose"}, "", nil, "", nil)
+
+	stream := "web  Creating\ndb  Creating\n" +
+		"\x1b[2Aweb  Started\ndb  Started\ncache  Started\n"
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	pm.captureOutput(p, strings.NewReader(stream), &wg)
+	wg.Wait()
+
+	got := p.Buffer.Lines()
+	want := []string{"web  Started", "db  Started", "cache  Started"}
+	if len(got) != len(want) {
+		t.Fatalf("buffer has %d lines, want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestCaptureOutputCarriageReturnProgressCollapses(t *testing.T) {
+	// a \r progress bar rewrites one line in place; the buffer holds a single
+	// line at the final percentage, not one per tick.
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "pull"}, "", nil, "", nil)
+
+	stream := "Progress: 0%\rProgress: 50%\rProgress: 100%\n"
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	pm.captureOutput(p, strings.NewReader(stream), &wg)
+	wg.Wait()
+
+	got := p.Buffer.Lines()
+	if len(got) != 1 {
+		t.Fatalf("buffer has %d lines, want 1: %#v", len(got), got)
+	}
+	if got[0] != "Progress: 100%" {
+		t.Errorf("line = %q, want %q", got[0], "Progress: 100%")
+	}
+}
+
+func TestCaptureOutputInPlacePreservesColor(t *testing.T) {
+	// SGR color survives an in-place overwrite unchanged.
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "compose"}, "", nil, "", nil)
+
+	stream := "\x1b[33mweb  Creating\x1b[0m\n" +
+		"\x1b[1Aweb  \x1b[32mStarted\x1b[0m\n"
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	pm.captureOutput(p, strings.NewReader(stream), &wg)
+	wg.Wait()
+
+	got := p.Buffer.Lines()
+	if len(got) != 1 {
+		t.Fatalf("buffer has %d lines, want 1: %#v", len(got), got)
+	}
+	want := "web  \x1b[32mStarted\x1b[0m"
+	if got[0] != want {
+		t.Errorf("line = %q, want %q", got[0], want)
+	}
+}
+
 func TestProcessManager_ResizeAll(t *testing.T) {
 	type call struct{ rows, cols int }
 	var calls []call

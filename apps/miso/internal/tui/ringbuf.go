@@ -60,6 +60,23 @@ func (rb *RingBuffer) Lines() []string {
 	return result
 }
 
+// SetFromEnd overwrites the retained line offsetFromEnd positions above the
+// newest (0 = newest). No-op when offsetFromEnd falls outside the retained
+// window — a redraw can only edit lines still in the buffer.
+func (rb *RingBuffer) SetFromEnd(offsetFromEnd int, line string) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	if offsetFromEnd < 0 || offsetFromEnd >= rb.count {
+		return
+	}
+	idx := (rb.head - 1 - offsetFromEnd) % rb.cap
+	if idx < 0 {
+		idx += rb.cap
+	}
+	rb.buf[idx] = line
+}
+
 // Clear resets the buffer to empty.
 func (rb *RingBuffer) Clear() {
 	rb.mu.Lock()
