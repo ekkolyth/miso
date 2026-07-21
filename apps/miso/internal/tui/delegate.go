@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -65,8 +66,11 @@ func delegateFilterArgs(mode string, filters []string) []string {
 	}
 }
 
-// DelegateLaunch spawns turbo or nx as a single process and renders its output
-// in the miso TUI. Returns (true, nil) if the TUI ran successfully.
+// DelegateLaunch spawns turbo or nx. With an interactive TTY it renders the
+// delegate's output in the miso TUI; otherwise it runs the delegate directly
+// with inherited stdio, forwarding SIGINT/SIGTERM. Once the delegate binary
+// resolves, DelegateLaunch owns the run — callers never fall through after
+// that point, so a nonzero delegate exit surfaces as a non-nil error.
 //
 // The delegated process is deliberately NOT given a pseudo-terminal (unlike the
 // direct-spawn ProcessManager.Start path). turbo and nx orchestrate their own
@@ -75,13 +79,6 @@ func delegateFilterArgs(mode string, filters []string) []string {
 // stdin to them. A pty here would collide with turbo's own terminal UI.
 func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs []string, filters []string) (bool, error) {
 	if !cfg.TuiEnabled() {
-		return false, nil
-	}
-
-	if !hasInteractiveTTY() {
-		if len(filters) == 0 {
-			fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
-		}
 		return false, nil
 	}
 
@@ -105,14 +102,23 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		return false, fmt.Errorf("unsupported delegated mode: %s", mode)
 	}
 
-	// Build the command
-	cmd := exec.Command(binary, delegateArgs...)
-	cmd.Dir = root
 	// miso pipes turbo/nx output, so they'd see a non-tty and strip color.
 	// FORCE_COLOR mirrors what a real terminal gives them: turbo/nx run their
 	// normal color path and forward FORCE_COLOR to tasks, matching a direct
 	// `turbo run`. NO_COLOR still wins per the shared convention.
-	cmd.Env = delegatedColorEnv(os.Environ())
+	env := delegatedColorEnv(os.Environ())
+
+	if !hasInteractiveTTY() {
+		if len(filters) == 0 {
+			fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
+		}
+		return delegateRunPlain(mode, binary, delegateArgs, root, env)
+	}
+
+	// Build the command
+	cmd := exec.Command(binary, delegateArgs...)
+	cmd.Dir = root
+	cmd.Env = env
 	proc.SetGroup(cmd)
 
 	stdout, err := cmd.StdoutPipe()
@@ -291,4 +297,44 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	}
 
 	return true, err
+}
+
+// delegateRunPlain execs the delegate binary directly with inherited stdio —
+// no pty, no ProcessManager, no bubbletea. turbo/nx render their own output
+// straight to the terminal (or pipe). SIGINT/SIGTERM stop miso itself, so they
+// are forwarded to the delegate's process group the same way ExecScriptFile
+// forwards them to a spawned script: SIGTERM first, SIGKILL after a grace
+// period if it hasn't exited. A signal-triggered stop is not itself reported
+// as an error — only the delegate's own nonzero exit is.
+func delegateRunPlain(mode, binary string, delegateArgs []string, root string, env []string) (bool, error) {
+	cmd := exec.Command(binary, delegateArgs...)
+	cmd.Dir = root
+	cmd.Env = env
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	proc.SetGroup(cmd)
+
+	if err := cmd.Start(); err != nil {
+		return true, fmt.Errorf("start %s: %w", mode, err)
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	select {
+	case <-sigCh:
+		pgid := cmd.Process.Pid
+		_ = proc.KillGroup(pgid, syscall.SIGTERM)
+		killTimer := time.AfterFunc(2*time.Second, func() { _ = proc.KillGroup(pgid, syscall.SIGKILL) })
+		<-done
+		killTimer.Stop() // delegate already exited; don't SIGKILL a recycled pid
+		return true, nil
+	case err := <-done:
+		return true, err
+	}
 }
