@@ -381,7 +381,8 @@ func main() {
 						turboCfg, turboErr := turbo.LoadConfig(projectRoot)
 						if turboErr == nil {
 							if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
-								_, turboFlags := turbo.SplitFlags(scriptArgs, cfg.TuiEnabled())
+								renderer := tui.SelectRenderer(cfg, tui.InteractiveTTY())
+								_, turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
 								ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
 								if err != nil {
 									cli.Fail(logger, err, false)
