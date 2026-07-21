@@ -33,6 +33,12 @@ type MergedModel struct {
 	interactive      bool
 	copyFlash        bool // true during the 150ms invert flash
 	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
+
+	// live-region bookkeeping for in-place redraws, kept on the full (unfiltered)
+	// list so a filter toggle never disturbs it
+	tailBlockLen   int  // rewritable height of the tail owner's current block
+	tailLastOffset int  // rewrite offset of the last op in the active frame; -1 = none
+	tailRebuilding bool // active frame is re-appending a detached block
 }
 
 type mergedLine struct {
@@ -49,11 +55,12 @@ func NewMergedModel(pm *ProcessManager, script string, delegated bool) MergedMod
 	}
 
 	return MergedModel{
-		pm:        pm,
-		keys:      DefaultMergedKeyMap(),
-		visible:   visible,
-		script:    script,
-		delegated: delegated,
+		pm:             pm,
+		keys:           DefaultMergedKeyMap(),
+		visible:        visible,
+		script:         script,
+		delegated:      delegated,
+		tailLastOffset: -1,
 	}
 }
 
@@ -205,13 +212,7 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ProcessLineMsg:
 		// Default new dynamically-added processes to visible (turbo/nx mode).
 		m.ensureVisible()
-		switch op := msg.Op.(type) {
-		case OpAppend:
-			m.appendLine(msg.Label, op.Text)
-		case OpRewrite:
-			// phase A: a rewrite still appends; phase B collapses it in place
-			m.appendLine(msg.Label, op.Text)
-		}
+		m.applyLineOp(msg.Label, msg.Op)
 		return m, nil
 
 	case ProcessStateMsg:
@@ -394,9 +395,38 @@ func (m MergedModel) renderFilterBar() string {
 	return header + "\n" + tabRow + "\n" + selectorRow
 }
 
-// appendLine adds one interleaved line at the tail, capping total length to
-// bound memory.
+// applyLineOp folds one child op into the interleaved log. An append extends the
+// app's tail block; a rewrite collapses in place while the block is still at the
+// tail, or appends a fresh block once another app has interleaved; a clear
+// freezes the block so later output starts fresh.
+func (m *MergedModel) applyLineOp(label string, op LineOp) {
+	switch o := op.(type) {
+	case OpAppend:
+		m.appendLine(label, o.Text)
+		m.tailLastOffset = -1
+		m.tailRebuilding = false
+	case OpRewrite:
+		m.rewriteLine(label, o.OffsetFromEnd, o.Text)
+	case OpClear:
+		if m.ownsTail(label) {
+			m.tailBlockLen = 0
+			m.tailLastOffset = -1
+			m.tailRebuilding = false
+		}
+	}
+}
+
+// ownsTail reports whether label produced the last interleaved line — the only
+// state in which its live block is still rewritable in place.
+func (m *MergedModel) ownsTail(label string) bool {
+	n := len(m.logLines)
+	return n > 0 && m.logLines[n-1].label == label
+}
+
+// appendLine adds one line at the tail, extending the app's live block when it
+// already owns the tail or starting a fresh one when another app interleaved.
 func (m *MergedModel) appendLine(label, text string) {
+	extends := m.ownsTail(label)
 	m.logSeq++
 	m.logLines = append(m.logLines, mergedLine{
 		label: label,
@@ -404,10 +434,38 @@ func (m *MergedModel) appendLine(label, text string) {
 		text:  text,
 		seq:   m.logSeq,
 	})
+	if extends {
+		m.tailBlockLen++
+	} else {
+		m.tailBlockLen = 1
+	}
 	maxMergedLines := DefaultBufferSize * len(m.pm.Processes)
 	if len(m.logLines) > maxMergedLines {
 		m.logLines = m.logLines[len(m.logLines)-maxMergedLines:]
+		if m.tailBlockLen > len(m.logLines) {
+			m.tailBlockLen = len(m.logLines)
+		}
 	}
+}
+
+// rewriteLine overwrites a line in the app's live tail block, or appends when the
+// block is frozen (another app interleaved) or the frame is already rebuilding a
+// detached block. Rewrite offsets within a redraw frame descend to 0, so a frame
+// boundary is where the offset stops decreasing.
+func (m *MergedModel) rewriteLine(label string, offset int, text string) {
+	owns := m.ownsTail(label)
+	if m.tailLastOffset < 0 || offset >= m.tailLastOffset || !owns {
+		// rebuild when the block is frozen or the frame reaches past it
+		m.tailRebuilding = !owns || offset >= m.tailBlockLen
+	}
+	m.tailLastOffset = offset
+
+	idx := len(m.logLines) - 1 - offset
+	if m.tailRebuilding || idx < 0 {
+		m.appendLine(label, text)
+		return
+	}
+	m.logLines[idx].text = text
 }
 
 // ensureVisible sets any newly-added processes (from delegated mode dynamic
