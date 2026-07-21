@@ -2,10 +2,35 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 )
+
+// a line op just refreshes tabbed — it re-reads p.Buffer, which the op already
+// edited.
+func TestTabbedLineMsgRefreshesFromBuffer(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "web"}, "", nil, "", nil)
+	p.Buffer.Write("hello world")
+	m := TabbedModel{pm: pm, selected: 0, width: 40, height: 8}
+
+	next, _ := m.Update(ProcessLineMsg{Label: "web", Op: OpAppend{Text: "hello world"}})
+	m = next.(TabbedModel)
+
+	rows, _ := m.buildLogVisualRows(m.width-1, m.logHeight())
+	found := false
+	for _, row := range rows {
+		if strings.Contains(row, "hello world") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("tabbed did not render buffer content after line msg: %#v", rows)
+	}
+}
 
 func TestReassertBg(t *testing.T) {
 	// the colored span's reset must not drop the selection bg for the text after it

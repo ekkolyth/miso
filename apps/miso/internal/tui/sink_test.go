@@ -8,14 +8,14 @@ import (
 
 type recordingSink struct {
 	mu      sync.Mutex
-	outputs []ProcessOutputMsg
+	outputs []ProcessLineMsg
 	states  []ProcessStateMsg
 }
 
-func (r *recordingSink) OnOutput(label, line string) {
+func (r *recordingSink) OnLine(label string, op LineOp) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.outputs = append(r.outputs, ProcessOutputMsg{Label: label, Line: line})
+	r.outputs = append(r.outputs, ProcessLineMsg{Label: label, Op: op})
 }
 
 func (r *recordingSink) OnState(label string, state ProcessState, code int) {
@@ -40,7 +40,10 @@ func TestProcessManagerRoutesOutputThroughSink(t *testing.T) {
 	if len(rec.outputs) != 2 {
 		t.Fatalf("sink got %d lines, want 2: %v", len(rec.outputs), rec.outputs)
 	}
-	if rec.outputs[0].Label != "web" || rec.outputs[0].Line != "hello" {
-		t.Errorf("line[0] = %+v, want {web hello}", rec.outputs[0])
+	if rec.outputs[0].Label != "web" {
+		t.Errorf("line[0] label = %q, want web", rec.outputs[0].Label)
+	}
+	if op, ok := rec.outputs[0].Op.(OpAppend); !ok || op.Text != "hello" {
+		t.Errorf("line[0] op = %#v, want OpAppend{hello}", rec.outputs[0].Op)
 	}
 }

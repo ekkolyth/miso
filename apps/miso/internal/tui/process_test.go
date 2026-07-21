@@ -1,11 +1,85 @@
 package tui
 
 import (
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestLiveWriterFeedEmitsOps(t *testing.T) {
+	tests := []struct {
+		name    string
+		seed    []string // segments fed first to establish buffer state
+		segment string
+		want    []LineOp
+	}{
+		{
+			name:    "plain append",
+			segment: "hello",
+			want:    []LineOp{OpAppend{Text: "hello"}},
+		},
+		{
+			name:    "carriage return collapses to one append",
+			segment: "Progress: 0%\rProgress: 100%",
+			want:    []LineOp{OpAppend{Text: "Progress: 100%"}},
+		},
+		{
+			name:    "bare screen clear",
+			segment: "\x1b[2J",
+			want:    []LineOp{OpClear{}},
+		},
+		{
+			name:    "clear then reprint on one segment",
+			segment: "\x1b[2J\x1b[Hfresh banner",
+			want:    []LineOp{OpClear{}, OpAppend{Text: "fresh banner"}},
+		},
+		{
+			name:    "cursor-up reprint rewrites from end",
+			seed:    []string{"web  Creating", "db  Creating"},
+			segment: "\x1b[2Aweb  Created",
+			want:    []LineOp{OpRewrite{OffsetFromEnd: 1, Text: "web  Created"}},
+		},
+		{
+			name:    "bare cursor-up emits no op",
+			seed:    []string{"web  Creating", "db  Creating"},
+			segment: "\x1b[2A",
+			want:    nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lw := liveWriter{buf: NewRingBuffer(DefaultBufferSize)}
+			for _, seed := range tt.seed {
+				lw.feed(seed)
+			}
+			got := lw.feed(tt.segment)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("feed(%q) = %#v, want %#v", tt.segment, got, tt.want)
+			}
+		})
+	}
+}
+
+// a multi-line redraw frame walks the rewrite offset down to 0.
+func TestLiveWriterFeedFrameOffsetsDescend(t *testing.T) {
+	lw := liveWriter{buf: NewRingBuffer(DefaultBufferSize)}
+	lw.feed("web  Creating")
+	lw.feed("db  Creating")
+
+	var got []LineOp
+	got = append(got, lw.feed("\x1b[2Aweb  Created")...)
+	got = append(got, lw.feed("db  Created")...)
+
+	want := []LineOp{
+		OpRewrite{OffsetFromEnd: 1, Text: "web  Created"},
+		OpRewrite{OffsetFromEnd: 0, Text: "db  Created"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("frame ops = %#v, want %#v", got, want)
+	}
+}
 
 func TestReadLinesTruncatesButKeepsDraining(t *testing.T) {
 	// A single line far longer than the cap must not stall the reader: it is
@@ -204,7 +278,7 @@ type pausingSink struct {
 	proceed chan struct{}
 }
 
-func (s *pausingSink) OnOutput(_, _ string) {}
+func (s *pausingSink) OnLine(_ string, _ LineOp) {}
 
 func (s *pausingSink) OnState(_ string, state ProcessState, _ int) {
 	if state != StateExited {

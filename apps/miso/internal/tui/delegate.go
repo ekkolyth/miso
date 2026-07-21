@@ -166,7 +166,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 			pm.PinLast(metaTabLabel)
 		}
 		process.Buffer.Write(text)
-		pm.sendOutput(process, text)
+		pm.sendLine(process, OpAppend{Text: text})
 	}
 
 	// routeTurbo handles turbo output with per-task exit codes and cache metadata.
@@ -197,7 +197,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 			return
 		}
 		process.Buffer.Write(meta.Text)
-		pm.sendOutput(process, meta.Text)
+		pm.sendLine(process, OpAppend{Text: meta.Text})
 	}
 
 	// Start the delegated process and output parsing in a goroutine.

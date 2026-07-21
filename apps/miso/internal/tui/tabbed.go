@@ -248,8 +248,9 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case ProcessOutputMsg:
-		// If pinned to bottom (offset 0), stay there. Otherwise hold position.
+	case ProcessLineMsg:
+		// the op already edited p.Buffer; this just triggers a re-render, which
+		// re-reads the buffer. Scroll position (pinned or held) is preserved.
 		return m, nil
 
 	case ProcessStateMsg:

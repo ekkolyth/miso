@@ -23,9 +23,29 @@ const (
 	StateExited
 )
 
-type ProcessOutputMsg struct {
+// LineOp is one edit a child made to its output — append a tail line, overwrite
+// a recent one, or clear the pane — so a consumer can mirror an in-place redraw
+// instead of re-appending every frame.
+type LineOp interface{ lineOp() }
+
+type OpAppend struct{ Text string }
+
+// OffsetFromEnd 0 is the newest line, matching RingBuffer.SetFromEnd.
+type OpRewrite struct {
+	OffsetFromEnd int
+	Text          string
+}
+
+type OpClear struct{}
+
+func (OpAppend) lineOp()  {}
+func (OpRewrite) lineOp() {}
+func (OpClear) lineOp()   {}
+
+// ProcessLineMsg carries one output op from the capture goroutine to the model.
+type ProcessLineMsg struct {
 	Label string
-	Line  string
+	Op    LineOp
 }
 
 type ProcessStateMsg struct {
@@ -291,7 +311,7 @@ func (pm *ProcessManager) StopAll() {
 }
 
 // captureOutput reads lines from r, resolves in-place redraws against the
-// process buffer, and sends ProcessOutputMsg messages.
+// process buffer, and emits the resulting ops to the sink.
 func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -301,8 +321,9 @@ func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGr
 	const maxLine = 1024 * 1024
 	live := liveWriter{buf: p.Buffer}
 	readLines(r, maxLine, func(raw string) {
-		line := live.feed(raw)
-		pm.sendOutput(p, line)
+		for _, op := range live.feed(raw) {
+			pm.sendLine(p, op)
+		}
 	})
 }
 
@@ -318,21 +339,24 @@ type liveWriter struct {
 	up int
 }
 
-// feed resolves one newline-terminated segment, writes it to the buffer at the
-// current cursor (resetting the pane on a screen clear, otherwise overwriting or
-// appending), advances the cursor, and returns the cleaned line.
-func (lw *liveWriter) feed(raw string) string {
+// feed resolves one newline-terminated segment against the buffer — resetting
+// the pane on a screen clear, overwriting a recent line on a cursor-up/CR
+// redraw, otherwise appending — and returns the ops it applied so a consumer
+// can mirror the same edit.
+func (lw *liveWriter) feed(raw string) []LineOp {
 	raw = strings.TrimSuffix(raw, "\r")
 	cleared := strings.IndexByte(raw, '\x1b') >= 0 && screenResetRe.MatchString(raw)
 	moveUp, raw := extractCursorUp(raw)
 	raw = collapseCarriageReturns(raw)
 	raw = stripNonColorANSI(raw)
 
+	var ops []LineOp
 	if cleared {
 		lw.buf.Clear()
 		lw.up = 0
+		ops = append(ops, OpClear{})
 		if raw == "" {
-			return raw // a bare screen clear commits no line
+			return ops // a bare screen clear commits no line
 		}
 	}
 	if moveUp > 0 {
@@ -341,16 +365,19 @@ func (lw *liveWriter) feed(raw string) string {
 			lw.up = room
 		}
 		if raw == "" {
-			return raw // cursor-only reposition, no reprint to commit yet
+			return ops // cursor-only reposition, no reprint to commit yet
 		}
 	}
 	if lw.up == 0 {
 		lw.buf.Write(raw)
+		ops = append(ops, OpAppend{Text: raw})
 	} else {
-		lw.buf.SetFromEnd(lw.up-1, raw)
+		offset := lw.up - 1
+		lw.buf.SetFromEnd(offset, raw)
+		ops = append(ops, OpRewrite{OffsetFromEnd: offset, Text: raw})
 		lw.up--
 	}
-	return raw
+	return ops
 }
 
 // screenResetRe matches full-screen clears a redrawing child emits before
@@ -437,14 +464,14 @@ func readLines(r io.Reader, maxLine int, emit func(string)) {
 	}
 }
 
-// sendOutput dispatches process output to the registered sink.
-func (pm *ProcessManager) sendOutput(p *Process, line string) {
+// sendLine dispatches one output op to the registered sink.
+func (pm *ProcessManager) sendLine(p *Process, op LineOp) {
 	pm.mu.Lock()
 	sink := pm.sink
 	pm.mu.Unlock()
 
 	if sink != nil {
-		sink.OnOutput(p.Entry.Label, line)
+		sink.OnLine(p.Entry.Label, op)
 	}
 }
 

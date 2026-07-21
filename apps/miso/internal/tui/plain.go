@@ -15,10 +15,21 @@ type stdoutSink struct {
 	mu sync.Mutex
 }
 
-func (s *stdoutSink) OnOutput(label, line string) {
+// every append/rewrite prints a line — the same per-line stream as before;
+// clear prints nothing
+func (s *stdoutSink) OnLine(label string, op LineOp) {
+	var text string
+	switch o := op.(type) {
+	case OpAppend:
+		text = o.Text
+	case OpRewrite:
+		text = o.Text
+	default:
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, _ = fmt.Fprintf(s.w, "[%s] %s\n", label, line)
+	_, _ = fmt.Fprintf(s.w, "[%s] %s\n", label, text)
 }
 
 func (s *stdoutSink) OnState(label string, state ProcessState, code int) {

@@ -202,21 +202,15 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case ProcessOutputMsg:
+	case ProcessLineMsg:
 		// Default new dynamically-added processes to visible (turbo/nx mode).
 		m.ensureVisible()
-		color := m.colorForLabel(msg.Label)
-		m.logSeq++
-		m.logLines = append(m.logLines, mergedLine{
-			label: msg.Label,
-			color: color,
-			text:  msg.Line,
-			seq:   m.logSeq,
-		})
-		// Cap merged log to prevent unbounded memory growth
-		maxMergedLines := DefaultBufferSize * len(m.pm.Processes)
-		if len(m.logLines) > maxMergedLines {
-			m.logLines = m.logLines[len(m.logLines)-maxMergedLines:]
+		switch op := msg.Op.(type) {
+		case OpAppend:
+			m.appendLine(msg.Label, op.Text)
+		case OpRewrite:
+			// phase A: a rewrite still appends; phase B collapses it in place
+			m.appendLine(msg.Label, op.Text)
 		}
 		return m, nil
 
@@ -398,6 +392,22 @@ func (m MergedModel) renderFilterBar() string {
 		Render(selector)
 
 	return header + "\n" + tabRow + "\n" + selectorRow
+}
+
+// appendLine adds one interleaved line at the tail, capping total length to
+// bound memory.
+func (m *MergedModel) appendLine(label, text string) {
+	m.logSeq++
+	m.logLines = append(m.logLines, mergedLine{
+		label: label,
+		color: m.colorForLabel(label),
+		text:  text,
+		seq:   m.logSeq,
+	})
+	maxMergedLines := DefaultBufferSize * len(m.pm.Processes)
+	if len(m.logLines) > maxMergedLines {
+		m.logLines = m.logLines[len(m.logLines)-maxMergedLines:]
+	}
 }
 
 // ensureVisible sets any newly-added processes (from delegated mode dynamic

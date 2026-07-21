@@ -2,20 +2,20 @@ package tui
 
 import tea "charm.land/bubbletea/v2"
 
-// receives per-process output and state; one implementation renders chrome,
+// receives per-process output ops and state; one implementation renders chrome,
 // another streams plain stdout
 type OutputSink interface {
-	OnOutput(label, line string)
+	OnLine(label string, op LineOp)
 	OnState(label string, state ProcessState, code int)
 }
 
-// forwards to a bubbletea program as ProcessOutputMsg / ProcessStateMsg
+// forwards to a bubbletea program as ProcessLineMsg / ProcessStateMsg
 type programSink struct {
 	prog *tea.Program
 }
 
-func (s programSink) OnOutput(label, line string) {
-	s.prog.Send(ProcessOutputMsg{Label: label, Line: line})
+func (s programSink) OnLine(label string, op LineOp) {
+	s.prog.Send(ProcessLineMsg{Label: label, Op: op})
 }
 
 func (s programSink) OnState(label string, state ProcessState, code int) {
