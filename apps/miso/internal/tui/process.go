@@ -340,6 +340,9 @@ func (lw *liveWriter) feed(raw string) string {
 		if room := lw.buf.Len(); lw.up > room {
 			lw.up = room
 		}
+		if raw == "" {
+			return raw // cursor-only reposition, no reprint to commit yet
+		}
 	}
 	if lw.up == 0 {
 		lw.buf.Write(raw)

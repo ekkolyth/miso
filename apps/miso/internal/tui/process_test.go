@@ -361,6 +361,61 @@ func TestCaptureOutputInPlaceRedrawGrows(t *testing.T) {
 	}
 }
 
+func TestCaptureOutputBareCursorUpDoesNotBlankLines(t *testing.T) {
+	// a cursor-up segment with no reprint text on it (the child issued the
+	// escape on its own line) must not blank the line it points at — it only
+	// repositions the cursor for whatever segment reprints next.
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "spin"}, "", nil, "", nil)
+
+	stream := "web  Creating\ndb  Creating\n" + // frame 1
+		"\x1b[2A\n" + // bare cursor-up, no reprint text
+		"web  Created\ndb  Created\n" // reprint arrives on its own lines
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	pm.captureOutput(p, strings.NewReader(stream), &wg)
+	wg.Wait()
+
+	got := p.Buffer.Lines()
+	want := []string{"web  Created", "db  Created"}
+	if len(got) != len(want) {
+		t.Fatalf("buffer has %d lines, want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestCaptureOutputRedrawWithBlankRowStillOverwrites(t *testing.T) {
+	// a real multi-line reprint can legitimately include a blank row — that
+	// must still overwrite its slot. Only a segment that is nothing but a
+	// cursor reposition (no reprint text of its own) is skipped.
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "compose"}, "", nil, "", nil)
+
+	stream := "web  Creating\ndb  Creating\nlog line\n" + // frame 1: 3 lines
+		"\x1b[3Aweb  Created\n\ndb  Created\n" // up 3, middle row reprints blank
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	pm.captureOutput(p, strings.NewReader(stream), &wg)
+	wg.Wait()
+
+	got := p.Buffer.Lines()
+	want := []string{"web  Created", "", "db  Created"}
+	if len(got) != len(want) {
+		t.Fatalf("buffer has %d lines, want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestCaptureOutputCarriageReturnProgressCollapses(t *testing.T) {
 	// a \r progress bar rewrites one line in place; the buffer holds a single
 	// line at the final percentage, not one per tick.
