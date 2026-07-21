@@ -236,9 +236,20 @@ func main() {
 			scriptArgs = env.StripEnvFlag(scriptArgs)
 		}
 
-		// TUI interception for simple mode
-		if cfg.TuiEnabled() {
+		// Orchestrate the folder script (and any root-scope concurrent) — chrome on
+		// a TTY with tui != off, plain otherwise. Falls through to the literal exec
+		// below only when nothing was orchestrated.
+		switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
+		case tui.RendererChrome:
 			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil)
+			if err != nil {
+				cli.Fail(logger, err, false)
+			}
+			if ran {
+				return
+			}
+		case tui.RendererPlain:
+			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -309,38 +320,37 @@ func main() {
 		scopeFilters = scopeFilterNames(parsed.Scopes, projectRoot, cfg, logger)
 	}
 
-	// TUI interception — check if we should launch the TUI instead of normal execution
-	if cfg.TuiEnabled() {
-		// Only intercept when running from project root (not workspace subdirectory)
-		isRoot := true
-		if members, _ := workspace.DiscoverMembers(projectRoot, cfg); len(members) > 0 {
-			if _, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
-				isRoot = false
-			}
+	// Orchestration / delegation interception — gated on running from the project
+	// root (not a workspace subdirectory), not on the TUI being enabled. Native
+	// miso mode always orchestrates; the renderer is chosen per run below.
+	isRoot := true
+	if members, _ := workspace.DiscoverMembers(projectRoot, cfg); len(members) > 0 {
+		if _, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
+			isRoot = false
 		}
+	}
 
-		if isRoot {
-			// ActionScriptFolder is deliberately absent: a folder script runs
-			// literally (miso can't wrap its output in the turbo/nx chrome,
-			// which needs miso to control the turbo invocation — see
-			// tui.DelegateLaunch). Delegation is reached via a package.json
-			// script or the built-in dev/run action, where miso reconstructs
-			// `turbo run <name>` itself.
+	if isRoot {
+		// ActionScriptFolder orchestrates natively but runs literally under
+		// delegation: miso can't wrap a folder script's output in turbo/nx chrome
+		// (that needs miso to control the turbo invocation — see tui.DelegateLaunch),
+		// so a delegated folder script falls through to the literal-exec path.
+		switch parsed.Action {
+		case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough, cli.ActionScriptFolder:
+			scriptName := parsed.ScriptName
+			scriptArgs := parsed.ScriptArgs
 			switch parsed.Action {
-			case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough:
-				scriptName := parsed.ScriptName
-				scriptArgs := parsed.ScriptArgs
-				switch parsed.Action {
-				case cli.ActionDev:
-					scriptName = "dev"
-				case cli.ActionPassthrough:
-					scriptName = parsed.Command
-					scriptArgs = parsed.Args
-				}
+			case cli.ActionDev:
+				scriptName = "dev"
+			case cli.ActionPassthrough:
+				scriptName = parsed.Command
+				scriptArgs = parsed.Args
+			}
 
-				filters := scopeFilters
+			filters := scopeFilters
 
-				if cfg.IsDelegated() {
+			if cfg.IsDelegated() {
+				if parsed.Action != cli.ActionScriptFolder {
 					// Check if this task is overridden by miso's direct orchestration
 					_, taskOverridden := cfg.Tasks[scriptName]
 					if taskOverridden {
@@ -371,11 +381,14 @@ func main() {
 							}
 						}
 					}
-				} else {
-					mgr, ok := manager.GetManager(managerName)
-					if !ok {
-						cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
-					}
+				}
+			} else {
+				mgr, ok := manager.GetManager(managerName)
+				if !ok {
+					cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+				}
+				switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
+				case tui.RendererChrome:
 					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters)
 					if err != nil {
 						cli.Fail(logger, err, false)
@@ -383,10 +396,18 @@ func main() {
 					if ran {
 						return
 					}
+				case tui.RendererPlain:
+					ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters)
+					if err != nil {
+						cli.Fail(logger, err, false)
+					}
+					if ran {
+						return
+					}
 				}
-				// TUI/delegation not applicable — fall through. The Task 4
-				// fail-safe rejects any explicit scope that reached here.
 			}
+			// Orchestration/delegation not applicable — fall through. The Task 4
+			// fail-safe rejects any explicit scope that reached here.
 		}
 	}
 
