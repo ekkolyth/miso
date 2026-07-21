@@ -66,11 +66,11 @@ func delegateFilterArgs(mode string, filters []string) []string {
 	}
 }
 
-// DelegateLaunch spawns turbo or nx. With an interactive TTY it renders the
-// delegate's output in the miso TUI; otherwise it runs the delegate directly
-// with inherited stdio, forwarding SIGINT/SIGTERM. Once the delegate binary
-// resolves, DelegateLaunch owns the run — callers never fall through after
-// that point, so a nonzero delegate exit surfaces as a non-nil error.
+// DelegateLaunch spawns turbo or nx: chrome (the miso TUI) with an
+// interactive TTY and tui != off, plain with inherited stdio otherwise —
+// forwarding SIGINT/SIGTERM either way. A resolved delegate task always runs
+// one of the two, never falling through to package-manager execution, so a
+// nonzero delegate exit surfaces as a non-nil error.
 //
 // The delegated process is deliberately NOT given a pseudo-terminal (unlike the
 // direct-spawn ProcessManager.Start path). turbo and nx orchestrate their own
@@ -78,10 +78,6 @@ func delegateFilterArgs(mode string, filters []string) []string {
 // the chrome (sidebar/tabs + log rendering) and leaves process lifecycle and
 // stdin to them. A pty here would collide with turbo's own terminal UI.
 func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs []string, filters []string) (bool, error) {
-	if !cfg.TuiEnabled() {
-		return false, nil
-	}
-
 	mode := cfg.RepoMode()
 
 	// Verify the binary exists
@@ -108,8 +104,9 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	// `turbo run`. NO_COLOR still wins per the shared convention.
 	env := delegatedColorEnv(os.Environ())
 
-	if !hasInteractiveTTY() {
-		if len(filters) == 0 {
+	hasTTY := hasInteractiveTTY()
+	if SelectRenderer(cfg, hasTTY) == RendererPlain {
+		if !hasTTY && len(filters) == 0 {
 			fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
 		}
 		return delegateRunPlain(mode, binary, delegateArgs, root, env)

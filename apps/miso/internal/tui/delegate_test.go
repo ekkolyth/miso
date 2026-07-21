@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"slices"
 	"testing"
 )
@@ -40,6 +41,28 @@ func TestDelegateFilterArgs(t *testing.T) {
 	}
 	if len(delegateFilterArgs("turbo", nil)) != 0 {
 		t.Error("no filters -> no args")
+	}
+}
+
+func TestDelegateRunPlain_Succeeds(t *testing.T) {
+	dir := t.TempDir()
+	ran, err := delegateRunPlain("sh", "sh", []string{"-c", "exit 0"}, dir, os.Environ())
+	if !ran {
+		t.Error("expected ran = true")
+	}
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestDelegateRunPlain_FailingCommandErrors(t *testing.T) {
+	dir := t.TempDir()
+	ran, err := delegateRunPlain("sh", "sh", []string{"-c", "exit 3"}, dir, os.Environ())
+	if !ran {
+		t.Error("expected ran = true")
+	}
+	if err == nil {
+		t.Error("expected error from failing command")
 	}
 }
 
