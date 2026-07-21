@@ -241,7 +241,7 @@ func main() {
 		// below only when nothing was orchestrated.
 		switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
 		case tui.RendererChrome:
-			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil)
+			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -249,7 +249,7 @@ func main() {
 				return
 			}
 		case tui.RendererPlain:
-			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil)
+			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -358,7 +358,7 @@ func main() {
 						if !ok {
 							cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
 						}
-						ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters)
+						ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
 						if err != nil {
 							cli.Fail(logger, err, false)
 						}
@@ -389,7 +389,7 @@ func main() {
 				}
 				switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
 				case tui.RendererChrome:
-					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters)
+					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
 					if err != nil {
 						cli.Fail(logger, err, false)
 					}
@@ -397,7 +397,7 @@ func main() {
 						return
 					}
 				case tui.RendererPlain:
-					ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters)
+					ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
 					if err != nil {
 						cli.Fail(logger, err, false)
 					}

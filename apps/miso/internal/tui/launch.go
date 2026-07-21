@@ -49,7 +49,7 @@ func filterEntriesByWorkspace(entries []TuiScriptEntry, names []string) []TuiScr
 // Returns (true, nil) if the TUI ran successfully.
 // Returns (false, nil) if the TUI was not applicable (caller should fall through to normal execution).
 // Returns (false, err) on error.
-func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string) (bool, error) {
+func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (bool, error) {
 	if !cfg.TuiEnabled() {
 		return false, nil
 	}
@@ -61,7 +61,7 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 		return false, nil
 	}
 
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames)
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs)
 	if err != nil {
 		return false, err
 	}
@@ -120,8 +120,8 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 // LaunchPlain is the plain sibling of Launch: it shares buildRun's discovery and
 // process setup, then streams "[label] line" to stdout instead of rendering the
 // bubbletea chrome. Same (ran, err) contract as Launch.
-func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string) (bool, error) {
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames)
+func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (bool, error) {
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs)
 	if err != nil {
 		return false, err
 	}
@@ -136,8 +136,8 @@ func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.
 // filters, adds a process per entry with scoped env, and pre-computes dependency
 // levels. ran is false when no entries resolve — the caller falls through to
 // normal execution.
-func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string) (*ProcessManager, [][]TuiScriptEntry, []*Process, bool, error) {
-	entries, err := discoverEntries(cfg, scriptName, root)
+func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (*ProcessManager, [][]TuiScriptEntry, []*Process, bool, error) {
+	entries, err := discoverEntries(cfg, scriptName, root, scriptArgs)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
@@ -178,13 +178,13 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 				return nil, nil, nil, false, spawnErr
 			}
 			cmd = spawnCmd
-			args = spawnArgs
+			args = append(spawnArgs, entry.Args...)
 		} else {
 			// Run via package manager
 			if mgr == nil {
 				return nil, nil, nil, false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
 			}
-			spec := mgr.BuildRun(entry.ScriptName, nil)
+			spec := mgr.BuildRun(entry.ScriptName, entry.Args)
 			cmd = spec.Command
 			args = spec.Args
 		}
@@ -247,8 +247,11 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	return pm, levels, concurrentProcs, true, nil
 }
 
-// root wins over members — fan out only when the root doesn't have the script
-func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiScriptEntry, error) {
+// root wins over members — fan out only when the root doesn't have the script.
+// scriptArgs reaches the spawned process only along the root path, and only
+// when it resolves to the single main entry (see discoverRootScope) — a
+// member fan-out never receives them, since which member would be ambiguous.
+func discoverEntries(cfg config.Config, scriptName string, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
 	var rootResolved []TuiScriptEntry
 	var err error
 	if cfg.SimpleMode() {
@@ -260,7 +263,7 @@ func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiSc
 		return nil, err
 	}
 	if len(rootResolved) > 0 {
-		return discoverRootScope(cfg, scriptName, root, rootResolved)
+		return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
 	}
 
 	members, err := workspace.DiscoverMembers(root, cfg)
@@ -313,8 +316,14 @@ func concurrentNeedsMembers(concurrent []string) bool {
 	return false
 }
 
-// adds concurrent companions to an already-resolved main entry
-func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries []TuiScriptEntry) ([]TuiScriptEntry, error) {
+// adds concurrent companions to an already-resolved main entry. mainEntries is
+// always length 1 here (ResolveSingleRepoScripts* resolves one script name) —
+// that single entry gets scriptArgs; concurrent companions never do.
+func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries []TuiScriptEntry, scriptArgs []string) ([]TuiScriptEntry, error) {
+	if len(mainEntries) == 1 {
+		mainEntries[0].Args = scriptArgs
+	}
+
 	concurrent := cfg.TaskConcurrent(scriptName)
 
 	// a broken workspace file must not block a script with no @-ref — only

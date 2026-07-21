@@ -117,7 +117,7 @@ func TestDiscoverEntries_CarriesScopedMemberName(t *testing.T) {
 	}
 
 	cfg := config.Config{Scripts: "./scripts"}
-	entries, err := discoverEntries(cfg, "dev", root)
+	entries, err := discoverEntries(cfg, "dev", root, nil)
 	if err != nil {
 		t.Fatalf("discoverEntries: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestDiscoverEntries_HonorsMemberScriptsFolder(t *testing.T) {
 	scriptPath := writeScript(t, tasksDir, "dev")
 
 	cfg := config.Config{Scripts: "./scripts"}
-	entries, err := discoverEntries(cfg, "dev", root)
+	entries, err := discoverEntries(cfg, "dev", root, nil)
 	if err != nil {
 		t.Fatalf("discoverEntries: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestDiscoverEntries_HonorsMemberShell(t *testing.T) {
 	writeScript(t, scriptsDir, "dev")
 
 	cfg := config.Config{Scripts: "./scripts", Shell: "bash"}
-	entries, err := discoverEntries(cfg, "dev", root)
+	entries, err := discoverEntries(cfg, "dev", root, nil)
 	if err != nil {
 		t.Fatalf("discoverEntries: %v", err)
 	}
@@ -431,7 +431,7 @@ func TestDiscoverEntriesRootScriptWinsOverFanOut(t *testing.T) {
 	writePackageJSON(t, webDir, map[string]string{"dev": "vite"})
 
 	cfg := config.Config{Scripts: "./scripts"}
-	entries, err := discoverEntries(cfg, "dev", root)
+	entries, err := discoverEntries(cfg, "dev", root, nil)
 	if err != nil {
 		t.Fatalf("discoverEntries: %v", err)
 	}
@@ -474,7 +474,7 @@ func TestDiscoverEntriesMemberConcurrentRunsWithinMember(t *testing.T) {
 	}
 
 	cfg := config.Config{Scripts: "./scripts"}
-	entries, err := discoverEntries(cfg, "dev", root)
+	entries, err := discoverEntries(cfg, "dev", root, nil)
 	if err != nil {
 		t.Fatalf("discoverEntries: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestDiscoverEntriesRootConcurrentTargetsMemberScope(t *testing.T) {
 		Scripts: "./scripts",
 		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"@web/studio"}}},
 	}
-	entries, err := discoverEntries(cfg, "dev", root)
+	entries, err := discoverEntries(cfg, "dev", root, nil)
 	if err != nil {
 		t.Fatalf("discoverEntries: %v", err)
 	}
@@ -556,7 +556,7 @@ func TestDiscoverEntriesMemberConcurrentCrossReferencesOtherMember(t *testing.T)
 	writeScript(t, workerScripts, "queue") // apps/worker/scripts/queue.sh
 
 	cfg := config.Config{Scripts: "./scripts"}
-	entries, err := discoverEntries(cfg, "dev", root)
+	entries, err := discoverEntries(cfg, "dev", root, nil)
 	if err != nil {
 		t.Fatalf("discoverEntries: %v", err)
 	}
@@ -630,7 +630,7 @@ func TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename(t *testing.T) {
 		Scripts: "./scripts",
 		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"@web/build"}}},
 	}
-	entries, err := discoverEntries(cfg, "dev", root)
+	entries, err := discoverEntries(cfg, "dev", root, nil)
 	if err != nil {
 		t.Fatalf("discoverEntries: %v", err)
 	}

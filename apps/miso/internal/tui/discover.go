@@ -28,6 +28,9 @@ type TuiScriptEntry struct {
 	ScriptPath    string
 	// effective shell for spawning folder scripts; empty falls back to cfg.Shell then sh
 	Shell string
+	// user-supplied invocation args; set only on the single main entry when the
+	// run resolves unambiguously — nil for concurrent companions and fan-out members
+	Args []string
 }
 
 // DiscoverTuiScripts finds all scripts matching the given command prefix across
