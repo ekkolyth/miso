@@ -278,7 +278,7 @@ func main() {
 	// CWD-aware workspace scoping: when inside a discovered member and the parsed
 	// action is a plain script (not already workspace-scoped), try to resolve the
 	// script from the current member's scripts folder first.
-	if members, _ := workspace.DiscoverMembers(projectRoot, cfg); len(members) > 0 &&
+	if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 &&
 		originalWorkDir != projectRoot && parsed.Action == cli.ActionScriptPackageJSON {
 		if member, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
 			resolved, _, _, resolveErr := scripting.ResolveWorkspaceScript(
@@ -324,7 +324,7 @@ func main() {
 	// root (not a workspace subdirectory), not on the TUI being enabled. Native
 	// miso mode always orchestrates; the renderer is chosen per run below.
 	isRoot := true
-	if members, _ := workspace.DiscoverMembers(projectRoot, cfg); len(members) > 0 {
+	if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 {
 		if _, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
 			isRoot = false
 		}
@@ -548,7 +548,7 @@ func scopeFilterNames(scopes []string, projectRoot string, cfg config.Config, lo
 	if len(scopes) == 0 {
 		return nil
 	}
-	members, _ := workspace.DiscoverMembers(projectRoot, cfg)
+	members, _ := workspace.DiscoverMembersCached(projectRoot, cfg)
 	resolved, err := workspace.ResolveScopes(scopes, members, projectRoot)
 	if err != nil {
 		cli.Fail(logger, err, false)

@@ -238,7 +238,7 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 		return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
 	}
 
-	members, err := workspace.DiscoverMembers(root, cfg)
+	members, err := workspace.DiscoverMembersCached(root, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("discover members: %w", err)
 	}
@@ -303,7 +303,7 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 	var members []workspace.Member
 	if concurrentNeedsMembers(concurrent) {
 		var err error
-		members, err = workspace.DiscoverMembers(root, cfg)
+		members, err = workspace.DiscoverMembersCached(root, cfg)
 		if err != nil {
 			return nil, err
 		}
