@@ -82,6 +82,43 @@ func TestLoadTuiConfigObjectNoCleanExit(t *testing.T) {
 	}
 }
 
+func TestLoadTuiConfigOff(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"tui": "off"
+	}`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.TuiMode != "off" {
+		t.Errorf("TuiMode = %q, want %q", cfg.TuiMode, "off")
+	}
+}
+
+func TestLoad_RejectsInvalidTuiMode(t *testing.T) {
+	dir := writeTempConfig(t, `{"tui":"wibble","scripts":"./scripts"}`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected load error for unknown tui mode \"wibble\"")
+	}
+	if !strings.Contains(err.Error(), "unknown mode") {
+		t.Errorf("error = %q, want it to mention \"unknown mode\"", err.Error())
+	}
+}
+
+func TestLoad_RejectsInvalidTuiModeObject(t *testing.T) {
+	dir := writeTempConfig(t, `{"tui":{"mode":"wibble"},"scripts":"./scripts"}`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected load error for unknown tui mode \"wibble\" in object form")
+	}
+	if !strings.Contains(err.Error(), "unknown mode") {
+		t.Errorf("error = %q, want it to mention \"unknown mode\"", err.Error())
+	}
+}
+
 func TestLoadRepoStringValues(t *testing.T) {
 	tests := []struct {
 		name string

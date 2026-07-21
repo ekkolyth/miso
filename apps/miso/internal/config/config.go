@@ -315,28 +315,34 @@ func parseRepoField(raw json.RawMessage) (string, map[string]TaskConfig, error) 
 //  1. string — "off", "tabbed", "merged"
 //  2. object — { "mode": "tabbed", "cleanExit": true }
 func parseTuiField(raw json.RawMessage) (string, bool, error) {
+	var mode string
+	var cleanExit bool
+
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		if s == "" {
-			s = "off"
+		mode = s
+	} else {
+		var obj struct {
+			Mode      string `json:"mode"`
+			CleanExit bool   `json:"cleanExit"`
 		}
-		return s, false, nil
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return "", false, fmt.Errorf("tui: expected string or object, got %s", string(raw))
+		}
+		mode = obj.Mode
+		cleanExit = obj.CleanExit
 	}
 
-	var obj struct {
-		Mode      string `json:"mode"`
-		CleanExit bool   `json:"cleanExit"`
-	}
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return "", false, fmt.Errorf("tui: expected string or object, got %s", string(raw))
-	}
-
-	mode := obj.Mode
 	if mode == "" {
 		mode = "off"
 	}
 
-	return mode, obj.CleanExit, nil
+	switch mode {
+	case "off", "tabbed", "merged":
+		return mode, cleanExit, nil
+	default:
+		return "", false, fmt.Errorf("tui: unknown mode %q (use off, tabbed, or merged)", mode)
+	}
 }
 
 // parseEnvEntry decodes a single EnvEntry from its raw JSON representation.
