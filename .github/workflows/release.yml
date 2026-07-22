@@ -38,7 +38,7 @@ jobs:
                   token: ${{ secrets.RELEASE_TOKEN }}
 
             - name: Setup Go
-              uses: actions/setup-go@v6
+              uses: actions/setup-go@v7
               with:
                   go-version-file: apps/miso/go.mod
 
@@ -192,7 +192,7 @@ jobs:
               run: chmod +x dist/bin/miso-* dist/bin/misox-*
 
             - name: Setup Node.js
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@v7
               with:
                   node-version: 22
                   registry-url: "https://registry.npmjs.org"
