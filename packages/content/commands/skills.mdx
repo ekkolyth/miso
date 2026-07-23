@@ -1,0 +1,28 @@
+Manages miso's AI agent skills for your coding harness.
+
+### When to use
+
+To install or remove the miso skill set for an agent harness (Claude Code, OpenCode, Codex, Gemini CLI, Cursor).
+
+### How it works
+
+Detects installed harnesses on your PATH and, with `--add` or `--rm`, installs or removes the skills for the chosen harness(es). `--yes` selects every detected harness non-interactively.
+
+### Examples
+
+```bash
+miso skills --add
+miso skills --rm
+miso skills --add --yes
+```
+
+### Flags
+
+- `--add` — install the miso skills.
+- `--rm` — remove the miso skills.
+- `--yes` — apply to every detected harness without prompting.
+
+### Gotchas
+
+- `--add` and `--rm` are mutually exclusive.
+- With neither flag, `skills` falls through to normal routing.

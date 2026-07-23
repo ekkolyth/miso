@@ -1,7 +1,5 @@
 {
 	"$schema": "apps/miso/miso.schema.json",
 	"tui": "tabbed",
-	"packageManager": false,
-	"scripts": "./scripts",
-	"repo": "single"
+	"scripts": "./scripts"
 }

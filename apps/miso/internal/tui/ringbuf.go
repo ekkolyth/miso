@@ -5,11 +5,12 @@ import "sync"
 const DefaultBufferSize = 10000
 
 type RingBuffer struct {
-	mu    sync.Mutex
-	buf   []string
-	cap   int
-	head  int
-	count int
+	mu      sync.Mutex
+	buf     []string
+	cap     int
+	head    int
+	count   int
+	dropped int64 // total lines evicted; seq of the oldest retained line
 }
 
 func NewRingBuffer(capacity int) *RingBuffer {
@@ -29,7 +30,16 @@ func (rb *RingBuffer) Write(line string) {
 
 	if rb.count < rb.cap {
 		rb.count++
+	} else {
+		rb.dropped++
 	}
+}
+
+// sequence number of the oldest retained line (Lines()[0])
+func (rb *RingBuffer) BaseSeq() int64 {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.dropped
 }
 
 // oldest to newest
@@ -48,6 +58,23 @@ func (rb *RingBuffer) Lines() []string {
 	}
 
 	return result
+}
+
+// SetFromEnd overwrites the retained line offsetFromEnd positions above the
+// newest (0 = newest). No-op when offsetFromEnd falls outside the retained
+// window — a redraw can only edit lines still in the buffer.
+func (rb *RingBuffer) SetFromEnd(offsetFromEnd int, line string) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	if offsetFromEnd < 0 || offsetFromEnd >= rb.count {
+		return
+	}
+	idx := (rb.head - 1 - offsetFromEnd) % rb.cap
+	if idx < 0 {
+		idx += rb.cap
+	}
+	rb.buf[idx] = line
 }
 
 // Clear resets the buffer to empty.

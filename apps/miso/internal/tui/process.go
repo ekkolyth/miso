@@ -2,13 +2,17 @@ package tui
 
 import (
 	"bufio"
+	"bytes"
+	"io"
 	"os/exec"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
+	"github.com/ekkolyth/miso/internal/proc"
 )
 
 type ProcessState int
@@ -19,9 +23,29 @@ const (
 	StateExited
 )
 
-type ProcessOutputMsg struct {
+// LineOp is one edit a child made to its output — append a tail line, overwrite
+// a recent one, or clear the pane — so a consumer can mirror an in-place redraw
+// instead of re-appending every frame.
+type LineOp interface{ lineOp() }
+
+type OpAppend struct{ Text string }
+
+// OffsetFromEnd 0 is the newest line, matching RingBuffer.SetFromEnd.
+type OpRewrite struct {
+	OffsetFromEnd int
+	Text          string
+}
+
+type OpClear struct{}
+
+func (OpAppend) lineOp()  {}
+func (OpRewrite) lineOp() {}
+func (OpClear) lineOp()   {}
+
+// ProcessLineMsg carries one output op from the capture goroutine to the model.
+type ProcessLineMsg struct {
 	Label string
-	Line  string
+	Op    LineOp
 }
 
 type ProcessStateMsg struct {
@@ -30,39 +54,50 @@ type ProcessStateMsg struct {
 	Code  int
 }
 
-// Process holds the runtime state for a single managed process.
+// streams wired to a spawned process — unix: pty master is both reader and
+// stdin writer; windows: separate stdout/stderr pipes + stdin pipe
+type spawnResult struct {
+	readers []io.Reader
+	stdin   io.Writer
+	resize  func(rows, cols int)
+	closer  func()
+}
+
 type Process struct {
-	Entry    TuiScriptEntry
-	Command  string
-	Args     []string
-	Dir      string   // working directory for the process
-	Environ  []string // environment variables for the process (nil = inherit)
+	Entry     TuiScriptEntry
+	Command   string
+	Args      []string
+	Dir       string   // working directory for the process
+	Environ   []string // environment variables for the process (nil = inherit)
+	NoPTY     bool     // plain mode: pipe stdio (no pty) so a tool self-formats for a non-tty
 	State     ProcessState
 	ExitCode  int
 	StartedAt time.Time
 	Buffer    *RingBuffer
 
-	cmd  *exec.Cmd
-	done chan struct{}
-	mu   sync.Mutex
+	cmd    *exec.Cmd
+	stdin  io.Writer // writable child stdin (pty master on unix, pipe on Windows)
+	resize func(rows, cols int)
+	done   chan struct{}
+	mu     sync.Mutex
 }
 
-// ProcessManager owns the set of managed processes and dispatches tea messages.
+// ProcessManager owns the set of managed processes and dispatches output/state to a sink.
 type ProcessManager struct {
 	Processes []*Process
 	mu        sync.Mutex
-	program   *tea.Program
+	sink      OutputSink
 }
 
 func NewProcessManager() *ProcessManager {
 	return &ProcessManager{}
 }
 
-// SetProgram registers the bubbletea program used for sending messages.
-func (pm *ProcessManager) SetProgram(p *tea.Program) {
+// SetSink registers the destination for process output and state.
+func (pm *ProcessManager) SetSink(sink OutputSink) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	pm.program = p
+	pm.sink = sink
 }
 
 func (pm *ProcessManager) Add(entry TuiScriptEntry, command string, args []string, dir string, environ []string) *Process {
@@ -84,6 +119,27 @@ func (pm *ProcessManager) Add(entry TuiScriptEntry, command string, args []strin
 	return p
 }
 
+// PinLast moves the process with the given label to the end of the list — used
+// to keep a meta tab (e.g. "turbo") below the real workspace tabs as they stream
+// in. No-op if the label isn't present or is already last.
+func (pm *ProcessManager) PinLast(label string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	idx := -1
+	for i, p := range pm.Processes {
+		if p.Entry.Label == label {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 || idx == len(pm.Processes)-1 {
+		return
+	}
+	p := pm.Processes[idx]
+	pm.Processes = append(pm.Processes[:idx], pm.Processes[idx+1:]...)
+	pm.Processes = append(pm.Processes, p)
+}
+
 // Start spawns the process, captures stdout and stderr in separate goroutines,
 // and manages the process lifecycle.
 func (pm *ProcessManager) Start(p *Process) error {
@@ -98,61 +154,50 @@ func (pm *ProcessManager) Start(p *Process) error {
 	if p.Environ != nil {
 		p.cmd.Env = p.Environ
 	}
-	// Create a new process group so we can kill the entire tree on stop.
-	setProcGroup(p.cmd)
+	cmd := p.cmd
+	done := p.done
+	noPTY := p.NoPTY
 	p.mu.Unlock()
 
-	cmd := p.cmd
-
-	stdoutPipe, err := cmd.StdoutPipe()
+	// pipes when noPTY (plain mode — the tool sees a non-tty and self-formats to
+	// line output), else a pty so chrome children stay interactive and colored.
+	var res *spawnResult
+	var err error
+	if noPTY {
+		res, err = spawnPipes(cmd)
+	} else {
+		res, err = spawnProcess(cmd, 0, 0)
+	}
 	if err != nil {
 		p.mu.Lock()
 		p.State = StateExited
 		p.ExitCode = -1
-		close(p.done)
 		p.mu.Unlock()
 		pm.sendState(p, StateExited, -1)
-		return err
-	}
-
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		p.mu.Lock()
-		p.State = StateExited
-		p.ExitCode = -1
-		close(p.done)
-		p.mu.Unlock()
-		pm.sendState(p, StateExited, -1)
-		return err
-	}
-
-	if err := cmd.Start(); err != nil {
-		p.mu.Lock()
-		p.State = StateExited
-		p.ExitCode = -1
-		close(p.done)
-		p.mu.Unlock()
-		pm.sendState(p, StateExited, -1)
+		close(done)
 		return err
 	}
 
 	p.mu.Lock()
+	p.stdin = res.stdin
+	p.resize = res.resize
 	p.State = StateRunning
 	p.StartedAt = time.Now()
 	p.mu.Unlock()
 	pm.sendState(p, StateRunning, 0)
 
 	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go pm.captureOutput(p, stdoutPipe, &wg)
-	go pm.captureOutput(p, stderrPipe, &wg)
+	wg.Add(len(res.readers))
+	for _, r := range res.readers {
+		go pm.captureOutput(p, r, &wg)
+	}
 
 	go func() {
-		// Wait for both capture goroutines to finish draining the pipes.
 		wg.Wait()
-		// Now it is safe to call cmd.Wait() — the pipes are drained.
 		exitErr := cmd.Wait()
+		if res.closer != nil {
+			res.closer()
+		}
 
 		code := 0
 		if exitErr != nil {
@@ -166,10 +211,11 @@ func (pm *ProcessManager) Start(p *Process) error {
 		p.mu.Lock()
 		p.State = StateExited
 		p.ExitCode = code
-		close(p.done)
 		p.mu.Unlock()
 
 		pm.sendState(p, StateExited, code)
+
+		close(done)
 	}()
 
 	return nil
@@ -190,15 +236,37 @@ func (pm *ProcessManager) Stop(p *Process) {
 
 	// Kill the entire process group (negative PID) so child processes are cleaned up.
 	pgid := cmd.Process.Pid
-	_ = killGroup(pgid, syscall.SIGTERM)
+	_ = proc.KillGroup(pgid, syscall.SIGTERM)
 
 	select {
 	case <-done:
 		// Process group exited cleanly after SIGTERM.
 	case <-time.After(5 * time.Second):
-		_ = killGroup(pgid, syscall.SIGKILL)
+		_ = proc.KillGroup(pgid, syscall.SIGKILL)
 		// Wait for the done channel to be closed by the Start() goroutine.
 		<-done
+	}
+}
+
+// no-op when stdin is unset; used by interactive mode
+func (p *Process) WriteStdin(b []byte) error {
+	p.mu.Lock()
+	w := p.stdin
+	p.mu.Unlock()
+	if w == nil {
+		return nil
+	}
+	_, err := w.Write(b)
+	return err
+}
+
+// no-op until the process is spawned
+func (p *Process) Resize(rows, cols int) {
+	p.mu.Lock()
+	fn := p.resize
+	p.mu.Unlock()
+	if fn != nil {
+		fn(rows, cols)
 	}
 }
 
@@ -221,6 +289,18 @@ func (pm *ProcessManager) RestartAll() {
 	}
 }
 
+// ResizeAll forwards a terminal size change to every process's pty.
+func (pm *ProcessManager) ResizeAll(rows, cols int) {
+	pm.mu.Lock()
+	procs := make([]*Process, len(pm.Processes))
+	copy(procs, pm.Processes)
+	pm.mu.Unlock()
+
+	for _, p := range procs {
+		p.Resize(rows, cols)
+	}
+}
+
 // StopAll stops every process in the manager.
 func (pm *ProcessManager) StopAll() {
 	pm.mu.Lock()
@@ -231,40 +311,176 @@ func (pm *ProcessManager) StopAll() {
 	var wg sync.WaitGroup
 	for _, p := range procs {
 		wg.Add(1)
-		go func(proc *Process) {
+		go func(process *Process) {
 			defer wg.Done()
-			pm.Stop(proc)
+			pm.Stop(process)
 		}(p)
 	}
 	wg.Wait()
 }
 
-// captureOutput reads lines from r, strips non-color ANSI sequences, writes
-// them to the process buffer, and sends ProcessOutputMsg messages.
-func (pm *ProcessManager) captureOutput(p *Process, r interface{ Read([]byte) (int, error) }, wg *sync.WaitGroup) {
+// captureOutput reads lines from r, resolves in-place redraws against the
+// process buffer, and emits the resulting ops to the sink.
+func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	scanner := bufio.NewScanner(r)
-	const maxTokenSize = 1024 * 1024 // 1 MB
-	buf := make([]byte, maxTokenSize)
-	scanner.Buffer(buf, maxTokenSize)
+	// Retain up to 1MB per line; anything beyond is dropped from the stored line
+	// but still consumed, so a child that writes a huge unbroken line (electron/
+	// vite minified bundles) can't stall the pty and freeze the TUI.
+	const maxLine = 1024 * 1024
+	live := liveWriter{buf: p.Buffer}
+	readLines(r, maxLine, func(raw string) {
+		for _, op := range live.feed(raw) {
+			pm.sendLine(p, op)
+		}
+	})
+}
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		line = stripNonColorANSI(line)
-		p.Buffer.Write(line)
-		pm.sendOutput(p, line)
+// liveWriter maps a child's redraw stream onto in-place buffer edits so a tool
+// that repaints its output — docker compose's container block, a spinner, a
+// vite banner after a screen clear — overwrites or resets recent lines instead
+// of appending a fresh copy each tick. It handles the linear "move up N lines,
+// rewrite them" and "clear the screen, start over" patterns only, not full
+// cursor addressing.
+type liveWriter struct {
+	buf *RingBuffer
+	// rows above the append point the write cursor sits on; 0 = append
+	up int
+}
+
+// feed resolves one newline-terminated segment against the buffer — resetting
+// the pane on a screen clear, overwriting a recent line on a cursor-up/CR
+// redraw, otherwise appending — and returns the ops it applied so a consumer
+// can mirror the same edit.
+func (lw *liveWriter) feed(raw string) []LineOp {
+	raw = strings.TrimSuffix(raw, "\r")
+	cleared := strings.IndexByte(raw, '\x1b') >= 0 && screenResetRe.MatchString(raw)
+	moveUp, raw := extractCursorUp(raw)
+	raw = collapseCarriageReturns(raw)
+	raw = stripNonColorANSI(raw)
+
+	var ops []LineOp
+	if cleared {
+		lw.buf.Clear()
+		lw.up = 0
+		ops = append(ops, OpClear{})
+		if raw == "" {
+			return ops // a bare screen clear commits no line
+		}
+	}
+	if moveUp > 0 {
+		lw.up += moveUp
+		if room := lw.buf.Len(); lw.up > room {
+			lw.up = room
+		}
+		if raw == "" {
+			return ops // cursor-only reposition, no reprint to commit yet
+		}
+	}
+	if lw.up == 0 {
+		lw.buf.Write(raw)
+		ops = append(ops, OpAppend{Text: raw})
+	} else {
+		offset := lw.up - 1
+		lw.buf.SetFromEnd(offset, raw)
+		ops = append(ops, OpRewrite{OffsetFromEnd: offset, Text: raw})
+		lw.up--
+	}
+	return ops
+}
+
+// screenResetRe matches full-screen clears a redrawing child emits before
+// repainting: erase-display (ESC[2J), erase-scrollback (ESC[3J), and cursor-home
+// (ESC[H and its 0/1 row;col forms). It deliberately excludes arbitrary cursor
+// addressing (ESC[<row>;<col>H) and partial erases (ESC[0J/ESC[1J).
+var screenResetRe = regexp.MustCompile(`\x1b\[[23]J|\x1b\[[01]?(?:;[01]?)?H`)
+
+// cursorUpRe matches cursor-up sequences (ESC[<n>A). ESC[A and ESC[0A both mean
+// up one line.
+var cursorUpRe = regexp.MustCompile(`\x1b\[([0-9]*)A`)
+
+// extractCursorUp removes cursor-up sequences and returns their summed line
+// count plus the remaining string.
+func extractCursorUp(s string) (int, string) {
+	if !strings.Contains(s, "\x1b[") {
+		return 0, s
+	}
+	total := 0
+	rest := cursorUpRe.ReplaceAllStringFunc(s, func(match string) string {
+		digits := cursorUpRe.FindStringSubmatch(match)[1]
+		n := 1
+		if digits != "" {
+			if v, err := strconv.Atoi(digits); err == nil && v > 0 {
+				n = v
+			}
+		}
+		total += n
+		return ""
+	})
+	return total, rest
+}
+
+// collapseCarriageReturns applies in-line carriage returns as full-line
+// rewrites: the text after the final CR wins, matching a redraw that reprints
+// the whole line from column 0.
+func collapseCarriageReturns(s string) string {
+	if i := strings.LastIndexByte(s, '\r'); i >= 0 {
+		return s[i+1:]
+	}
+	return s
+}
+
+// readLines calls emit once per '\n'-terminated line (newline excluded), plus
+// any unterminated remainder at EOF. A line longer than maxLine is truncated in
+// what's passed to emit but still fully drained from r, so an oversized line
+// can never block the writer on the other end of a pty.
+func readLines(r io.Reader, maxLine int, emit func(string)) {
+	reader := bufio.NewReader(r)
+	buf := make([]byte, 32*1024)
+	var line []byte
+	overflow := false
+	for {
+		n, err := reader.Read(buf)
+		chunk := buf[:n]
+		for len(chunk) > 0 {
+			segment := chunk
+			complete := false
+			if idx := bytes.IndexByte(chunk, '\n'); idx >= 0 {
+				segment, chunk, complete = chunk[:idx], chunk[idx+1:], true
+			} else {
+				chunk = nil
+			}
+			if !overflow {
+				if room := maxLine - len(line); len(segment) >= room {
+					line = append(line, segment[:room]...)
+					overflow = true
+				} else {
+					line = append(line, segment...)
+				}
+			}
+			if complete {
+				emit(string(line))
+				line = line[:0]
+				overflow = false
+			}
+		}
+		if err != nil {
+			if len(line) > 0 {
+				emit(string(line))
+			}
+			return
+		}
 	}
 }
 
-// sendOutput dispatches a ProcessOutputMsg to the registered bubbletea program.
-func (pm *ProcessManager) sendOutput(p *Process, line string) {
+// sendLine dispatches one output op to the registered sink.
+func (pm *ProcessManager) sendLine(p *Process, op LineOp) {
 	pm.mu.Lock()
-	prog := pm.program
+	sink := pm.sink
 	pm.mu.Unlock()
 
-	if prog != nil {
-		prog.Send(ProcessOutputMsg{Label: p.Entry.Label, Line: line})
+	if sink != nil {
+		sink.OnLine(p.Entry.Label, op)
 	}
 }
 
@@ -329,14 +545,14 @@ func (pm *ProcessManager) findProc(label string) *Process {
 	return nil
 }
 
-// sendState dispatches a ProcessStateMsg to the registered bubbletea program.
+// sendState dispatches process state to the registered sink.
 func (pm *ProcessManager) sendState(p *Process, state ProcessState, code int) {
 	pm.mu.Lock()
-	prog := pm.program
+	sink := pm.sink
 	pm.mu.Unlock()
 
-	if prog != nil {
-		prog.Send(ProcessStateMsg{Label: p.Entry.Label, State: state, Code: code})
+	if sink != nil {
+		sink.OnState(p.Entry.Label, state, code)
 	}
 }
 

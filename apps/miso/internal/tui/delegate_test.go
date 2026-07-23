@@ -1,6 +1,70 @@
 package tui
 
-import "testing"
+import (
+	"os"
+	"slices"
+	"testing"
+)
+
+func TestForceColorEnv(t *testing.T) {
+	t.Run("forces FORCE_COLOR when unset", func(t *testing.T) {
+		got := forceColorEnv([]string{"PATH=/bin", "TERM=xterm-256color"})
+		if !slices.Contains(got, "FORCE_COLOR=1") {
+			t.Errorf("expected FORCE_COLOR=1 to be appended, got %v", got)
+		}
+	})
+
+	t.Run("respects explicit NO_COLOR", func(t *testing.T) {
+		got := forceColorEnv([]string{"PATH=/bin", "NO_COLOR=1"})
+		if slices.Contains(got, "FORCE_COLOR=1") {
+			t.Errorf("must not force color when NO_COLOR is set, got %v", got)
+		}
+	})
+
+	t.Run("leaves a pre-set FORCE_COLOR untouched", func(t *testing.T) {
+		base := []string{"PATH=/bin", "FORCE_COLOR=3"}
+		got := forceColorEnv(base)
+		if slices.Contains(got, "FORCE_COLOR=1") {
+			t.Errorf("must not override caller's FORCE_COLOR, got %v", got)
+		}
+	})
+}
+
+func TestDelegateFilterArgs(t *testing.T) {
+	turbo := delegateFilterArgs("turbo", []string{"@ekko/web", "@ekko/api"})
+	if len(turbo) != 2 || turbo[0] != "--filter=@ekko/web" || turbo[1] != "--filter=@ekko/api" {
+		t.Errorf("turbo filters = %v", turbo)
+	}
+	nx := delegateFilterArgs("nx", []string{"web", "api"})
+	if len(nx) != 1 || nx[0] != "--projects=web,api" {
+		t.Errorf("nx filters = %v", nx)
+	}
+	if len(delegateFilterArgs("turbo", nil)) != 0 {
+		t.Error("no filters -> no args")
+	}
+}
+
+func TestDelegateRunPlain_Succeeds(t *testing.T) {
+	dir := t.TempDir()
+	ran, err := delegateRunPlain("sh", "sh", []string{"-c", "exit 0"}, dir, os.Environ())
+	if !ran {
+		t.Error("expected ran = true")
+	}
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestDelegateRunPlain_FailingCommandErrors(t *testing.T) {
+	dir := t.TempDir()
+	ran, err := delegateRunPlain("sh", "sh", []string{"-c", "exit 3"}, dir, os.Environ())
+	if !ran {
+		t.Error("expected ran = true")
+	}
+	if err == nil {
+		t.Error("expected error from failing command")
+	}
+}
 
 func TestParseNxHeader(t *testing.T) {
 	tests := []struct {

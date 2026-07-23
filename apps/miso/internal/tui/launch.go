@@ -4,108 +4,59 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/ekkolyth/miso/internal/cli/env"
+	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
-// Launch starts the TUI with the given config, script name, and manager.
-// Returns (true, nil) if the TUI ran successfully.
-// Returns (false, nil) if the TUI was not applicable (caller should fall through to normal execution).
-// Returns (false, err) on error.
-func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager) (bool, error) {
-	if !cfg.TuiEnabled() {
-		return false, nil
+// resolves the interpreter for a folder script, returning the command plus
+// its full argument list (interpreter args + script path).
+func folderSpawn(scriptPath, shell, managerName string) (string, []string, error) {
+	interp, interpArgs, err := scripting.ResolveInterpreter(scriptPath, shell, managerName)
+	if err != nil {
+		return "", nil, err
 	}
+	return interp, append(interpArgs, scriptPath), nil
+}
 
-	entries, err := discoverEntries(cfg, scriptName, root)
+// filterEntriesByWorkspace keeps only entries whose WorkspaceName is in names.
+// A nil/empty names keeps all entries (no scope requested).
+func filterEntriesByWorkspace(entries []TuiScriptEntry, names []string) []TuiScriptEntry {
+	if len(names) == 0 {
+		return entries
+	}
+	keep := make(map[string]bool, len(names))
+	for _, name := range names {
+		keep[name] = true
+	}
+	var out []TuiScriptEntry
+	for _, entry := range entries {
+		if keep[entry.WorkspaceName] {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// renders the resolved script + concurrent companions as bubbletea chrome.
+// Every call site gates on SelectRenderer first, so the TTY/mode checks live
+// there. Returns (true, nil) on a clean run, (true, err) when the program
+// errored or a child exited non-zero, (false, nil) when nothing resolved so
+// the caller falls through to normal execution
+func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (bool, error) {
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs)
 	if err != nil {
 		return false, err
 	}
-	if len(entries) == 0 {
-		return false, nil // fall through to normal execution
-	}
-
-	pm := NewProcessManager()
-
-	for _, entry := range entries {
-		var cmd string
-		var args []string
-		dir := entry.WorkspaceDir
-
-		if entry.ScriptSource == "folder" {
-			// Run via shell
-			shell := cfg.Shell
-			if shell == "" {
-				shell = "sh"
-			}
-			cmd = shell
-			args = []string{"-e", entry.ScriptPath}
-		} else {
-			// Run via package manager
-			if mgr == nil {
-				return false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
-			}
-			spec := mgr.BuildRun(entry.ScriptName, nil)
-			cmd = spec.Command
-			args = spec.Args
-		}
-
-		// Build env for this process (scoped to workspace dir)
-		processEnv, envErr := env.BuildProcessEnv(root, cfg, dir)
-		if envErr != nil {
-			return false, fmt.Errorf("build env for %s: %w", entry.Label, envErr)
-		}
-
-		pm.Add(entry, cmd, args, dir, processEnv)
-	}
-
-	// Pre-compute dependency levels if this command has dependsOn config.
-	// Only main task entries participate in dependency ordering — concurrent
-	// entries are started immediately.
-	var levels [][]TuiScriptEntry
-	var concurrentProcs []*Process
-	if cfg.HasDependsOn(scriptName) {
-		// Split entries: main task entries vs concurrent entries.
-		// Use prefix matching (same as DiscoverTuiScripts) to identify
-		// concurrent entries — e.g., concurrent: ["services"] should match
-		// entries with ScriptName "services" AND "services:worker".
-		var mainEntries []TuiScriptEntry
-		concurrentPrefixes := cfg.TaskConcurrent(scriptName)
-		for _, e := range entries {
-			isConcurrent := false
-			for _, prefix := range concurrentPrefixes {
-				if e.ScriptName == prefix || strings.HasPrefix(e.ScriptName, prefix+":") || strings.HasPrefix(e.ScriptName, prefix+"/") {
-					isConcurrent = true
-					break
-				}
-			}
-			if isConcurrent {
-				proc := pm.findProc(e.Label)
-				if proc != nil {
-					concurrentProcs = append(concurrentProcs, proc)
-				}
-			} else {
-				mainEntries = append(mainEntries, e)
-			}
-		}
-
-		wsInfos := buildWSInfos(mainEntries)
-		graph, err := BuildDependencyGraph(wsInfos)
-		if err != nil {
-			return false, fmt.Errorf("build dependency graph: %w", err)
-		}
-		var sortErr error
-		levels, sortErr = TopoSort(mainEntries, graph)
-		if sortErr != nil {
-			return false, sortErr
-		}
+	if !ran {
+		return false, nil
 	}
 
 	var model tea.Model
@@ -119,7 +70,7 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	}
 
 	p := tea.NewProgram(model)
-	pm.SetProgram(p)
+	pm.SetSink(programSink{prog: p})
 
 	// Catch OS signals — tell bubbletea to quit cleanly so it restores
 	// the alt screen. Process cleanup happens after p.Run() returns below.
@@ -134,40 +85,7 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	// Start all processes in a goroutine — prog.Send() blocks until the
 	// bubbletea event loop is running, so we can't call Start before p.Run().
 	go func() {
-		// Start concurrent companions immediately
-		for _, proc := range concurrentProcs {
-			if err := pm.Start(proc); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
-			}
-		}
-
-		if levels != nil {
-			for _, level := range levels {
-				var levelProcs []*Process
-				for _, entry := range level {
-					proc := pm.findProc(entry.Label)
-					if proc == nil {
-						continue
-					}
-					if err := pm.Start(proc); err != nil {
-						fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
-					}
-					levelProcs = append(levelProcs, proc)
-				}
-				pm.WaitAllExited(levelProcs)
-				for _, proc := range levelProcs {
-					if proc.ExitCode != 0 {
-						return
-					}
-				}
-			}
-		} else {
-			for _, proc := range pm.Processes {
-				if err := pm.Start(proc); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
-				}
-			}
-		}
+		startProcesses(pm, levels, concurrentProcs)
 	}()
 
 	_, err = p.Run()
@@ -180,85 +98,277 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	// Always clean up child processes when the TUI exits, regardless of how.
 	pm.StopAll()
 
-	// Print failure summary if any processes exited non-zero.
-	failed := pm.FailedCount()
-	if failed > 0 {
-		fmt.Fprintf(os.Stderr, "miso: %d of %d tasks failed\n", failed, len(pm.Processes))
+	if err != nil {
+		return true, err
 	}
-
-	return true, err
+	if failed := pm.FailedCount(); failed > 0 {
+		return true, fmt.Errorf("%d of %d tasks failed", failed, len(pm.Processes))
+	}
+	return true, nil
 }
 
-func discoverEntries(cfg config.Config, scriptName string, root string) ([]TuiScriptEntry, error) {
-	// Simple mode does not support monorepo workspace discovery
-	if cfg.IsMonorepo() && cfg.SimpleMode() {
+// the plain sibling of Launch: shares buildRun's discovery + process setup,
+// then streams "[label] line" to stdout instead of rendering bubbletea chrome.
+// Same (ran, err) contract as Launch
+func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (bool, error) {
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs)
+	if err != nil {
+		return false, err
+	}
+	if !ran {
+		return false, nil
+	}
+	markPlain(pm.Processes)
+	return RunPlain(pm, os.Stdout, levels, concurrentProcs)
+}
+
+// markPlain switches every process to pipe-mode (no pty) and adds FORCE_COLOR,
+// so a tool detects a non-tty — emitting plain line output instead of cursor
+// redraws — yet still prints color. NO_COLOR still wins. A nil Environ is seeded
+// from os.Environ so the augmented env inherits the ambient shell instead of
+// collapsing to FORCE_COLOR alone. Chrome (Launch) skips this and keeps the pty.
+func markPlain(procs []*Process) {
+	for _, proc := range procs {
+		proc.NoPTY = true
+		base := proc.Environ
+		if base == nil {
+			base = os.Environ()
+		}
+		proc.Environ = forceColorEnv(base)
+	}
+}
+
+// shared discovery + process setup for both the chrome (Launch) and plain
+// (LaunchPlain) paths: resolves entries, applies workspace filters, adds a
+// process per entry with scoped env, and pre-computes dependency levels. ran is
+// false when no entries resolve — the caller falls through to normal execution
+func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (*ProcessManager, [][]TuiScriptEntry, []*Process, bool, error) {
+	entries, err := discoverEntries(cfg, scriptName, root, scriptArgs)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	if len(entries) == 0 {
+		return nil, nil, nil, false, nil // fall through to normal execution
+	}
+
+	if len(filterNames) > 0 {
+		filtered := filterEntriesByWorkspace(entries, filterNames)
+		if len(filtered) == 0 {
+			return nil, nil, nil, false, fmt.Errorf("no %q script in workspace(s) %s", scriptName, strings.Join(filterNames, ", "))
+		}
+		entries = filtered
+	}
+
+	pm := NewProcessManager()
+
+	managerName := ""
+	if mgr != nil {
+		managerName = mgr.Name()
+	} else if detected, err := manager.DetectManager(root); err == nil {
+		managerName = detected
+	}
+
+	for _, entry := range entries {
+		var cmd string
+		var args []string
+		dir := entry.WorkspaceDir
+
+		if entry.ScriptSource == "folder" {
+			// member's effective shell wins, then root, then sh (see ResolveInterpreter)
+			shell := entry.Shell
+			if shell == "" {
+				shell = cfg.Shell
+			}
+			spawnCmd, spawnArgs, spawnErr := folderSpawn(entry.ScriptPath, shell, managerName)
+			if spawnErr != nil {
+				return nil, nil, nil, false, spawnErr
+			}
+			cmd = spawnCmd
+			args = append(spawnArgs, entry.Args...)
+		} else {
+			// Run via package manager
+			if mgr == nil {
+				return nil, nil, nil, false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
+			}
+			spec := mgr.BuildRun(entry.ScriptName, entry.Args)
+			cmd = spec.Command
+			args = spec.Args
+		}
+
+		// Build env scoped to this member target
+		target := workspace.Target{Kind: workspace.TargetScript, Name: entry.ScriptName}
+		if entry.WorkspaceName != "" {
+			target = workspace.Target{Kind: workspace.TargetMember, Name: entry.WorkspaceName, Dir: dir}
+		}
+		processEnv, envErr := env.BuildTargetEnv(root, cfg, target)
+		if envErr != nil {
+			return nil, nil, nil, false, fmt.Errorf("build env for %s: %w", entry.Label, envErr)
+		}
+
+		pm.Add(entry, cmd, args, dir, processEnv)
+	}
+
+	// Pre-compute dependency levels when the command declares dependsOn. Only
+	// main entries participate in ordering; concurrent companions — marked at
+	// discovery — start immediately.
+	var levels [][]TuiScriptEntry
+	var concurrentProcs []*Process
+	if cfg.HasDependsOn(scriptName) {
+		mainEntries, concurrentEntries := classifyEntries(entries)
+		for _, e := range concurrentEntries {
+			if proc := pm.findProc(e.Label); proc != nil {
+				concurrentProcs = append(concurrentProcs, proc)
+			}
+		}
+
+		wsInfos := buildWSInfos(mainEntries)
+		graph, err := BuildDependencyGraph(wsInfos)
+		if err != nil {
+			return nil, nil, nil, false, fmt.Errorf("build dependency graph: %w", err)
+		}
+		var sortErr error
+		levels, sortErr = TopoSort(mainEntries, graph)
+		if sortErr != nil {
+			return nil, nil, nil, false, sortErr
+		}
+	}
+
+	return pm, levels, concurrentProcs, true, nil
+}
+
+// root wins over members — fan out only when the root doesn't have the script.
+// scriptArgs reaches the spawned process only along the root path, and only
+// when it resolves to the single main entry (see discoverRootScope) — a
+// member fan-out never receives them, since which member would be ambiguous.
+func discoverEntries(cfg config.Config, scriptName string, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
+	var rootResolved []TuiScriptEntry
+	var err error
+	if cfg.SimpleMode() {
+		rootResolved, err = ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
+	} else {
+		rootResolved, err = ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(rootResolved) > 0 {
+		return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
+	}
+
+	members, err := workspace.DiscoverMembersCached(root, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("discover members: %w", err)
+	}
+	// simple mode does not support monorepo workspace discovery
+	if len(members) == 0 || cfg.SimpleMode() {
 		return nil, nil
 	}
+	return discoverMemberFanOut(cfg, scriptName, root, members)
+}
 
-	if cfg.IsMonorepo() {
-		wsDirs, err := config.LoadWorkspaces(root)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load workspaces: %w", err)
+// resolves one concurrent entry. A bare name is local scope: the root when
+// local is nil, otherwise that member. "@member/script" resolves script inside
+// the named member regardless of local scope, via the same name-first tiered
+// matching as an explicit CLI @scope (workspace.ResolveScopes)
+func resolveConcurrent(cfg config.Config, concName, root string, local *WorkspaceInfo, members []workspace.Member) ([]TuiScriptEntry, error) {
+	if strings.HasPrefix(concName, "@") {
+		parts := strings.SplitN(strings.TrimPrefix(concName, "@"), "/", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("concurrent %q: expected @member/script", concName)
 		}
-
-		var wsInfos []WorkspaceInfo
-		for _, dir := range wsDirs {
-			name := filepath.Base(dir)
-			wsInfos = append(wsInfos, WorkspaceInfo{
-				Name: name,
-				Dir:  dir,
-			})
-		}
-
-		entries, err := DiscoverTuiScripts(scriptName, wsInfos, cfg.Scripts)
+		memberName, script := parts[0], parts[1]
+		resolved, err := workspace.ResolveScopes([]string{"@" + memberName}, members, root)
 		if err != nil {
 			return nil, err
 		}
+		member := resolved[0]
+		effective := workspace.EffectiveConfig(cfg, member)
+		ws := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
+		return DiscoverTuiScripts(script, []WorkspaceInfo{ws}, cfg.Scripts)
+	}
+	if local == nil {
+		if cfg.SimpleMode() {
+			return ResolveSingleRepoScriptsFolderOnly([]string{concName}, root, cfg)
+		}
+		return ResolveSingleRepoScripts([]string{concName}, root, cfg)
+	}
+	return DiscoverTuiScripts(concName, []WorkspaceInfo{*local}, cfg.Scripts)
+}
 
-		// Discover concurrent companion tasks
-		for _, concName := range cfg.TaskConcurrent(scriptName) {
-			concEntries, err := DiscoverTuiScripts(concName, wsInfos, cfg.Scripts)
+// only "@"-prefixed entries need the member list
+func concurrentNeedsMembers(concurrent []string) bool {
+	for _, name := range concurrent {
+		if strings.HasPrefix(name, "@") {
+			return true
+		}
+	}
+	return false
+}
+
+// adds concurrent companions to an already-resolved main entry. mainEntries is
+// always length 1 here (ResolveSingleRepoScripts* resolves one script name) —
+// that single entry gets scriptArgs; concurrent companions never do
+func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries []TuiScriptEntry, scriptArgs []string) ([]TuiScriptEntry, error) {
+	if len(mainEntries) == 1 {
+		mainEntries[0].Args = scriptArgs
+	}
+
+	concurrent := cfg.TaskConcurrent(scriptName)
+
+	// a broken workspace file must not block a script with no @-ref — only
+	// fetch members when one is actually present (bare names resolve at root)
+	var members []workspace.Member
+	if concurrentNeedsMembers(concurrent) {
+		var err error
+		members, err = workspace.DiscoverMembersCached(root, cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	entries := mainEntries
+	for _, concName := range concurrent {
+		concEntries, err := resolveConcurrent(cfg, concName, root, nil, members)
+		if err != nil {
+			return nil, err
+		}
+		markConcurrent(concEntries)
+		entries = append(entries, concEntries...)
+	}
+	return DeduplicateLabels(entries), nil
+}
+
+// one process per member that defines the script, plus each member's own
+// concurrent companions resolved within that same member
+func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []workspace.Member) ([]TuiScriptEntry, error) {
+	var entries []TuiScriptEntry
+	for _, member := range members {
+		effective := workspace.EffectiveConfig(cfg, member)
+		ws := WorkspaceInfo{
+			Name:          member.Name,
+			Dir:           member.Dir,
+			ScriptsFolder: effective.Scripts,
+			Shell:         effective.Shell,
+		}
+		memberEntries, err := DiscoverTuiScripts(scriptName, []WorkspaceInfo{ws}, cfg.Scripts)
+		if err != nil {
+			return nil, err
+		}
+		if len(memberEntries) == 0 {
+			continue
+		}
+		entries = append(entries, memberEntries...)
+
+		for _, concName := range effective.TaskConcurrent(scriptName) {
+			concEntries, err := resolveConcurrent(cfg, concName, root, &ws, members)
 			if err != nil {
-				return nil, fmt.Errorf("discover concurrent %q: %w", concName, err)
+				return nil, err
 			}
+			markConcurrent(concEntries)
 			entries = append(entries, concEntries...)
 		}
-
-		return DeduplicateLabels(entries), nil
 	}
-
-	// Single repo with concurrent config
-	concurrent := cfg.TaskConcurrent(scriptName)
-	if len(concurrent) > 0 {
-		var mainEntries, concEntries []TuiScriptEntry
-		var err error
-
-		if cfg.SimpleMode() {
-			mainEntries, err = ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
-			if err != nil {
-				return nil, err
-			}
-			concEntries, err = ResolveSingleRepoScriptsFolderOnly(concurrent, root, cfg)
-		} else {
-			mainEntries, err = ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
-			if err != nil {
-				return nil, err
-			}
-			concEntries, err = ResolveSingleRepoScripts(concurrent, root, cfg)
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		return DeduplicateLabels(append(mainEntries, concEntries...)), nil
-	}
-
-	// Single repo, no concurrent config — resolve the script itself so a
-	// single-process run still gets the TUI.
-	if cfg.SimpleMode() {
-		return ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
-	}
-	return ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+	return DeduplicateLabels(entries), nil
 }
 
 func buildWSInfos(entries []TuiScriptEntry) []WorkspaceInfo {
@@ -271,4 +381,27 @@ func buildWSInfos(entries []TuiScriptEntry) []WorkspaceInfo {
 		}
 	}
 	return infos
+}
+
+// flags every entry as a concurrent companion, stamped at discovery so the
+// buildRun split classifies structurally instead of re-matching the root
+// concurrent list (which misses member-injected companions)
+func markConcurrent(entries []TuiScriptEntry) {
+	for i := range entries {
+		entries[i].IsConcurrent = true
+	}
+}
+
+// partitions entries into dependency-ordered main entries and concurrent
+// companions, keyed on the IsConcurrent marker — the marker is what lets a
+// member fan-out companion escape the dependsOn topo sort it would deadlock
+func classifyEntries(entries []TuiScriptEntry) (main, concurrent []TuiScriptEntry) {
+	for _, e := range entries {
+		if e.IsConcurrent {
+			concurrent = append(concurrent, e)
+		} else {
+			main = append(main, e)
+		}
+	}
+	return main, concurrent
 }

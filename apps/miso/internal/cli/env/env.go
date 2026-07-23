@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/log"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/ui"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 const EnvFlag = "--env"
@@ -78,6 +78,60 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 
 	var failures []entryErrors
 
+	// Scope-based injection and member-local env are miso-mode concerns. In
+	// delegated (turbo/nx) mode the delegate owns env, so scope isn't required
+	// and member configs aren't miso's to inject — env then validates only the
+	// declared root entries.
+	if !cfg.IsDelegated() {
+		members, err := workspace.DiscoverMembers(projectRoot, cfg)
+		if err != nil {
+			fmt.Fprintln(os.Stderr)
+			logger.Error("failed to discover workspaces", "error", err)
+			return fmt.Errorf("discover members: %w", err)
+		}
+		for _, member := range members {
+			if member.Name == "global" {
+				fmt.Fprintln(os.Stderr)
+				logger.Error("member uses the reserved name \"global\"", "dir", member.Dir)
+				return fmt.Errorf("member %q uses the reserved name \"global\"", member.Dir)
+			}
+		}
+		var unscoped []string
+		for _, entry := range cfg.Env {
+			if entry.Scope == "" {
+				unscoped = append(unscoped, entry.Path)
+			}
+		}
+		if len(unscoped) > 0 {
+			fmt.Fprintln(os.Stderr)
+			logger.Error("env config invalid — every root entry needs a scope (a target name or \"global\")")
+			for _, path := range unscoped {
+				fmt.Fprintf(os.Stderr, "    %s\n", path)
+			}
+			return errors.New("env config invalid: missing scope")
+		}
+
+		// Member-local entries scope by location, not by declared scope field.
+		for _, member := range members {
+			if member.ConfigPath == "" {
+				continue
+			}
+			memberCfg, err := config.Load(member.Dir)
+			if err != nil {
+				continue
+			}
+			for _, entry := range memberCfg.Env {
+				errs := runEntry(member.Dir, entry, logger)
+				if len(errs) > 0 {
+					failures = append(failures, entryErrors{
+						label: member.Name + ": " + entryLabel(entry),
+						errs:  errs,
+					})
+				}
+			}
+		}
+	}
+
 	for _, entry := range cfg.Env {
 		errs := runEntry(projectRoot, entry, logger)
 		if len(errs) > 0 {
@@ -108,12 +162,12 @@ func printGroupedErrors(w *os.File, failures []entryErrors) {
 		labelColor := ui.LabelColors[i%len(ui.LabelColors)]
 		labelStyle := lipgloss.NewStyle().Bold(true).Foreground(labelColor)
 
-		fmt.Fprintf(w, "  %s\n", labelStyle.Render(f.label))
+		_, _ = fmt.Fprintf(w, "  %s\n", labelStyle.Render(f.label))
 		for _, e := range f.errs {
 			if ve, ok := e.(*varError); ok {
-				fmt.Fprintf(w, "    %s %s\n", warnStyle.Render(ve.name+":"), ve.msg)
+				_, _ = fmt.Fprintf(w, "    %s %s\n", warnStyle.Render(ve.name+":"), ve.msg)
 			} else {
-				fmt.Fprintf(w, "    %s\n", e.Error())
+				_, _ = fmt.Fprintf(w, "    %s\n", e.Error())
 			}
 		}
 	}
@@ -221,84 +275,4 @@ func loadEnvFile(path string) (map[string]string, error) {
 		return nil, fmt.Errorf("load env: %w", err)
 	}
 	return envMap, nil
-}
-
-// BuildProcessEnv builds a merged environment for spawning scripts.
-// It loads .env files and merges them with os.Environ(). Process env wins —
-// .env values only fill in vars that aren't already set.
-// Returns nil if no env files are found/configured (caller should use default inherited env).
-func BuildProcessEnv(projectRoot string, cfg config.Config, workspaceDir string) ([]string, error) {
-	fileVars := make(map[string]string)
-	loaded := false
-
-	if len(cfg.Env) > 0 {
-		for _, entry := range cfg.Env {
-			absPath := filepath.Join(projectRoot, entry.Path)
-			if entry.Path == "" {
-				searchDir := projectRoot
-				if cfg.IsMonorepo() && workspaceDir != projectRoot {
-					searchDir = workspaceDir
-				}
-				discovered, err := discoverEnvFile(searchDir)
-				if err != nil {
-					continue
-				}
-				absPath = discovered
-			}
-
-			// Monorepo scoping: only load entries whose path falls under workspaceDir
-			if cfg.IsMonorepo() && workspaceDir != projectRoot {
-				if !strings.HasPrefix(absPath, workspaceDir+string(filepath.Separator)) && absPath != workspaceDir {
-					continue
-				}
-			}
-
-			envMap, err := loadEnvFile(absPath)
-			if err != nil {
-				continue
-			}
-			loaded = true
-			for k, v := range envMap {
-				fileVars[k] = v
-			}
-		}
-	} else {
-		searchDir := projectRoot
-		if cfg.IsMonorepo() && workspaceDir != projectRoot {
-			searchDir = workspaceDir
-		}
-		path, err := discoverEnvFile(searchDir)
-		if err != nil {
-			return nil, nil
-		}
-		envMap, err := loadEnvFile(path)
-		if err != nil {
-			return nil, nil
-		}
-		loaded = true
-		for k, v := range envMap {
-			fileVars[k] = v
-		}
-	}
-
-	if !loaded {
-		return nil, nil
-	}
-
-	processEnv := os.Environ()
-	existing := make(map[string]bool)
-	for _, e := range processEnv {
-		parts := strings.SplitN(e, "=", 2)
-		if len(parts) >= 1 {
-			existing[parts[0]] = true
-		}
-	}
-
-	for k, v := range fileVars {
-		if !existing[k] {
-			processEnv = append(processEnv, k+"="+v)
-		}
-	}
-
-	return processEnv, nil
 }

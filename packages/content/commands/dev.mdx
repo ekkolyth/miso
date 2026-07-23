@@ -1,0 +1,19 @@
+Shortcut for running the `dev` script.
+
+### When to use
+
+Day-to-day local development. Equivalent to `miso run dev`, with per-command flag configuration.
+
+### How it works
+
+Resolves a `dev` script from the scripts folder or `package.json`; if none exists, runs the package manager's `dev`. When the TUI is enabled it launches there.
+
+### Examples
+
+```bash
+miso dev
+```
+
+### Gotchas
+
+- In a monorepo, `dev` fans out across discovered workspace members.

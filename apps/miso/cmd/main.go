@@ -3,17 +3,19 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/log"
+	"github.com/charmbracelet/x/term"
 
 	"github.com/ekkolyth/miso/internal/cli"
 	"github.com/ekkolyth/miso/internal/cli/commands"
 	"github.com/ekkolyth/miso/internal/cli/completion"
 	"github.com/ekkolyth/miso/internal/cli/env"
+	"github.com/ekkolyth/miso/internal/cli/reference"
 	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/harness"
 	"github.com/ekkolyth/miso/internal/manager"
 	"github.com/ekkolyth/miso/internal/manager/bun"
 	"github.com/ekkolyth/miso/internal/manager/npm"
@@ -22,6 +24,7 @@ import (
 	"github.com/ekkolyth/miso/internal/tui"
 	"github.com/ekkolyth/miso/internal/turbo"
 	"github.com/ekkolyth/miso/internal/ui"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 func init() {
@@ -36,7 +39,8 @@ func main() {
 	args := os.Args[1:]
 
 	// if misox prepend "misox"
-	if baseName := filepath.Base(os.Args[0]); baseName == "misox" || strings.HasPrefix(baseName, "misox-") {
+	invokedAsMisox := cli.InvokedAsMisox(os.Args[0])
+	if invokedAsMisox {
 		args = append([]string{"misox"}, args...)
 	}
 
@@ -55,66 +59,32 @@ func main() {
 		cli.Fail(logger, fmt.Errorf("determine working directory: %w", err), false)
 	}
 
+	// help and bare invocation print the command reference — works with no project
+	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		if len(args) >= 2 && args[0] == "help" && !strings.HasPrefix(args[1], "-") {
+			if err := reference.RunCommandHelp(args[1]); err != nil {
+				os.Exit(1)
+			}
+			return
+		}
+		commands.RunHelp()
+		return
+	}
+
 	// handle global commands before loading config
 	if len(args) > 0 {
+		// internal completion protocol + standalone misox shim: not user-facing built-ins
 		switch args[0] {
 		case "__complete":
 			completion.Complete(args, originalWorkDir)
 			return
-		case "completion":
-			if len(args) < 2 {
-				fmt.Fprintln(os.Stderr, "Usage: miso completion [bash|zsh|fish]")
-				os.Exit(1)
-			}
-			switch args[1] {
-			case "bash":
-				fmt.Print(completion.ScriptBash())
-			case "zsh":
-				fmt.Print(completion.ScriptZsh())
-			case "fish":
-				fmt.Print(completion.ScriptFish())
-			default:
-				fmt.Fprintf(os.Stderr, "Unknown shell: %s (use bash, zsh, or fish)\n", args[1])
-				os.Exit(1)
-			}
-			return
-		case "init":
-			if err := commands.RunInit(originalWorkDir, styles, logger); err != nil {
-				cli.Fail(logger, err, false)
-			}
-			return
-		case "version", "v":
-			if err := commands.RunVersion(); err != nil {
-				cli.Fail(logger, err, false)
-			}
-			return
-		case "upgrade":
-			if err := commands.Upgrade(args[1:]); err != nil {
-				cli.Fail(logger, err, false)
-			}
-			return
-		case "skills":
-			add, rm := commands.ParseSkillsFlags(args[1:])
-			if add && rm {
-				cli.Fail(logger, fmt.Errorf("--add and --rm are mutually exclusive"), false)
-				return
-			}
-			if add {
-				if err := commands.RunSkillsAdd(); err != nil {
-					cli.Fail(logger, err, false)
-				}
-				return
-			}
-			if rm {
-				if err := commands.RunSkillsRemove(); err != nil {
-					cli.Fail(logger, err, false)
-				}
-				return
-			}
-			// Neither --add nor --rm: fall through to normal routing (PM passthrough)
 		case "misox":
+			// only the standalone misox binary dispatches; typed `miso misox` falls through to passthrough
+			if !invokedAsMisox {
+				break
+			}
 			if len(args) < 2 {
-				fmt.Fprintln(os.Stderr, "usage: miso misox <package> [args...]")
+				fmt.Fprintln(os.Stderr, "usage: misox <package> [args...]")
 				os.Exit(1)
 			}
 			misoxManager := "npm"
@@ -125,6 +95,93 @@ func main() {
 				cli.Fail(logger, err, false)
 			}
 			return
+		}
+
+		// user-facing built-ins, canonicalized (aliases resolved) via the registry
+		if cmd, ok := cli.LookupBuiltin(args[0]); ok && cmd.Meta {
+			switch cmd.Name {
+			case "completion":
+				if len(args) < 2 {
+					fmt.Fprintln(os.Stderr, "Usage: miso completion [bash|zsh|fish]")
+					os.Exit(1)
+				}
+				switch args[1] {
+				case "bash":
+					fmt.Print(completion.ScriptBash())
+				case "zsh":
+					fmt.Print(completion.ScriptZsh())
+				case "fish":
+					fmt.Print(completion.ScriptFish())
+				default:
+					fmt.Fprintf(os.Stderr, "Unknown shell: %s (use bash, zsh, or fish)\n", args[1])
+					os.Exit(1)
+				}
+				return
+			case "init":
+				if err := commands.RunInit(originalWorkDir, styles, logger); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
+			case "version":
+				if err := commands.RunVersion(); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
+			case "upgrade":
+				if err := commands.Upgrade(args[1:]); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
+			case "skills":
+				add, rm, yes := commands.ParseSkillsFlags(args[1:])
+				if add && rm {
+					cli.Fail(logger, fmt.Errorf("--add and --rm are mutually exclusive"), false)
+					return
+				}
+				if add || rm {
+					managerName := "npm"
+					if detected, derr := manager.DetectManager(originalWorkDir); derr == nil {
+						managerName = detected
+					}
+					installed := harness.Detect()
+					if len(installed) == 0 {
+						cli.Fail(logger, fmt.Errorf("no supported harness found on PATH; install one of: Claude Code, OpenCode, Codex, Gemini CLI, Cursor"), false)
+						return
+					}
+					var chosen []string
+					if yes {
+						for _, entry := range installed {
+							chosen = append(chosen, entry.Agent)
+						}
+					} else {
+						if !term.IsTerminal(os.Stdin.Fd()) {
+							cli.Fail(logger, fmt.Errorf("no interactive terminal; re-run with --yes to install the miso skill into all detected harnesses"), false)
+							return
+						}
+						selected, serr := harness.Select(installed)
+						if serr != nil {
+							cli.Fail(logger, serr, false)
+							return
+						}
+						chosen = selected
+					}
+					if len(chosen) == 0 {
+						fmt.Fprintln(os.Stderr, "no harness selected; nothing to do")
+						return
+					}
+					if add {
+						if err := commands.RunSkillsAdd(managerName, originalWorkDir, chosen); err != nil {
+							cli.Fail(logger, err, false)
+						}
+						return
+					}
+					if err := commands.RunSkillsRemove(managerName, originalWorkDir, chosen); err != nil {
+						cli.Fail(logger, err, false)
+					}
+					return
+				}
+				// neither --add nor --rm: fall through to normal routing (PM passthrough)
+			}
 		}
 	}
 
@@ -142,17 +199,13 @@ func main() {
 	// Simple mode: bypass ParseCLI and EnsureManager entirely.
 	// Only meta-commands are handled; everything else is folder script resolution.
 	if cfg.SimpleMode() {
-		if len(args) == 0 {
-			cli.Fail(logger, fmt.Errorf("missing command"), true)
-		}
-
 		cmd := args[0]
 
 		// Meta-commands that remain in simple mode
 		// (init, version, upgrade, completion already handled above)
 		switch cmd {
 		case "env":
-			if err := env.Run(projectRoot, cfg, logger); err != nil {
+			if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
 				os.Exit(1)
 			}
 			return
@@ -183,9 +236,20 @@ func main() {
 			scriptArgs = env.StripEnvFlag(scriptArgs)
 		}
 
-		// TUI interception for simple mode
-		if cfg.TuiEnabled() {
-			ran, err := tui.Launch(cfg, cmd, projectRoot, nil)
+		// Orchestrate the folder script (and any root-scope concurrent) — chrome on
+		// a TTY with tui != off, plain otherwise. Falls through to the literal exec
+		// below only when nothing was orchestrated.
+		switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
+		case tui.RendererChrome:
+			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs)
+			if err != nil {
+				cli.Fail(logger, err, false)
+			}
+			if ran {
+				return
+			}
+		case tui.RendererPlain:
+			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -194,11 +258,13 @@ func main() {
 			}
 		}
 
-		processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, originalWorkDir)
+		target, _ := workspace.ResolveTarget(cmd, nil, projectRoot, cfg)
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
-		if err := scripting.ExecScriptFile(resolved.Path, scriptArgs, originalWorkDir, cfg.Shell, processEnv); err != nil {
+		detected, _ := manager.DetectManager(projectRoot)
+		if err := scripting.ExecScriptFile(resolved.Path, scriptArgs, originalWorkDir, cfg.Shell, detected, processEnv); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -209,28 +275,25 @@ func main() {
 		cli.Fail(logger, err, true)
 	}
 
-	// CWD-aware mono scoping: if repo is "mono" and we're inside a workspace,
-	// and the parsed action is a plain script (not already workspace-scoped),
-	// try to resolve the script from the current workspace's scripts folder first.
-	if cfg.IsMonorepo() && originalWorkDir != projectRoot &&
-		parsed.Action == cli.ActionScriptPackageJSON {
-		workspaces, wsErr := config.LoadWorkspaces(projectRoot)
-		if wsErr == nil && len(workspaces) > 0 {
-			if wsDir, inWs := scripting.WorkspaceFromCWD(originalWorkDir, workspaces); inWs {
-				resolved, _, resolveErr := scripting.ResolveWorkspaceScript(
-					filepath.Base(wsDir), parsed.ScriptName, projectRoot, cfg,
-				)
-				if resolveErr == nil && (resolved.Source == scripting.ScriptSourceFolder || resolved.Source == scripting.ScriptSourcePackageJSON) {
-					parsed.Action = cli.ActionWorkspaceScript
-					parsed.WorkspaceName = filepath.Base(wsDir)
-				}
+	// CWD-aware workspace scoping: when inside a discovered member and the parsed
+	// action is a plain script (not already workspace-scoped), try to resolve the
+	// script from the current member's scripts folder first.
+	if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 &&
+		originalWorkDir != projectRoot && parsed.Action == cli.ActionScriptPackageJSON {
+		if member, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
+			resolved, _, _, resolveErr := scripting.ResolveWorkspaceScript(
+				member.Name, parsed.ScriptName, projectRoot, cfg,
+			)
+			if resolveErr == nil && (resolved.Source == scripting.ScriptSourceFolder || resolved.Source == scripting.ScriptSourcePackageJSON) {
+				parsed.Action = cli.ActionWorkspaceScript
+				parsed.WorkspaceName = member.Name
 			}
 		}
 	}
 
 	// env does not need package manager
 	if parsed.Action == cli.ActionEnv {
-		if err := env.Run(projectRoot, cfg, logger); err != nil {
+		if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
 			os.Exit(1)
 		}
 		return
@@ -249,28 +312,45 @@ func main() {
 	// --env flag: run env validation first, then strip from args before passing to command
 	cfg, parsed = runEnvIfRequested(projectRoot, cfg, parsed, logger)
 
-	// TUI interception — check if we should launch the TUI instead of normal execution
-	if cfg.TuiEnabled() {
-		// Only intercept when running from project root (not workspace subdirectory)
-		isRoot := true
-		if cfg.IsMonorepo() {
-			workspaces, wsErr := config.LoadWorkspaces(projectRoot)
-			if wsErr == nil && len(workspaces) > 0 {
-				if _, inWs := scripting.WorkspaceFromCWD(originalWorkDir, workspaces); inWs {
-					isRoot = false
-				}
-			}
+	// Resolve explicit @scope filters up front so an unknown or ambiguous scope
+	// fails with a precise message regardless of TUI/root/action routing, and so
+	// the intercept switch below doesn't re-discover members.
+	var scopeFilters []string
+	if len(parsed.Scopes) > 0 {
+		scopeFilters = scopeFilterNames(parsed.Scopes, projectRoot, cfg, logger)
+	}
+
+	// Orchestration / delegation interception — gated on running from the project
+	// root (not a workspace subdirectory), not on the TUI being enabled. Native
+	// miso mode always orchestrates; the renderer is chosen per run below.
+	isRoot := true
+	if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 {
+		if _, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
+			isRoot = false
 		}
+	}
 
-		if isRoot {
+	if isRoot {
+		// ActionScriptFolder orchestrates natively but runs literally under
+		// delegation: miso can't wrap a folder script's output in turbo/nx chrome
+		// (that needs miso to control the turbo invocation — see tui.DelegateLaunch),
+		// so a delegated folder script falls through to the literal-exec path.
+		switch parsed.Action {
+		case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough, cli.ActionScriptFolder:
+			scriptName := parsed.ScriptName
+			scriptArgs := parsed.ScriptArgs
 			switch parsed.Action {
-			case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON:
-				scriptName := parsed.ScriptName
-				if parsed.Action == cli.ActionDev {
-					scriptName = "dev"
-				}
+			case cli.ActionDev:
+				scriptName = "dev"
+			case cli.ActionPassthrough:
+				scriptName = parsed.Command
+				scriptArgs = parsed.Args
+			}
 
-				if cfg.IsDelegated() {
+			filters := scopeFilters
+
+			if cfg.IsDelegated() {
+				if parsed.Action != cli.ActionScriptFolder {
 					// Check if this task is overridden by miso's direct orchestration
 					_, taskOverridden := cfg.Tasks[scriptName]
 					if taskOverridden {
@@ -278,20 +358,32 @@ func main() {
 						if !ok {
 							cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
 						}
-						ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr)
-						if err != nil {
-							cli.Fail(logger, err, false)
-						}
-						if ran {
-							return
+						switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
+						case tui.RendererChrome:
+							ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+							if err != nil {
+								cli.Fail(logger, err, false)
+							}
+							if ran {
+								return
+							}
+						case tui.RendererPlain:
+							ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+							if err != nil {
+								cli.Fail(logger, err, false)
+							}
+							if ran {
+								return
+							}
 						}
 					} else {
 						// Only delegate to turbo/nx if the script is actually a pipeline task
 						turboCfg, turboErr := turbo.LoadConfig(projectRoot)
 						if turboErr == nil {
 							if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
-								_, turboFlags := turbo.SplitFlags(parsed.ScriptArgs, cfg.TuiEnabled())
-								ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags)
+								renderer := tui.SelectRenderer(cfg, tui.InteractiveTTY())
+								_, turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
+								ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
 								if err != nil {
 									cli.Fail(logger, err, false)
 								}
@@ -301,12 +393,23 @@ func main() {
 							}
 						}
 					}
-				} else {
-					mgr, ok := manager.GetManager(managerName)
-					if !ok {
-						cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+				}
+			} else {
+				mgr, ok := manager.GetManager(managerName)
+				if !ok {
+					cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+				}
+				switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
+				case tui.RendererChrome:
+					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+					if err != nil {
+						cli.Fail(logger, err, false)
 					}
-					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr)
+					if ran {
+						return
+					}
+				case tui.RendererPlain:
+					ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
 					if err != nil {
 						cli.Fail(logger, err, false)
 					}
@@ -314,16 +417,37 @@ func main() {
 						return
 					}
 				}
-				// TUI was not applicable — fall through to normal execution
 			}
+			// Orchestration/delegation not applicable — fall through. The Task 4
+			// fail-safe rejects any explicit scope that reached here.
 		}
+	}
+
+	// An explicit @scope must have been honored by a scope-aware run above.
+	// Reaching here with scopes set means none fired (TUI off, the target
+	// isn't a turbo/nx task, or the script exists in no target member) —
+	// refuse to run unscoped.
+	if len(parsed.Scopes) > 0 {
+		target := parsed.ScriptName
+		switch parsed.Action {
+		case cli.ActionDev:
+			target = "dev"
+		case cli.ActionPassthrough:
+			target = parsed.Command
+		case cli.ActionRunMultiple:
+			target = strings.Join(parsed.ScriptNames, " ")
+		}
+		cli.Fail(logger, fmt.Errorf(
+			"cannot scope %q to %s — scoped runs need an interactive terminal and a workspace-aware target (a turbo/nx task or a script defined in the target workspace)",
+			target, strings.Join(parsed.Scopes, " "),
+		), false)
 	}
 
 	// Route to command handlers
 	switch parsed.Action {
 	case cli.ActionWorkspaceScript:
 		// @workspace/script syntax — resolve and execute in the workspace directory
-		resolved, workDir, err := scripting.ResolveWorkspaceScript(
+		resolved, workDir, shell, err := scripting.ResolveWorkspaceScript(
 			parsed.WorkspaceName, parsed.ScriptName, projectRoot, cfg,
 		)
 		if err != nil {
@@ -331,11 +455,12 @@ func main() {
 		}
 		switch resolved.Source {
 		case scripting.ScriptSourceFolder:
-			processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, workDir)
+			target := workspace.Target{Kind: workspace.TargetMember, Name: parsed.WorkspaceName, Dir: workDir}
+			processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
 			if envErr != nil {
 				cli.Fail(logger, envErr, false)
 			}
-			if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, cfg.Shell, processEnv); err != nil {
+			if err := scripting.ExecScriptFile(resolved.Path, parsed.ScriptArgs, workDir, shell, managerName, processEnv); err != nil {
 				cli.Fail(logger, err, false)
 			}
 		case scripting.ScriptSourcePackageJSON:
@@ -357,20 +482,22 @@ func main() {
 		}
 		return
 	case cli.ActionScriptOverride:
-		processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, originalWorkDir)
+		target := workspace.Target{Kind: workspace.TargetScript, Name: parsed.ScriptName}
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
-		if err := scripting.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg, processEnv); err != nil {
+		if err := scripting.RunOverride(parsed.ScriptName, parsed.ScriptArgs, projectRoot, cfg, managerName, processEnv); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
 	case cli.ActionScriptFolder:
-		processEnv, envErr := env.BuildProcessEnv(projectRoot, cfg, originalWorkDir)
+		target := workspace.Target{Kind: workspace.TargetScript, Name: parsed.ScriptName}
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
-		if err := scripting.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell, processEnv); err != nil {
+		if err := scripting.ExecScriptFile(parsed.Command, parsed.ScriptArgs, originalWorkDir, cfg.Shell, managerName, processEnv); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -412,6 +539,25 @@ func main() {
 	default:
 		cli.Fail(logger, fmt.Errorf("unknown action"), true)
 	}
+}
+
+// scopeFilterNames resolves parsed.Scopes to full member package names. An
+// unknown or ambiguous scope token the user typed is fatal — miso refuses to
+// run when it can't honor an explicit scope.
+func scopeFilterNames(scopes []string, projectRoot string, cfg config.Config, logger *log.Logger) []string {
+	if len(scopes) == 0 {
+		return nil
+	}
+	members, _ := workspace.DiscoverMembersCached(projectRoot, cfg)
+	resolved, err := workspace.ResolveScopes(scopes, members, projectRoot)
+	if err != nil {
+		cli.Fail(logger, err, false)
+	}
+	names := make([]string, 0, len(resolved))
+	for _, member := range resolved {
+		names = append(names, member.Name)
+	}
+	return names
 }
 
 // runEnvIfRequested checks for --env in effective args (config flags + CLI args).

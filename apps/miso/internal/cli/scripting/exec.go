@@ -5,19 +5,23 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
+
+	"github.com/ekkolyth/miso/internal/proc"
 )
 
-// execute script file with shebang detection and extension-based interpreter selection
-// defaultShell: used when no shebang or known extension; empty means "sh"
-func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShell string, environ []string) error {
-	// read first line to detect shebang
+// shebang, then extension (manager-aware for .ts), then defaultShell (or sh);
+// shell interpreters get -e
+func ResolveInterpreter(scriptPath, defaultShell, managerName string) (string, []string, error) {
 	file, err := os.Open(scriptPath)
 	if err != nil {
-		return fmt.Errorf("open script file: %w", err)
+		return "", nil, fmt.Errorf("open script file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	var firstLine string
@@ -25,15 +29,14 @@ func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShe
 		firstLine = scanner.Text()
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("read script file: %w", err)
+		return "", nil, fmt.Errorf("read script file: %w", err)
 	}
 
 	var interpreter string
 	var interpreterArgs []string
 
 	if strings.HasPrefix(firstLine, "#!") {
-		shebang := strings.TrimPrefix(firstLine, "#!")
-		shebang = strings.TrimSpace(shebang)
+		shebang := strings.TrimSpace(strings.TrimPrefix(firstLine, "#!"))
 		parts := strings.Fields(shebang)
 		if len(parts) > 0 {
 			interpreter = parts[0]
@@ -44,8 +47,7 @@ func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShe
 	}
 
 	if interpreter == "" {
-		ext := strings.ToLower(filepath.Ext(scriptPath))
-		interpreter = getInterpreterByExtension(ext)
+		interpreter = getInterpreterByExtension(strings.ToLower(filepath.Ext(scriptPath)), managerName)
 	}
 
 	if interpreter == "" {
@@ -56,13 +58,22 @@ func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShe
 		}
 	}
 
-	// apply safe defaults for shell interpreters: -e (exit on error)
 	if isShell(interpreter) {
 		interpreterArgs = append([]string{"-e"}, interpreterArgs...)
 	}
 
 	if _, err := exec.LookPath(interpreter); err != nil {
-		return fmt.Errorf("interpreter %q not found in PATH. install it or update script shebang", interpreter)
+		return "", nil, fmt.Errorf("interpreter %q not found in PATH. install it or update script shebang", interpreter)
+	}
+
+	return interpreter, interpreterArgs, nil
+}
+
+// spawn the resolved interpreter in its own process group, reaping it on signal
+func ExecScriptFile(scriptPath string, args []string, workDir, defaultShell, managerName string, environ []string) error {
+	interpreter, interpreterArgs, err := ResolveInterpreter(scriptPath, defaultShell, managerName)
+	if err != nil {
+		return err
 	}
 
 	cmdArgs := append(interpreterArgs, scriptPath)
@@ -78,7 +89,39 @@ func ExecScriptFile(scriptPath string, args []string, workDir string, defaultShe
 	if environ != nil {
 		cmd.Env = environ
 	}
-	return cmd.Run()
+	proc.SetGroup(cmd)
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start script: %w", err)
+	}
+
+	// Foreground TTY exec: hand the child's own process group control of the
+	// terminal so interactive children (next dev/build, etc.) can enter raw
+	// mode instead of SIGTTOU-stalling in a background group. Restored on exit.
+	if fi, statErr := os.Stdin.Stat(); statErr == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		if prev, ok := proc.GiveTerminal(os.Stdin.Fd(), cmd.Process.Pid); ok {
+			defer proc.RestoreTerminal(os.Stdin.Fd(), prev)
+		}
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	select {
+	case sig := <-sigCh:
+		pid := cmd.Process.Pid
+		_ = proc.KillGroup(pid, syscall.SIGTERM)
+		killTimer := time.AfterFunc(2*time.Second, func() { _ = proc.KillGroup(pid, syscall.SIGKILL) })
+		<-done
+		killTimer.Stop() // child already exited; don't SIGKILL a recycled pid
+		return fmt.Errorf("interrupted by signal %v", sig)
+	case err := <-done:
+		return err
+	}
 }
 
 func isShell(interpreter string) bool {
@@ -90,7 +133,7 @@ func isShell(interpreter string) bool {
 }
 
 // get interpreter by file extension
-func getInterpreterByExtension(ext string) string {
+func getInterpreterByExtension(ext, managerName string) string {
 	switch ext {
 	case ".sh":
 		return "sh"
@@ -101,7 +144,10 @@ func getInterpreterByExtension(ext string) string {
 	case ".js", ".mjs":
 		return "node"
 	case ".ts":
-		return "ts-node"
+		if managerName == "bun" {
+			return "bun"
+		}
+		return "node"
 	case ".py":
 		return "python3"
 	case ".rb":

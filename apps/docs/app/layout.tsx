@@ -47,7 +47,7 @@ export default async function RootLayout({
 }) {
     return (
         <html lang='en' dir='ltr' suppressHydrationWarning>
-            <Head>
+            <Head backgroundColor={{ dark: '#0e0e0e', light: '#ffffff' }}>
                 <link rel='icon' href='/favicon.ico' />
             </Head>
             <body>

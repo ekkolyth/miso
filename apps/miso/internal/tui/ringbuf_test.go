@@ -76,3 +76,49 @@ func TestRingBuffer_Empty(t *testing.T) {
 		t.Errorf("expected new buffer to return empty slice, got %d lines", len(lines))
 	}
 }
+
+func TestRingBufferSetFromEnd(t *testing.T) {
+	rb := NewRingBuffer(3)
+	rb.Write("a")
+	rb.Write("b")
+	rb.Write("c")
+
+	rb.SetFromEnd(0, "C") // newest
+	rb.SetFromEnd(2, "A") // oldest retained
+	if lines := rb.Lines(); lines[0] != "A" || lines[1] != "b" || lines[2] != "C" {
+		t.Errorf("Lines() = %v, want [A b C]", lines)
+	}
+
+	rb.SetFromEnd(3, "X")  // past the retained window
+	rb.SetFromEnd(-1, "Y") // negative
+	if lines := rb.Lines(); lines[0] != "A" || lines[2] != "C" {
+		t.Errorf("out-of-range SetFromEnd mutated buffer: %v", rb.Lines())
+	}
+
+	// after eviction SetFromEnd still addresses the retained window
+	rb.Write("D") // evicts "a"/"A"; buffer = [b, C, D]
+	rb.SetFromEnd(2, "B")
+	if lines := rb.Lines(); lines[0] != "B" || lines[1] != "C" || lines[2] != "D" {
+		t.Errorf("after eviction Lines() = %v, want [B C D]", lines)
+	}
+}
+
+func TestRingBufferBaseSeq(t *testing.T) {
+	rb := NewRingBuffer(3)
+	if rb.BaseSeq() != 0 {
+		t.Fatalf("empty BaseSeq = %d, want 0", rb.BaseSeq())
+	}
+	rb.Write("a")
+	rb.Write("b")
+	rb.Write("c")
+	if rb.BaseSeq() != 0 {
+		t.Errorf("BaseSeq before eviction = %d, want 0", rb.BaseSeq())
+	}
+	rb.Write("d") // evicts "a"
+	if rb.BaseSeq() != 1 {
+		t.Errorf("BaseSeq after 1 eviction = %d, want 1", rb.BaseSeq())
+	}
+	if lines := rb.Lines(); lines[0] != "b" {
+		t.Errorf("oldest retained = %q, want %q", lines[0], "b")
+	}
+}

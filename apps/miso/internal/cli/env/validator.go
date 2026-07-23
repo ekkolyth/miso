@@ -35,7 +35,7 @@ func validateVariables(envMap map[string]string, vars map[string]config.VarConfi
 	validate := validator.New()
 
 	// Register custom pattern validator for dynamic regex
-	validate.RegisterValidation("matches_regex", func(fl validator.FieldLevel) bool {
+	_ = validate.RegisterValidation("matches_regex", func(fl validator.FieldLevel) bool {
 		pattern := fl.Param()
 		if pattern == "" {
 			return false
@@ -292,11 +292,11 @@ func buildValidatorTag(cfg config.VarConfig) string {
 
 	switch cfg.Type {
 	case "string":
-		min := 1
+		minLen := 1
 		if cfg.Min != nil {
-			min = int(*cfg.Min)
+			minLen = int(*cfg.Min)
 		}
-		parts = append(parts, fmt.Sprintf("min=%d", min))
+		parts = append(parts, fmt.Sprintf("min=%d", minLen))
 		if cfg.Max != nil {
 			parts = append(parts, fmt.Sprintf("max=%d", int(*cfg.Max)))
 		}

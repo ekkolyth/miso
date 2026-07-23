@@ -10,25 +10,20 @@ jobs:
         if: "!contains(github.event.head_commit.message, '[skip ci]')"
         outputs:
             version: ${{ steps.version.outputs.version }}
-            text: ${{ steps.source.outputs.text }}
+            notes: ${{ steps.version.outputs.notes }}
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v5
+              uses: actions/checkout@v7
               with:
                   token: ${{ secrets.RELEASE_TOKEN }}
+                  fetch-depth: 0
 
-            - name: Get version source (PR title or commit message)
-              id: source
-              env:
-                  COMMIT_MSG: ${{ github.event.head_commit.message }}
-                  GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-              run: ./scripts/release/version/get-source.sh
-
-            - name: Parse version
+            - name: Resolve version from PR label
               id: version
               env:
-                  COMMIT_MSG: ${{ steps.source.outputs.text }}
-              run: ./scripts/release/version/parse.sh
+                  GITHUB_SHA: ${{ github.sha }}
+                  GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+              run: ./scripts/release/version/resolve.sh
 
     build:
         needs: version
@@ -38,9 +33,23 @@ jobs:
             contents: write
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v5
+              uses: actions/checkout@v7
               with:
                   token: ${{ secrets.RELEASE_TOKEN }}
+
+            - name: Setup Go
+              uses: actions/setup-go@v7
+              with:
+                  go-version-file: apps/miso/go.mod
+
+            - name: Test
+              run: cd apps/miso && go test -race ./...
+
+            - name: Lint
+              uses: golangci/golangci-lint-action@v9
+              with:
+                  version: latest
+                  working-directory: apps/miso
 
             - name: Update package.json version
               env:
@@ -52,16 +61,11 @@ jobs:
                   VERSION: ${{ needs.version.outputs.version }}
               run: ./scripts/release/version/commit.sh
 
-            - name: Setup Go
-              uses: actions/setup-go@v6
-              with:
-                  go-version-file: apps/miso/go.mod
-
             - name: Build binaries for all platforms
               run: ./scripts/release/build/npm.sh
 
             - name: Upload npm dist artifact
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v7
               with:
                   name: npm-dist
                   path: dist/
@@ -75,13 +79,13 @@ jobs:
             contents: write
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v5
+              uses: actions/checkout@v7
               with:
                   ref: main
                   token: ${{ secrets.RELEASE_TOKEN }}
 
             - name: Download npm dist artifact
-              uses: actions/download-artifact@v5
+              uses: actions/download-artifact@v8
               with:
                   name: npm-dist
                   path: dist
@@ -91,6 +95,13 @@ jobs:
                   VERSION: ${{ needs.version.outputs.version }}
               run: ./scripts/release/create-archives.sh
 
+            - name: Upload checksums artifact
+              uses: actions/upload-artifact@v7
+              with:
+                  name: checksums
+                  path: dist/checksums.txt
+                  retention-days: 1
+
             - name: Tag and push latest
               run: |
                   git config user.name "github-actions[bot]"
@@ -99,22 +110,63 @@ jobs:
                   git push origin latest --force
 
             - name: Create GitHub Release
-              uses: softprops/action-gh-release@v2
+              uses: softprops/action-gh-release@v3
               with:
                   tag_name: v${{ needs.version.outputs.version }}
                   name: Release v${{ needs.version.outputs.version }}
-                  body: ${{ needs.version.outputs.text }}
+                  body: ${{ needs.version.outputs.notes }}
                   files: |
                       dist/miso_${{ needs.version.outputs.version }}_darwin_amd64.tar.gz
                       dist/miso_${{ needs.version.outputs.version }}_darwin_arm64.tar.gz
                       dist/miso_${{ needs.version.outputs.version }}_linux_amd64.tar.gz
                       dist/miso_${{ needs.version.outputs.version }}_linux_arm64.tar.gz
-                      dist/miso_${{ needs.version.outputs.version }}_windows_amd64.zip
                       dist/misox_${{ needs.version.outputs.version }}_darwin_amd64.tar.gz
                       dist/misox_${{ needs.version.outputs.version }}_darwin_arm64.tar.gz
                       dist/misox_${{ needs.version.outputs.version }}_linux_amd64.tar.gz
                       dist/misox_${{ needs.version.outputs.version }}_linux_arm64.tar.gz
-                      dist/misox_${{ needs.version.outputs.version }}_windows_amd64.zip
+                      dist/checksums.txt
+
+    homebrew:
+        needs: [version, release]
+        if: needs.version.outputs.version != ''
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v7
+
+            - name: Download checksums artifact
+              uses: actions/download-artifact@v8
+              with:
+                  name: checksums
+                  path: dist
+
+            - name: Fail if tap token missing
+              env:
+                  HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+              run: |
+                  if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+                    echo "::error::HOMEBREW_TAP_TOKEN not set — cannot push formula" >&2
+                    exit 1
+                  fi
+
+            - name: Render formula
+              env:
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: ./scripts/release/homebrew/render.sh > /tmp/miso.rb
+
+            - name: Push to tap
+              env:
+                  HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+                  VERSION: ${{ needs.version.outputs.version }}
+              run: |
+                  git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/dvflw/homebrew-tap.git" tap
+                  cp /tmp/miso.rb tap/Formula/miso.rb
+                  cd tap
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git add Formula/miso.rb
+                  git commit -m "miso $VERSION"
+                  git push
 
     publish:
         needs: [version, release]
@@ -125,22 +177,22 @@ jobs:
             contents: read
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v5
+              uses: actions/checkout@v7
               with:
                   ref: main
                   token: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Download npm dist artifact
-              uses: actions/download-artifact@v5
+              uses: actions/download-artifact@v8
               with:
                   name: npm-dist
                   path: dist
 
             - name: Restore binary permissions
-              run: chmod +x dist/bin/miso-* dist/bin/misox-* && chmod -x dist/bin/*.exe
+              run: chmod +x dist/bin/miso-* dist/bin/misox-*
 
             - name: Setup Node.js
-              uses: actions/setup-node@v5
+              uses: actions/setup-node@v7
               with:
                   node-version: 22
                   registry-url: "https://registry.npmjs.org"

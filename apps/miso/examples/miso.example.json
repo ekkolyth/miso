@@ -1,0 +1,23 @@
+{
+	"$schema": "https://misojs.dev/miso.schema.json",
+	"scripts": "./scripts",
+	"tui": "tabbed",
+	"repo": {
+		"tasks": {
+			"dev": { "concurrent": ["convex"] }
+		}
+	},
+	"flags": {
+		"install": ["--frozen-lockfile"],
+		"dev": ["--env"]
+	},
+	"env": {
+		"scope": "global",
+		"path": ".env.local",
+		"variables": {
+			"PORT": "port",
+			"DATABASE_URL": "url",
+			"API_KEY": "string"
+		}
+	}
+}

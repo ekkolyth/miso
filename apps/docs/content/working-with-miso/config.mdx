@@ -53,24 +53,18 @@ The selected interpreter must be available in your PATH.
 
 ### Repo
 
-Configure whether your project is a single project or a monorepo:
+Configure how miso orchestrates task execution:
 
 <Terminal
     copy={false}
     className="mt-4 border border-neutral-700 rounded-sm"
     title="miso.json"
-    config={`"repo": "single" | "mono" | "turbo" | "nx"`}
+    config={`"repo": "miso" | "turbo" | "nx"`}
 />
 
-<DocProp prop='"single"' /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default</Badge>
+<DocProp prop='"miso"' /> <Badge variant="default" className="bg-primary-900 font-bold text-primary-400 border-primary-400">Default</Badge>
 
-Treats the project as a single repository. All scripts resolve from the root `scripts/` folder.
-
-<DocProp prop='"mono"' />
-
-Enables monorepo mode. Unlocks workspace-scoped script execution using the `@workspace/script` syntax and automatic CWD-based scoping. Requires a `workspaces` field in your root `package.json`.
-
-When set to `"mono"`, miso reads workspace paths from your root `package.json`:
+Miso orchestrates directly. Workspace membership is auto-detected — independent of this setting — from a `pnpm-workspace.yaml` (checked first), otherwise a `workspaces` field in your root `package.json`. When members are found, miso fans out workspace-scoped script execution using the `miso <script> @scope` syntax and automatic CWD-based scoping; when none are found, it runs as a single project against the root `scripts/` folder.
 
 <Terminal
     copy={false}
@@ -84,8 +78,7 @@ When set to `"mono"`, miso reads workspace paths from your root `package.json`:
 }`}
 />
 
-See [Monorepo Scripts](/scripting/scripts-folder#monorepo) for full details on workspace script execution.
-
+See [Monorepos](/scripting/monorepos) for full details on workspace discovery and script execution.
 
 <DocProp prop='"turbo"' />
 
@@ -139,6 +132,7 @@ Configure environment variable loading and validation:
     config={`{
   "env": [
     {
+      "scope": "global",
       "label": "web",
       "path": ".env.local",
       "required": "all",

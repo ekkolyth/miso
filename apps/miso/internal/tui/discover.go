@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -9,18 +10,31 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 )
 
-// WorkspaceInfo holds the name and directory of a workspace.
 type WorkspaceInfo struct {
 	Name string
 	Dir  string
+	// per-member scripts folder; empty falls back to the default passed to DiscoverTuiScripts
+	ScriptsFolder string
+	// per-member effective shell; empty falls back at spawn time
+	Shell string
 }
 
 type TuiScriptEntry struct {
-	Label        string
-	ScriptName   string
-	WorkspaceDir string
-	ScriptSource string // "folder" or "packagejson"
-	ScriptPath   string
+	Label         string
+	WorkspaceName string
+	ScriptName    string
+	WorkspaceDir  string
+	ScriptSource  string // "folder" or "packagejson"
+	ScriptPath    string
+	// effective shell for spawning folder scripts; empty falls back to cfg.Shell then sh
+	Shell string
+	// user-supplied invocation args; set only on the single main entry when the
+	// run resolves unambiguously — nil for concurrent companions and fan-out members
+	Args []string
+	// concurrent companion — started immediately, exempt from dependsOn
+	// ordering; stamped at discovery so the buildRun split never sorts a
+	// member-injected companion into the dependency levels
+	IsConcurrent bool
 }
 
 // DiscoverTuiScripts finds all scripts matching the given command prefix across
@@ -28,8 +42,9 @@ type TuiScriptEntry struct {
 // directory (e.g. "./scripts"). It is used in monorepo mode.
 //
 // Prefix matching: command "dev" matches "dev", "dev:worker", "dev/worker", etc.
-// Scripts folder takes precedence over package.json for the same script name.
-// Labels: single match per workspace → workspace name; multiple matches → "workspace:scriptName".
+// A name defined in both the scripts folder and package.json within the same
+// workspace is ambiguous and returns scripting.ErrAmbiguousScript.
+// Labels: single match per workspace → workspace name; multiple matches → "workspace/scriptName".
 // Results are sorted alphabetically by label.
 func DiscoverTuiScripts(command string, workspaces []WorkspaceInfo, scriptsFolder string) ([]TuiScriptEntry, error) {
 	if scriptsFolder == "" {
@@ -55,6 +70,11 @@ func DiscoverTuiScripts(command string, workspaces []WorkspaceInfo, scriptsFolde
 
 // discoverWorkspaceScripts finds matching scripts within a single workspace.
 func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder string) ([]TuiScriptEntry, error) {
+	// member's own scripts folder wins over the passed default
+	if ws.ScriptsFolder != "" {
+		scriptsFolder = ws.ScriptsFolder
+	}
+
 	// resolve scripts path
 	scriptsPath := scriptsFolder
 	if !filepath.IsAbs(scriptsPath) {
@@ -73,7 +93,7 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 		return nil, err
 	}
 
-	// collect matching script names; folder takes precedence over package.json
+	// collect matching script names; a name in both sources is an error, not a pick
 	type match struct {
 		name   string
 		source string
@@ -95,11 +115,16 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 		}
 	}
 
-	// package.json scripts: prefix match, only if not already found in folder
+	// package.json scripts: prefix match; same name in both sources is ambiguous
 	for name := range pkgScripts {
-		if !seen[name] && matchesPrefix(command, name) {
-			matches = append(matches, match{name: name, source: "packagejson", path: ""})
+		if !matchesPrefix(command, name) {
+			continue
 		}
+		if seen[name] {
+			return nil, fmt.Errorf("%w: %q in %s is defined in both scripts/ and package.json — rename one",
+				scripting.ErrAmbiguousScript, name, ws.Name)
+		}
+		matches = append(matches, match{name: name, source: "packagejson", path: ""})
 	}
 
 	if len(matches) == 0 {
@@ -117,14 +142,16 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 		if len(matches) == 1 {
 			label = ws.Name
 		} else {
-			label = ws.Name + ":" + m.name
+			label = ws.Name + "/" + m.name
 		}
 		entries = append(entries, TuiScriptEntry{
-			Label:        label,
-			ScriptName:   m.name,
-			WorkspaceDir: ws.Dir,
-			ScriptSource: m.source,
-			ScriptPath:   m.path,
+			Label:         label,
+			WorkspaceName: ws.Name,
+			ScriptName:    m.name,
+			WorkspaceDir:  ws.Dir,
+			ScriptSource:  m.source,
+			ScriptPath:    m.path,
+			Shell:         ws.Shell,
 		})
 	}
 
@@ -141,7 +168,7 @@ func matchesPrefix(command, scriptName string) bool {
 }
 
 // DeduplicateLabels ensures all labels in the merged entry list are unique.
-// For any label that appears more than once, it rewrites to "label:scriptName".
+// For any label that appears more than once, it rewrites to "label/scriptName".
 func DeduplicateLabels(entries []TuiScriptEntry) []TuiScriptEntry {
 	// Count label occurrences
 	counts := make(map[string]int)
@@ -152,7 +179,7 @@ func DeduplicateLabels(entries []TuiScriptEntry) []TuiScriptEntry {
 	// Rewrite duplicates
 	for i := range entries {
 		if counts[entries[i].Label] > 1 {
-			entries[i].Label = entries[i].Label + ":" + entries[i].ScriptName
+			entries[i].Label = entries[i].Label + "/" + entries[i].ScriptName
 		}
 	}
 

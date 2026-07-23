@@ -2,12 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // allExitedMsg fires after all processes have exited and the 2-second delay has passed.
@@ -16,25 +18,30 @@ type allExitedMsg struct{}
 type copyFlashDoneMsg struct{}
 type copyConfirmDoneMsg struct{}
 
-// SelectionState tracks the click-drag log row selection.
+// SelectionState tracks the click-drag selection anchored to buffer-line
+// sequence numbers, so it survives re-wrapping and new output.
 type SelectionState struct {
 	active   bool
-	startRow int // 0-based visual row index within the visible panel
-	endRow   int
+	startSeq int64
+	endSeq   int64
+	// anchorBottomSeq freezes the visible window at the bottom seq present when
+	// the selection began, so streaming output can't slide lines out from under
+	// an in-progress drag.
+	anchorBottomSeq int64
 }
 
-func (s SelectionState) minRow() int {
-	if s.startRow <= s.endRow {
-		return s.startRow
+func (s SelectionState) minSeq() int64 {
+	if s.startSeq <= s.endSeq {
+		return s.startSeq
 	}
-	return s.endRow
+	return s.endSeq
 }
 
-func (s SelectionState) maxRow() int {
-	if s.startRow >= s.endRow {
-		return s.startRow
+func (s SelectionState) maxSeq() int64 {
+	if s.startSeq >= s.endSeq {
+		return s.startSeq
 	}
-	return s.endRow
+	return s.endSeq
 }
 
 // copyIconStr is the canonical display string for the copy-all icon.
@@ -48,7 +55,6 @@ var (
 	exitedColor  = lipgloss.Color("#f87171")
 	mutedColor   = lipgloss.Color("#555555")
 	headerBg     = lipgloss.Color("#1a1a2e")
-	panelBg      = lipgloss.Color("#0d0d1a")
 	selectedBg   = lipgloss.NewStyle().Background(lipgloss.Color("#2d4a7a"))
 )
 
@@ -63,6 +69,7 @@ type TabbedModel struct {
 	delegated        bool
 	allExitedPending bool
 	sel              SelectionState
+	interactive      bool
 	copyFlash        bool // true during the 150ms invert flash
 	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
 }
@@ -85,10 +92,33 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.pm.ResizeAll(msg.Height, msg.Width)
+		return m, nil
+
+	case tea.PasteMsg:
+		if m.interactive && !m.delegated && m.selected < len(m.pm.Processes) {
+			_ = m.pm.Processes[m.selected].WriteStdin([]byte(msg.Content))
+		}
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.interactive {
+			if msg.String() == "ctrl+z" {
+				m.interactive = false
+				return m, nil
+			}
+			if !m.delegated && m.selected < len(m.pm.Processes) {
+				if b := keyToBytes(msg.Key()); b != nil {
+					_ = m.pm.Processes[m.selected].WriteStdin(b)
+				}
+			}
+			return m, nil
+		}
 		switch {
+		case msg.String() == "i":
+			if !m.delegated && m.selected < len(m.pm.Processes) {
+				m.interactive = true
+			}
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Up):
@@ -104,10 +134,12 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.selected < len(m.pm.Processes) {
 				m.allExitedPending = false
-				go m.pm.Restart(m.pm.Processes[m.selected])
+				m.sel = SelectionState{}
+				go func() { _ = m.pm.Restart(m.pm.Processes[m.selected]) }()
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
+			m.sel = SelectionState{}
 			go m.pm.RestartAll()
 		case key.Matches(msg, m.keys.CopyKey):
 			if m.sel.active {
@@ -130,6 +162,10 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft {
+			if msg.Mod != 0 {
+				// modifier held — let the terminal handle it (native select / open link)
+				return m, nil
+			}
 			sw := m.sidebarWidth()
 			listHeight := m.height - 2
 			if listHeight < 0 {
@@ -159,10 +195,17 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					)
 				}
 			}
-			// existing log-row selection
+			// log-row selection — clear any prior selection first so the window is
+			// live (unfrozen) while we map this click and capture the anchor.
+			m.sel = SelectionState{}
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
-				m.sel = SelectionState{active: true, startRow: row, endRow: row}
+				logWidth := m.width - m.sidebarWidth() - 1
+				_, rowSeqs := m.buildLogVisualRows(logWidth, m.logHeight())
+				if row < len(rowSeqs) && rowSeqs[row] >= 0 {
+					seq := rowSeqs[row]
+					m.sel = SelectionState{active: true, startSeq: seq, endSeq: seq, anchorBottomSeq: m.currentBottomSeq()}
+				}
 			}
 		}
 
@@ -170,7 +213,11 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseLeft && m.sel.active {
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
-				m.sel.endRow = row
+				logWidth := m.width - m.sidebarWidth() - 1
+				_, rowSeqs := m.buildLogVisualRows(logWidth, m.logHeight())
+				if row < len(rowSeqs) && rowSeqs[row] >= 0 {
+					m.sel.endSeq = rowSeqs[row]
+				}
 			}
 		}
 
@@ -201,8 +248,9 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case ProcessOutputMsg:
-		// If pinned to bottom (offset 0), stay there. Otherwise hold position.
+	case ProcessLineMsg:
+		// the op already edited p.Buffer; this just triggers a re-render, which
+		// re-reads the buffer. Scroll position (pinned or held) is preserved.
 		return m, nil
 
 	case ProcessStateMsg:
@@ -406,10 +454,13 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 	}
 
 	var hintText string
-	if m.delegated {
+	switch {
+	case m.interactive:
+		hintText = "interactive — ctrl+z to exit"
+	case m.delegated:
 		hintText = "c copy · R restart"
-	} else {
-		hintText = "c copy · r restart · R restart all"
+	default:
+		hintText = "i interactive · c copy · r restart · R restart all"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
@@ -452,16 +503,15 @@ func (m TabbedModel) renderLogPanel(width, height int) string {
 		logHeight = 0
 	}
 
-	visualRows := m.buildLogVisualRows(width, logHeight)
-	// Pad to fill remaining space.
-	for len(visualRows) < logHeight {
-		visualRows = append(visualRows, "")
-	}
+	visualRows, rowSeqs := m.buildLogVisualRows(width, logHeight)
+	// buildLogVisualRows already pads to logHeight — content at the top while
+	// underfilled, tailing to the bottom once full — so rowSeqs indexes 1:1 with
+	// visualRows below.
 
-	// Highlight selected rows.
+	// Highlight rows whose source buffer line is in the selection range.
 	for i := range visualRows {
-		if m.sel.active && i >= m.sel.minRow() && i <= m.sel.maxRow() {
-			visualRows[i] = selectedBg.Render(visualRows[i])
+		if m.sel.active && rowSeqs[i] >= 0 && rowSeqs[i] >= m.sel.minSeq() && rowSeqs[i] <= m.sel.maxSeq() {
+			visualRows[i] = highlightRow(visualRows[i])
 		}
 	}
 
@@ -481,6 +531,26 @@ func padRight(s string, width int) string {
 		return s[:width]
 	}
 	return s + strings.Repeat(" ", width-len(s))
+}
+
+// padBottom appends empty rows (seq -1) so an underfilled panel keeps its content
+// at the top and grows downward — like a terminal filling before it starts to
+// tail. Once the buffer overflows the panel, buildLogVisualRows tail-slices and
+// no padding is added, so the newest output pins to the bottom. Shared by both
+// models' buildLogVisualRows so the rendered rows and the click-time row→seq
+// mapping are always the same slice shape — clicks in the bottom padding land on
+// seq -1 and are ignored. Returns the input unchanged when already at or over
+// logHeight.
+func padBottom(rows []string, seqs []int64, logHeight int) ([]string, []int64) {
+	pad := logHeight - len(rows)
+	if pad <= 0 {
+		return rows, seqs
+	}
+	padSeqs := make([]int64, pad)
+	for i := range padSeqs {
+		padSeqs[i] = -1
+	}
+	return append(rows, make([]string, pad)...), append(seqs, padSeqs...)
 }
 
 // mouseToTabIdx converts a mouse click to a process index in the sidebar.
@@ -516,40 +586,81 @@ func (m TabbedModel) mouseToLogRow(x, y int) int {
 	return row
 }
 
-// selectedText returns the selected log rows as a plain string.
+// selected buffer lines as raw text (unwrapped)
 func (m TabbedModel) selectedText() string {
-	sidebarWidth := m.sidebarWidth()
-	logWidth := m.width - sidebarWidth - 1
-	logHeight := m.logHeight()
-	visualRows := m.buildLogVisualRows(logWidth, logHeight)
-
-	// Slice selection.
-	lo := m.sel.minRow()
-	hi := m.sel.maxRow()
-	if lo < 0 {
-		lo = 0
-	}
-	if hi >= len(visualRows) {
-		hi = len(visualRows) - 1
-	}
-	if lo > hi || len(visualRows) == 0 {
+	if m.selected >= len(m.pm.Processes) || !m.sel.active {
 		return ""
 	}
-	return strings.Join(visualRows[lo:hi+1], "\n")
+	proc := m.pm.Processes[m.selected]
+	lines := proc.Buffer.Lines()
+	base := proc.Buffer.BaseSeq()
+	lo, hi := m.sel.minSeq(), m.sel.maxSeq()
+
+	var out []string
+	for i, line := range lines {
+		seq := base + int64(i)
+		if seq >= lo && seq <= hi {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// highlightRow paints the selection background across the whole row, re-asserting
+// it after every SGR reset embedded in the row's own colors — otherwise a colored
+// span's trailing `\x1b[0m` (e.g. after `[api]`, `DEBUG`, or a URL) cancels the
+// highlight mid-line.
+func highlightRow(row string) string {
+	rendered := selectedBg.Render("\x00")
+	open := rendered
+	if i := strings.IndexByte(rendered, 0); i >= 0 {
+		open = rendered[:i]
+	}
+	if open == "" {
+		return row // no background in this color profile
+	}
+	return reassertBg(row, open)
+}
+
+// reassertBg opens the background, re-emits it after each reset, and closes.
+func reassertBg(row, open string) string {
+	return open + strings.ReplaceAll(row, "\x1b[0m", "\x1b[0m"+open) + "\x1b[0m"
+}
+
+// currentBottomSeq is the buffer seq at the bottom of the live (unfrozen)
+// window — captured when a selection starts to freeze the drag target.
+func (m TabbedModel) currentBottomSeq() int64 {
+	if m.selected >= len(m.pm.Processes) {
+		return 0
+	}
+	proc := m.pm.Processes[m.selected]
+	return proc.Buffer.BaseSeq() + int64(proc.Buffer.Len()-1-m.scrollOffset)
 }
 
 // buildLogVisualRows re-derives the visual rows for the currently selected
 // process's log panel. It applies the scroll window, wraps each raw line, and
 // tail-slices to logHeight. logWidth is the panel width passed to renderLogPanel.
-func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) []string {
+// The second return value is the source buffer-line seq for each visual row,
+// parallel to the first.
+func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) ([]string, []int64) {
 	if m.selected >= len(m.pm.Processes) {
-		return nil
+		return nil, nil
 	}
 	proc := m.pm.Processes[m.selected]
 	lines := proc.Buffer.Lines()
+	base := proc.Buffer.BaseSeq()
 	totalLines := len(lines)
 
 	endIdx := totalLines - m.scrollOffset
+	if m.sel.active {
+		// Freeze the window at the seq that was at the bottom when the selection
+		// began — streaming output keeps filling the buffer but the drag target
+		// stays put. Resumes tailing once the selection is cleared.
+		endIdx = int(m.sel.anchorBottomSeq-base) + 1
+	}
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
 	if endIdx < 0 {
 		endIdx = 0
 	}
@@ -559,49 +670,77 @@ func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) []string {
 	}
 	visible := lines[startIdx:endIdx]
 
-	var visualRows []string
-	for _, line := range visible {
-		visualRows = append(visualRows, wrapLine(line, logWidth-2)...)
+	var rows []string
+	var seqs []int64
+	for k, line := range visible {
+		seq := base + int64(startIdx+k)
+		for _, r := range wrapLine(line, logWidth-2) {
+			rows = append(rows, r)
+			seqs = append(seqs, seq)
+		}
 	}
-	if len(visualRows) > logHeight {
-		visualRows = visualRows[len(visualRows)-logHeight:]
+	if len(rows) > logHeight {
+		rows = rows[len(rows)-logHeight:]
+		seqs = seqs[len(seqs)-logHeight:]
 	}
-	return visualRows
+	return padBottom(rows, seqs, logHeight)
 }
 
-// wrapLine splits a single log line into multiple visual rows of at most `width`
-// printable columns. It is rune-aware. Always returns at least one row.
+const ansiReset = "\x1b[0m"
+
+var sgrSeq = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// wrapLine splits a single log line into visual rows of at most `width`
+// printable columns. It is grapheme- and ANSI-aware: escape sequences are
+// never split, and any SGR style still active at a wrap point is re-emitted at
+// the start of the next row (then closed at each row's end) so wrapped colored
+// lines keep their color on every continuation row. Always returns at least
+// one row.
 func wrapLine(line string, width int) []string {
-	if width <= 0 {
+	if width <= 0 || lipgloss.Width(line) <= width {
 		return []string{line}
 	}
-	runes := []rune(line)
-	if lipgloss.Width(line) <= width {
-		return []string{line}
-	}
-	var rows []string
-	for len(runes) > 0 {
-		// If remaining runes fit entirely, take them all.
-		if lipgloss.Width(string(runes)) <= width {
-			rows = append(rows, string(runes))
-			break
+	rows := strings.Split(ansi.HardwrapWc(line, width, true), "\n")
+	pen := ""
+	for i, row := range rows {
+		next := penAfter(pen, row)
+		if i > 0 {
+			row = pen + row
 		}
-		// Binary-search for the largest rune-boundary prefix that fits.
-		lo, hi := 0, len(runes)
-		for lo+1 < hi {
-			mid := (lo + hi) / 2
-			if lipgloss.Width(string(runes[:mid])) <= width {
-				lo = mid
-			} else {
-				hi = mid
-			}
+		if next != "" {
+			row += ansiReset
 		}
-		if lo == 0 {
-			// Single rune is wider than width (e.g. full-width terminal art) — take it anyway.
-			lo = 1
-		}
-		rows = append(rows, string(runes[:lo]))
-		runes = runes[lo:]
+		rows[i] = row
+		pen = next
 	}
 	return rows
+}
+
+// penAfter returns the SGR sequence(s) still active after `row`, given the
+// styles `pen` active on entry. A reset param (0 or empty) clears the
+// accumulation; any other param appends.
+func penAfter(pen, row string) string {
+	for _, seq := range sgrSeq.FindAllString(row, -1) {
+		pen = applyPen(pen, seq)
+	}
+	return pen
+}
+
+func applyPen(pen, seq string) string {
+	inner := strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b["), "m")
+	reset, setsMore := false, false
+	for _, param := range strings.Split(inner, ";") {
+		if param == "" || param == "0" {
+			reset = true
+		} else {
+			setsMore = true
+		}
+	}
+	if reset {
+		if setsMore {
+			return seq
+		}
+		return ""
+	}
+	return pen + seq
 }

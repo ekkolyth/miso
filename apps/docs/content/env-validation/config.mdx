@@ -13,6 +13,7 @@ Configure the `env` key in `miso.json` as an array of entries — one per app or
     config={`{
   "env": [
     {
+      "scope": "web",
       "label": "web",
       "path": "apps/web/.env.local",
       "required": "all",
@@ -27,6 +28,7 @@ Configure the `env` key in `miso.json` as an array of entries — one per app or
       }
     },
     {
+      "scope": "api",
       "label": "api",
       "path": "apps/api/.env",
       "required": "all",
@@ -41,16 +43,51 @@ Configure the `env` key in `miso.json` as an array of entries — one per app or
 }`}
 />
 
-Miso validates each entry in order, stopping at the first failure and including the entry's label in the error message.
+Miso validates every entry and reports all the failures together, each grouped under its label — you see the whole list in one pass rather than fixing one, rerunning, and hitting the next.
+
+### `scope`
+
+Which target this entry applies to: a workspace member name, a configured task/script name, or the reserved value `"global"`.
+
+**Required on root `miso.json` entries.** `miso env` rejects any root entry with no `scope`:
+
+```
+env config invalid — every root entry needs a scope (a target name or "global")
+    .env.local
+```
+
+Member `miso.json` files (nested at `<member>/miso.json`) don't set `scope` at all — they scope by file location. Every entry inside a member's own config applies only to that member.
+
+#### Resolution order
+
+When miso resolves the env for a run target `T`, it layers, later winning on key conflict:
+
+1. Root entries scoped to `"global"`
+2. Root entries scoped to `T` (or, for a member target, to the member's directory basename)
+3. The member's own `<member>/miso.json` entries, if `T` is a member
+
+The merged result is gap-filled under the ambient shell environment — a variable already set in your shell is never overridden, at any layer.
+
+`"global"` is reserved: it can't be used as a workspace, task, or script name, so it never collides with a real target.
+
+#### Validation vs. injection
+
+`scope` is enforced differently depending on what's using it:
+
+- **Validation** (`miso env`, `--env`) is strict — every root entry must declare a `scope`, or the command fails.
+- **Injection** (loading `.env` values into a running script) is permissive — an entry whose `scope` doesn't match the current target is silently skipped, no error. This lets a root `miso.json` carry entries for members that aren't relevant to the command you're currently running.
+
+Both behaviors are miso-mode only. In a delegated repo (`repo: "turbo"` or `"nx"`) the delegate owns env, so `miso env` just type-checks the declared root entries — `scope` isn't required and nothing is injected.
 
 ### `label`
 
 An optional name for this entry, used in log output and error messages. If omitted, Miso falls back to the entry's `path` value.
 
-Using a label is recommended in any project with more than one env file — it makes errors immediately actionable:
+Using a label is recommended in any project with more than one env file — it makes errors immediately actionable. Failures print grouped under the label, one variable per line:
 
 ```
-api: missing required variable: REDIS_URL
+  api
+    REDIS_URL: missing required variable
 ```
 
 ### `path`
@@ -63,6 +100,12 @@ If omitted, Miso falls back to the same discovery order used when no `env` confi
 2. `.env.production`
 3. `.env.development`
 4. `.env`
+
+### `override`
+
+Path to this scope's override file, relative to the project root (or the member's directory for a member-local entry). Used by `miso env -g -o`: its values are layered on top of the baseline values (populated by `-p` when given), winning on key conflict. One override file per scope — at the root level for `"global"`, or one per member entry.
+
+See [Env generation](/env-validation/generate) for the full `--generate` workflow.
 
 ### `required`
 
@@ -132,6 +175,7 @@ If you only have one `.env` file, you still use an array — just with a single 
     config={`{
   "env": [
     {
+      "scope": "global",
       "path": ".env.local",
       "variables": {
         "PORT": "port",

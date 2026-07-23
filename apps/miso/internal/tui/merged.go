@@ -9,19 +9,12 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/ekkolyth/miso/internal/ui"
 )
 
-// Fixed color palette for workspace labels — cycles if more workspaces than colors.
-var labelColors = []color.Color{
-	lipgloss.Color("#7c3aed"), // purple
-	lipgloss.Color("#3b82f6"), // blue
-	lipgloss.Color("#f59e0b"), // amber
-	lipgloss.Color("#10b981"), // emerald
-	lipgloss.Color("#ef4444"), // red
-	lipgloss.Color("#ec4899"), // pink
-	lipgloss.Color("#06b6d4"), // cyan
-	lipgloss.Color("#f97316"), // orange
-}
+// workspace label palette (canonical set in internal/ui) — cycles if more workspaces than colors
+var labelColors = ui.LabelColors
 
 type MergedModel struct {
 	pm               *ProcessManager
@@ -29,6 +22,7 @@ type MergedModel struct {
 	cursor           int
 	visible          map[int]bool
 	logLines         []mergedLine
+	logSeq           int64
 	scrollOffset     int // 0 = pinned to bottom, >0 = scrolled up N lines
 	width            int
 	height           int
@@ -36,14 +30,22 @@ type MergedModel struct {
 	delegated        bool
 	allExitedPending bool
 	sel              SelectionState
+	interactive      bool
 	copyFlash        bool // true during the 150ms invert flash
 	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
+
+	// live-region bookkeeping for in-place redraws, kept on the full (unfiltered)
+	// list so a filter toggle never disturbs it
+	tailBlockLen   int  // rewritable height of the tail owner's current block
+	tailLastOffset int  // rewrite offset of the last op in the active frame; -1 = none
+	tailRebuilding bool // active frame is re-appending a detached block
 }
 
 type mergedLine struct {
 	label string
 	color color.Color
 	text  string
+	seq   int64
 }
 
 func NewMergedModel(pm *ProcessManager, script string, delegated bool) MergedModel {
@@ -53,11 +55,12 @@ func NewMergedModel(pm *ProcessManager, script string, delegated bool) MergedMod
 	}
 
 	return MergedModel{
-		pm:        pm,
-		keys:      DefaultMergedKeyMap(),
-		visible:   visible,
-		script:    script,
-		delegated: delegated,
+		pm:             pm,
+		keys:           DefaultMergedKeyMap(),
+		visible:        visible,
+		script:         script,
+		delegated:      delegated,
+		tailLastOffset: -1,
 	}
 }
 
@@ -70,10 +73,33 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.pm.ResizeAll(msg.Height, msg.Width)
+		return m, nil
+
+	case tea.PasteMsg:
+		if m.interactive && !m.delegated && m.cursor < len(m.pm.Processes) {
+			_ = m.pm.Processes[m.cursor].WriteStdin([]byte(msg.Content))
+		}
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.interactive {
+			if msg.String() == "ctrl+z" {
+				m.interactive = false
+				return m, nil
+			}
+			if !m.delegated && m.cursor < len(m.pm.Processes) {
+				if b := keyToBytes(msg.Key()); b != nil {
+					_ = m.pm.Processes[m.cursor].WriteStdin(b)
+				}
+			}
+			return m, nil
+		}
 		switch {
+		case msg.String() == "i":
+			if !m.delegated && m.cursor < len(m.pm.Processes) {
+				m.interactive = true
+			}
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Left):
@@ -89,10 +115,12 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.cursor < len(m.pm.Processes) {
 				m.allExitedPending = false
-				go m.pm.Restart(m.pm.Processes[m.cursor])
+				m.sel = SelectionState{}
+				go func() { _ = m.pm.Restart(m.pm.Processes[m.cursor]) }()
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
+			m.sel = SelectionState{}
 			go m.pm.RestartAll()
 		case key.Matches(msg, m.keys.CopyKey):
 			if m.sel.active {
@@ -114,6 +142,10 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft {
+			if msg.Mod != 0 {
+				// modifier held — let the terminal handle it (native select / open link)
+				return m, nil
+			}
 			// Copy icon click: y==0, x within icon hit area at right of header
 			if msg.Y == 0 {
 				iconW := lipgloss.Width(copyIconStr)
@@ -135,7 +167,11 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
-				m.sel = SelectionState{active: true, startRow: row, endRow: row}
+				_, rowSeqs := m.buildLogVisualRows(m.logHeight(), SelectionState{})
+				if row < len(rowSeqs) && rowSeqs[row] >= 0 {
+					seq := rowSeqs[row]
+					m.sel = SelectionState{active: true, startSeq: seq, endSeq: seq}
+				}
 			}
 		}
 
@@ -143,7 +179,10 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseLeft && m.sel.active {
 			row := m.mouseToLogRow(msg.X, msg.Y)
 			if row >= 0 {
-				m.sel.endRow = row
+				_, rowSeqs := m.buildLogVisualRows(m.logHeight(), SelectionState{})
+				if row < len(rowSeqs) && rowSeqs[row] >= 0 {
+					m.sel.endSeq = rowSeqs[row]
+				}
 			}
 		}
 
@@ -170,20 +209,10 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case ProcessOutputMsg:
+	case ProcessLineMsg:
 		// Default new dynamically-added processes to visible (turbo/nx mode).
 		m.ensureVisible()
-		color := m.colorForLabel(msg.Label)
-		m.logLines = append(m.logLines, mergedLine{
-			label: msg.Label,
-			color: color,
-			text:  msg.Line,
-		})
-		// Cap merged log to prevent unbounded memory growth
-		maxMergedLines := DefaultBufferSize * len(m.pm.Processes)
-		if len(m.logLines) > maxMergedLines {
-			m.logLines = m.logLines[len(m.logLines)-maxMergedLines:]
-		}
+		m.applyLineOp(msg.Label, msg.Op)
 		return m, nil
 
 	case ProcessStateMsg:
@@ -213,9 +242,15 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// headerHeight is the rendered line count of the filter bar (header + tab row +
+// selector). Derived, not fixed, because the tab/selector rows wrap on narrow
+// widths — so the log-area offset self-corrects on resize.
+func (m MergedModel) headerHeight() int {
+	return lipgloss.Height(m.renderFilterBar())
+}
+
 func (m MergedModel) logHeight() int {
-	// header (1) + tab row (1) + selector/divider (1), rest is logs
-	h := m.height - 3
+	h := m.height - m.headerHeight()
 	if h < 0 {
 		return 0
 	}
@@ -230,11 +265,9 @@ func (m MergedModel) View() tea.View {
 	filterBar := m.renderFilterBar()
 	logHeight := m.logHeight()
 
-	logOutput := m.buildLogVisualRows(logHeight, m.sel)
-	// Pad to fill.
-	for len(logOutput) < logHeight {
-		logOutput = append(logOutput, "")
-	}
+	logOutput, _ := m.buildLogVisualRows(logHeight, m.sel)
+	// buildLogVisualRows already pads to logHeight — content at the top while
+	// underfilled, tailing to the bottom once full.
 
 	// Note: selection highlighting is applied inside buildLogVisualRows, where
 	// the label and text are still separate pieces. Applying selectedBg.Render()
@@ -266,10 +299,13 @@ func (m MergedModel) renderFilterBar() string {
 	}
 
 	var hintText string
-	if m.delegated {
+	switch {
+	case m.interactive:
+		hintText = "interactive — ctrl+z to exit"
+	case m.delegated:
 		hintText = "space toggle · c copy · R restart"
-	} else {
-		hintText = "space toggle · c copy · r restart · R restart all"
+	default:
+		hintText = "i interactive · space toggle · c copy · r restart · R restart all"
 	}
 	hints := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(hintText)
 
@@ -359,6 +395,79 @@ func (m MergedModel) renderFilterBar() string {
 	return header + "\n" + tabRow + "\n" + selectorRow
 }
 
+// applyLineOp folds one child op into the interleaved log. An append extends the
+// app's tail block; a rewrite collapses in place while the block is still at the
+// tail, or appends a fresh block once another app has interleaved; a clear
+// freezes the block so later output starts fresh.
+func (m *MergedModel) applyLineOp(label string, op LineOp) {
+	switch o := op.(type) {
+	case OpAppend:
+		m.appendLine(label, o.Text)
+		m.tailLastOffset = -1
+		m.tailRebuilding = false
+	case OpRewrite:
+		m.rewriteLine(label, o.OffsetFromEnd, o.Text)
+	case OpClear:
+		if m.ownsTail(label) {
+			m.tailBlockLen = 0
+			m.tailLastOffset = -1
+			m.tailRebuilding = false
+		}
+	}
+}
+
+// ownsTail reports whether label produced the last interleaved line — the only
+// state in which its live block is still rewritable in place.
+func (m *MergedModel) ownsTail(label string) bool {
+	n := len(m.logLines)
+	return n > 0 && m.logLines[n-1].label == label
+}
+
+// appendLine adds one line at the tail, extending the app's live block when it
+// already owns the tail or starting a fresh one when another app interleaved.
+func (m *MergedModel) appendLine(label, text string) {
+	extends := m.ownsTail(label)
+	m.logSeq++
+	m.logLines = append(m.logLines, mergedLine{
+		label: label,
+		color: m.colorForLabel(label),
+		text:  text,
+		seq:   m.logSeq,
+	})
+	if extends {
+		m.tailBlockLen++
+	} else {
+		m.tailBlockLen = 1
+	}
+	maxMergedLines := DefaultBufferSize * len(m.pm.Processes)
+	if len(m.logLines) > maxMergedLines {
+		m.logLines = m.logLines[len(m.logLines)-maxMergedLines:]
+		if m.tailBlockLen > len(m.logLines) {
+			m.tailBlockLen = len(m.logLines)
+		}
+	}
+}
+
+// rewriteLine overwrites a line in the app's live tail block, or appends when the
+// block is frozen (another app interleaved) or the frame is already rebuilding a
+// detached block. Rewrite offsets within a redraw frame descend to 0, so a frame
+// boundary is where the offset stops decreasing.
+func (m *MergedModel) rewriteLine(label string, offset int, text string) {
+	owns := m.ownsTail(label)
+	if m.tailLastOffset < 0 || offset >= m.tailLastOffset || !owns {
+		// rebuild when the block is frozen or the frame reaches past it
+		m.tailRebuilding = !owns || offset >= m.tailBlockLen
+	}
+	m.tailLastOffset = offset
+
+	idx := len(m.logLines) - 1 - offset
+	if m.tailRebuilding || idx < 0 {
+		m.appendLine(label, text)
+		return
+	}
+	m.logLines[idx].text = text
+}
+
 // ensureVisible sets any newly-added processes (from delegated mode dynamic
 // discovery) to visible by default.
 func (m MergedModel) ensureVisible() {
@@ -403,40 +512,37 @@ func (m MergedModel) copyAllText() string {
 
 // mouseToLogRow converts absolute terminal coordinates to a 0-based visual
 // log row index. Returns -1 if the coordinate is above the log area.
-func (m MergedModel) mouseToLogRow(x, y int) int {
-	logPanelTop := 3 // row 0=header, 1=tabs, 2=selector, 3+=logs
-	row := y - logPanelTop
+func (m MergedModel) mouseToLogRow(_, y int) int {
+	row := y - m.headerHeight()
 	if row < 0 {
 		return -1
 	}
 	return row
 }
 
-// selectedText returns the selected log rows as a plain string.
+// selected visible-process log lines as raw text
 func (m MergedModel) selectedText() string {
-	logHeight := m.logHeight()
-	logOutput := m.buildLogVisualRows(logHeight, SelectionState{})
-
-	// Slice selection.
-	lo := m.sel.minRow()
-	hi := m.sel.maxRow()
-	if lo < 0 {
-		lo = 0
-	}
-	if hi >= len(logOutput) {
-		hi = len(logOutput) - 1
-	}
-	if lo > hi || len(logOutput) == 0 {
+	if !m.sel.active {
 		return ""
 	}
-	return strings.Join(logOutput[lo:hi+1], "\n")
+	visibleLabels := m.visibleLabels()
+	lo, hi := m.sel.minSeq(), m.sel.maxSeq()
+
+	var out []string
+	for _, line := range m.logLines {
+		if visibleLabels[line.label] && line.seq >= lo && line.seq <= hi {
+			out = append(out, line.text)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // buildLogVisualRows re-derives the visual rows for the merged log panel,
-// applying the scroll window, wrapping, and tail-slice.
+// applying the scroll window, wrapping, and tail-slice. The second return
+// value is the source line's seq for each visual row, parallel to the first.
 // sel is used to apply selection highlighting row-by-row; pass SelectionState{}
 // (inactive) to skip highlighting (e.g. when building rows for clipboard copy).
-func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) []string {
+func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) ([]string, []int64) {
 	visibleLabels := m.visibleLabels()
 	var visibleLines []mergedLine
 	for _, line := range m.logLines {
@@ -470,12 +576,12 @@ func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) []str
 	}
 
 	var logOutput []string
+	var seqs []int64
 	for _, line := range windowLines {
 		indent := strings.Repeat(" ", prefixWidth)
 		wrapped := wrapLine(line.text, textWidth)
-		rowIdx := len(logOutput)
+		selected := sel.active && line.seq >= sel.minSeq() && line.seq <= sel.maxSeq()
 		for i, row := range wrapped {
-			selected := sel.active && rowIdx+i >= sel.minRow() && rowIdx+i <= sel.maxRow()
 			if i == 0 {
 				// Render label and text under the same background so the selection
 				// highlight covers the full line. Applying selectedBg to the
@@ -501,10 +607,12 @@ func (m MergedModel) buildLogVisualRows(logHeight int, sel SelectionState) []str
 					logOutput = append(logOutput, indent+row)
 				}
 			}
+			seqs = append(seqs, line.seq)
 		}
 	}
 	if len(logOutput) > logHeight {
 		logOutput = logOutput[len(logOutput)-logHeight:]
+		seqs = seqs[len(seqs)-logHeight:]
 	}
-	return logOutput
+	return padBottom(logOutput, seqs, logHeight)
 }

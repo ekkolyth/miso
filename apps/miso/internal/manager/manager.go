@@ -20,7 +20,7 @@ type Manager interface {
 	BuildRemove(packageNames []string) ExecSpec
 	BuildRun(scriptName string, scriptArgs []string) ExecSpec
 	BuildVersion() ExecSpec
-	BuildMisox(packageName string, args []string) ExecSpec
+	BuildDlx(packageName string, args []string) ExecSpec
 }
 
 func Exec(spec ExecSpec, workDir string) error {
@@ -37,18 +37,6 @@ func Exec(spec ExecSpec, workDir string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
-
-// func ExecScript(command string, args []string) error {
-// 	full := command
-// 	if len(args) > 0 {
-// 		full = fmt.Sprintf("%s %s", command, shellJoin(args))
-// 	}
-// 	cmd := exec.Command("/bin/sh", "-c", full)
-// 	cmd.Stdout = os.Stdout
-// 	cmd.Stdin = os.Stdin
-// 	cmd.Stderr = os.Stderr
-// 	return cmd.Run()
-// }
 
 // ResolveManagerVersion runs the manager binary's version command, captures its
 // output, and returns "name@version" (e.g. "bun@1.2.3") for use in the
@@ -84,19 +72,4 @@ func ResolveManagerVersion(managerName string) string {
 		return managerName
 	}
 	return managerName + "@" + version
-}
-
-func shellJoin(args []string) string {
-	quoted := make([]string, 0, len(args))
-	for _, a := range args {
-		if a == "" {
-			quoted = append(quoted, "''")
-			continue
-		}
-		if strings.ContainsAny(a, " \t\n\"'`!$&|<>") {
-			a = "'" + strings.ReplaceAll(a, "'", "'\"'\"'") + "'"
-		}
-		quoted = append(quoted, a)
-	}
-	return strings.Join(quoted, " ")
 }

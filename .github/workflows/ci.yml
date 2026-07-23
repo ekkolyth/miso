@@ -1,0 +1,57 @@
+name: CI
+
+on:
+    pull_request:
+        branches: [dev, main]
+    push:
+        branches: [dev, main]
+
+jobs:
+    lint:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-go@v7
+              with:
+                  go-version-file: apps/miso/go.mod
+            - uses: golangci/golangci-lint-action@v9
+              with:
+                  version: latest
+                  working-directory: apps/miso
+
+    test:
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, macos-latest]
+        runs-on: ${{ matrix.os }}
+        defaults:
+            run:
+                working-directory: apps/miso
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-go@v7
+              with:
+                  go-version-file: apps/miso/go.mod
+            - name: Install gotestsum
+              run: go install gotest.tools/gotestsum@latest
+            - name: Test with race detector
+              run: gotestsum --junitfile ../../test-results-${{ matrix.os }}.xml -- -race ./...
+            - name: Upload test results
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: test-results-${{ matrix.os }}
+                  path: test-results-*.xml
+
+    build:
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: apps/miso
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-go@v7
+              with:
+                  go-version-file: apps/miso/go.mod
+            - run: go build ./...

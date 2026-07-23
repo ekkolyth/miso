@@ -9,10 +9,10 @@ var misoFlags = map[string]bool{
 
 // SplitFlags partitions args into miso-owned flags and turbo passthrough flags.
 //
-// When tuiActive is true, --log-order (both --log-order=value and
+// When chromeActive is true, --log-order (both --log-order=value and
 // --log-order value forms) is stripped from the turbo args so the TUI can
 // manage log ordering itself.
-func SplitFlags(args []string, tuiActive bool) (miso []string, turbo []string) {
+func SplitFlags(args []string, chromeActive bool) (miso []string, turbo []string) {
 	miso = make([]string, 0)
 	turbo = make([]string, 0)
 
@@ -29,8 +29,8 @@ func SplitFlags(args []string, tuiActive bool) (miso []string, turbo []string) {
 			continue
 		}
 
-		// When TUI is active, strip --log-order in both forms.
-		if tuiActive {
+		// When chrome is active, strip --log-order in both forms.
+		if chromeActive {
 			// --log-order=value form
 			if strings.HasPrefix(arg, "--log-order=") {
 				continue

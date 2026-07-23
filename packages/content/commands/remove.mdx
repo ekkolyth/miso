@@ -1,0 +1,20 @@
+Removes one or more dependencies from your project.
+
+### When to use
+
+To drop a package you no longer need. Aliased as `miso rm`.
+
+### How it works
+
+Delegates to the detected package manager's remove/uninstall, forwarding the package names.
+
+### Examples
+
+```bash
+miso remove lodash
+miso rm react redux
+```
+
+### Gotchas
+
+- A `scripts/` entry or a `package.json` script named `remove` shadows this command.

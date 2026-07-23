@@ -2,34 +2,35 @@
 
 AI agent skills for working with [miso](https://misojs.dev) — the smart package manager wrapper and script runner.
 
-Install all skills at once:
+Install for the harnesses miso detects:
 
 ```bash
-npx skills add ekkolyth/miso --all
+miso skills --add
+```
+
+Or install directly with the skills CLI:
+
+```bash
+npx skills add ekkolyth/miso
 ```
 
 Install for a specific agent (e.g. OpenCode):
 
 ```bash
-npx skills add ekkolyth/miso --all -a opencode
-```
-
-Install a specific skill:
-
-```bash
-npx skills add ekkolyth/miso --skill miso-env
+npx skills add ekkolyth/miso -a opencode
 ```
 
 ---
 
-## Available Skills
+## What it covers
 
-| Skill | When to use | What it covers |
-|---|---|---|
-| `miso-config` | Creating or modifying `miso.json` | All top-level fields, types, defaults, annotated examples, common mistakes |
-| `miso-scripting` | Creating, organizing, or debugging scripts | Scripts folder, extension dispatch, shebang, subdirectories, resolution order |
-| `miso-tui` | Configuring multi-process TUI, concurrent tasks, task ordering | `tui` field, `repo` modes, `tasks.concurrent`, `tasks.dependsOn` |
-| `miso-env` | Configuring env validation or debugging env injection | `env` config, variable types, `--env` flag, injection behavior |
+| Area | Reference |
+|---|---|
+| `miso.json` configuration | `references/config.md` |
+| Scripts folder, extension dispatch, shebang, resolution order | `references/scripting.md` |
+| Multi-process TUI, `repo` modes, `tasks.concurrent`, `tasks.dependsOn` | `references/tui.md` |
+| Env validation, variable types, `--env`, injection behavior | `references/env.md` |
+| Upgrading a project from an older miso (0.5.x → 0.6.0) | `references/migration.md` |
 
 ---
 

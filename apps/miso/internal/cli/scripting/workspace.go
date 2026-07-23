@@ -5,31 +5,35 @@ import (
 	"path/filepath"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
-// ResolveWorkspaceScript resolves a script by name within a specific workspace.
-// workspaceName is matched against workspace paths by basename, relative path,
+// workspaceName is matched against members by basename, relative path,
 // or package.json name field. scriptName is the script to find.
-// Returns the resolved script and the workspace directory as the working directory.
-func ResolveWorkspaceScript(workspaceName string, scriptName string, root string, cfg config.Config) (ResolvedScript, string, error) {
-	// load workspaces from package.json
-	workspaces, err := config.LoadWorkspaces(root)
+// Returns the resolved script, the workspace directory as the working directory,
+// and the member's effective shell (member miso.json overrides root; empty means
+// the caller's fallback applies).
+func ResolveWorkspaceScript(workspaceName string, scriptName string, root string, cfg config.Config) (ResolvedScript, string, string, error) {
+	members, err := workspace.DiscoverMembers(root, cfg)
 	if err != nil {
-		return ResolvedScript{}, "", fmt.Errorf("load workspaces: %w", err)
+		return ResolvedScript{}, "", "", fmt.Errorf("discover members: %w", err)
 	}
 
-	if len(workspaces) == 0 {
-		return ResolvedScript{}, "", fmt.Errorf("no workspaces found in package.json — is this a monorepo?")
+	if len(members) == 0 {
+		return ResolvedScript{}, "", "", fmt.Errorf("no workspaces found — is this a monorepo?")
 	}
 
-	// find the workspace directory — matches by basename, relative path, or package.json name
-	workspaceDir, err := config.FindWorkspace(workspaceName, workspaces, root)
+	member, err := workspace.Find(workspaceName, members, root)
 	if err != nil {
-		return ResolvedScript{}, "", err
+		return ResolvedScript{}, "", "", err
 	}
+	workspaceDir := member.Dir
+
+	// member miso.json overlays root for scripts folder and shell
+	effective := workspace.EffectiveConfig(cfg, member)
 
 	// determine the scripts folder for this workspace
-	scriptsPath := cfg.Scripts
+	scriptsPath := effective.Scripts
 	if scriptsPath == "" {
 		scriptsPath = "./scripts"
 	}
@@ -42,7 +46,7 @@ func ResolveWorkspaceScript(workspaceName string, scriptName string, root string
 	// 1. check workspace scripts/ folder
 	discovered, err := DiscoverScripts(scriptsPath)
 	if err != nil {
-		return ResolvedScript{}, "", fmt.Errorf("discover workspace scripts: %w", err)
+		return ResolvedScript{}, "", "", fmt.Errorf("discover workspace scripts: %w", err)
 	}
 
 	scripts, ok := discovered[scriptName]
@@ -52,52 +56,29 @@ func ResolveWorkspaceScript(workspaceName string, scriptName string, root string
 			for _, s := range scripts {
 				paths = append(paths, s.RelativePath)
 			}
-			return ResolvedScript{}, "", fmt.Errorf("multiple scripts for %q exist in workspace %q: %s",
+			return ResolvedScript{}, "", "", fmt.Errorf("multiple scripts for %q exist in workspace %q: %s",
 				scriptName, workspaceName, joinStrings(paths))
 		}
 		return ResolvedScript{
 			Source: ScriptSourceFolder,
 			Path:   scripts[0].Path,
-		}, workspaceDir, nil
+		}, workspaceDir, effective.Shell, nil
 	}
 
 	// 2. fall back to workspace package.json scripts
 	pkgScripts, err := ReadPackageJSONScripts(workspaceDir)
 	if err != nil {
-		return ResolvedScript{}, "", fmt.Errorf("read workspace package.json scripts: %w", err)
+		return ResolvedScript{}, "", "", fmt.Errorf("read workspace package.json scripts: %w", err)
 	}
 	if command, ok := pkgScripts[scriptName]; ok {
 		return ResolvedScript{
 			Source: ScriptSourcePackageJSON,
 			Path:   command,
-		}, workspaceDir, nil
+		}, workspaceDir, effective.Shell, nil
 	}
 
 	// not found in either
-	return ResolvedScript{Source: ScriptSourceNone}, workspaceDir, nil
-}
-
-// WorkspaceFromCWD checks whether the current working directory is inside a
-// known workspace and returns the workspace directory if so.
-func WorkspaceFromCWD(cwd string, workspaces []string) (string, bool) {
-	for _, ws := range workspaces {
-		absWs, err := filepath.Abs(ws)
-		if err != nil {
-			continue
-		}
-		absCwd, err := filepath.Abs(cwd)
-		if err != nil {
-			continue
-		}
-		rel, err := filepath.Rel(absWs, absCwd)
-		if err != nil {
-			continue
-		}
-		if rel == "." || (len(rel) > 0 && rel[0] != '.') {
-			return absWs, true
-		}
-	}
-	return "", false
+	return ResolvedScript{Source: ScriptSourceNone}, workspaceDir, effective.Shell, nil
 }
 
 // joinStrings joins a slice of strings with ", ".

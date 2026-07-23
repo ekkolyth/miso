@@ -21,6 +21,6 @@ func (Yarn) BuildRun(script string, scriptArgs []string) manager.ExecSpec {
 func (Yarn) BuildVersion() manager.ExecSpec {
 	return manager.ExecSpec{Command: "yarn", Args: []string{"--version"}}
 }
-func (Yarn) BuildMisox(packageName string, args []string) manager.ExecSpec {
+func (Yarn) BuildDlx(packageName string, args []string) manager.ExecSpec {
 	return manager.ExecSpec{Command: "yarn", Args: append([]string{"dlx", packageName}, args...)}
 }

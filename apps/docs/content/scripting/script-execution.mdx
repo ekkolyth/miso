@@ -1,6 +1,6 @@
 # Script Execution
 
-By default, Miso runs all scripts with `sh`.
+Miso picks an interpreter per script — by file extension or shebang, falling back to `sh`.
 
 ## Changing the Interpreter
 
@@ -12,15 +12,18 @@ Miso selects the interpreter based on the file extension:
 
 | Extension      | Interpreter | Notes                         |
 | -------------- | ----------- | ----------------------------- |
-| `.sh`, `.bash` | `sh`        | POSIX shell (default)         |
+| `.sh`          | `sh`        | POSIX shell (default)         |
+| `.bash`        | `bash`      | Bash                          |
 | `.zsh`         | `zsh`       | Z shell                       |
 | `.js`, `.mjs`  | `node`      | Node.js                       |
-| `.ts`          | `ts-node`   | TypeScript (requires ts-node) |
+| `.ts`          | `bun` or `node` | `bun` when the project uses bun, otherwise `node` |
 | `.py`          | `python3`   | Python 3                      |
 | `.rb`          | `ruby`      | Ruby                          |
 | `.pl`          | `perl`      | Perl                          |
 | `.lua`         | `lua`       | Lua                           |
 | `.php`         | `php`       | PHP                           |
+
+> `.ts` runs on `bun` when your project uses bun — detected from the `packageManager` field in `package.json`, then from a bun lockfile — and otherwise on `node`. Bare `node script.ts` needs Node 23.6+ (or 22.6+ with `--experimental-strip-types`); `bun` runs TypeScript with no extra setup.
 
 ### 2. Configure the Default Shell in miso.json
 
@@ -52,6 +55,26 @@ Make sure the required interpreter is installed and available in your PATH:
 which node
 which python3
 which ruby
+```
+
+## Working Directory
+
+Scripts run from the project root, no matter where they sit in the scripts folder. Write paths relative to the root:
+
+```bash
+# scripts/build/miso.sh
+cd apps/miso && go build ./cmd
+```
+
+So you can reference project files consistently without caring where the script lives.
+
+## Local Binaries on PATH
+
+Miso prepends `node_modules/.bin` to each script's `PATH`, walking from the target directory up to the project root (nearest first). Locally-installed CLIs run bare — no `npx` or package-manager prefix:
+
+```bash
+drizzle-kit push        # resolves node_modules/.bin/drizzle-kit
+wrangler deploy         # resolves node_modules/.bin/wrangler
 ```
 
 ## Error Handling

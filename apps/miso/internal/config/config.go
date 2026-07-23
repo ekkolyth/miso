@@ -11,13 +11,12 @@ import (
 // return when miso.json not found
 var ErrNotFound = errors.New("config: not found")
 
-// default miso config filename
 const FileName = "miso.json"
 
-// SchemaURL is the canonical URL for the miso.json JSON schema (IDE autocomplete/validation)
+// canonical miso.json schema url (IDE autocomplete/validation)
 const SchemaURL = "https://misojs.dev/miso.schema.json"
 
-// TaskConfig holds per-task configuration for dependency ordering and concurrent companions.
+// dependency ordering + concurrent companions
 type TaskConfig struct {
 	DependsOn  []string `json:"dependsOn,omitempty"`
 	Concurrent []string `json:"concurrent,omitempty"`
@@ -31,17 +30,18 @@ type Config struct {
 	Shell          string                `json:"shell,omitempty"`
 	Flags          map[string][]string   `json:"flags,omitempty"`
 	Env            []*EnvEntry           `json:"env,omitempty"`
-	Repo           string                `json:"repo,omitempty"` // "single" (default), "mono", "turbo", or "nx"
+	Repo           string                `json:"repo,omitempty"` // "miso" (default), "turbo", or "nx"
 	Tasks          map[string]TaskConfig `json:"-"`              // populated from repo object form; not serialized directly
-	TuiMode        string                `json:"tui,omitempty"`  // "off" (default), "tabbed", or "merged"
+	TuiMode        string                `json:"tui,omitempty"`  // "tabbed" (default), "off", or "merged"
 	TuiCleanExit   bool                  `json:"-"`              // populated from tui object form; not serialized directly
 }
 
-// EnvEntry holds a single env file path and its variable validation rules.
-// label is optional but recommended in multi-app setups.
+// label is optional but recommended in multi-app setups
 type EnvEntry struct {
+	Scope     string       `json:"scope,omitempty"`
 	Label     string       `json:"label,omitempty"`
 	Path      string       `json:"path,omitempty"`
+	Override  string       `json:"override,omitempty"`
 	Required  EnvRequired  `json:"required,omitempty"`
 	Variables EnvVariables `json:"variables,omitempty"`
 }
@@ -99,7 +99,6 @@ func (v VarConfigOrString) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Config)
 }
 
-// VarConfig holds per-variable validation rules
 type VarConfig struct {
 	Type        string   `json:"type"`
 	Optional    bool     `json:"optional"`
@@ -122,15 +121,10 @@ func (c *Config) EnsureDefaults() {
 	}
 }
 
-// mono, turbo, or nx
-func (c Config) IsMonorepo() bool {
-	return c.Repo == "mono" || c.Repo == "turbo" || c.Repo == "nx"
-}
-
-// defaults to "single"
+// defaults to "miso"
 func (c Config) RepoMode() string {
 	if c.Repo == "" {
-		return "single"
+		return "miso"
 	}
 	return c.Repo
 }
@@ -212,7 +206,7 @@ func Load(root string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
 
-	tuiMode := "off"
+	tuiMode := "tabbed"
 	tuiCleanExit := false
 	if len(load.TuiRaw) > 0 {
 		var err error
@@ -288,51 +282,67 @@ func parseEnvField(raw json.RawMessage) ([]*EnvEntry, error) {
 }
 
 // parseRepoField handles the two accepted shapes for the "repo" field:
-//  1. string — "single", "mono", "turbo", "nx"
-//  2. object — { "mode": "mono", "tasks": { ... } }
+//  1. string — "miso", "turbo", "nx"
+//  2. object — { "mode": "turbo", "tasks": { ... } }
 func parseRepoField(raw json.RawMessage) (string, map[string]TaskConfig, error) {
+	var mode string
+	var tasks map[string]TaskConfig
+
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		return s, nil, nil
+		mode = s
+	} else {
+		var obj struct {
+			Mode  string                `json:"mode"`
+			Tasks map[string]TaskConfig `json:"tasks,omitempty"`
+		}
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return "", nil, fmt.Errorf("repo: expected string or object, got %s", string(raw))
+		}
+		mode = obj.Mode
+		tasks = obj.Tasks
 	}
 
-	var obj struct {
-		Mode  string                `json:"mode"`
-		Tasks map[string]TaskConfig `json:"tasks,omitempty"`
+	switch mode {
+	case "", "miso", "turbo", "nx":
+		return mode, tasks, nil
+	default:
+		return "", nil, fmt.Errorf("repo: unknown mode %q (use miso, turbo, or nx)", mode)
 	}
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return "", nil, fmt.Errorf("repo: expected string or object, got %s", string(raw))
-	}
-
-	return obj.Mode, obj.Tasks, nil
 }
 
 // parseTuiField handles the two accepted shapes for the "tui" field:
 //  1. string — "off", "tabbed", "merged"
 //  2. object — { "mode": "tabbed", "cleanExit": true }
 func parseTuiField(raw json.RawMessage) (string, bool, error) {
+	var mode string
+	var cleanExit bool
+
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		if s == "" {
-			s = "off"
+		mode = s
+	} else {
+		var obj struct {
+			Mode      string `json:"mode"`
+			CleanExit bool   `json:"cleanExit"`
 		}
-		return s, false, nil
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return "", false, fmt.Errorf("tui: expected string or object, got %s", string(raw))
+		}
+		mode = obj.Mode
+		cleanExit = obj.CleanExit
 	}
 
-	var obj struct {
-		Mode      string `json:"mode"`
-		CleanExit bool   `json:"cleanExit"`
-	}
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return "", false, fmt.Errorf("tui: expected string or object, got %s", string(raw))
-	}
-
-	mode := obj.Mode
 	if mode == "" {
 		mode = "off"
 	}
 
-	return mode, obj.CleanExit, nil
+	switch mode {
+	case "off", "tabbed", "merged":
+		return mode, cleanExit, nil
+	default:
+		return "", false, fmt.Errorf("tui: unknown mode %q (use off, tabbed, or merged)", mode)
+	}
 }
 
 // parseEnvEntry decodes a single EnvEntry from its raw JSON representation.
@@ -340,8 +350,10 @@ func parseTuiField(raw json.RawMessage) (string, bool, error) {
 // and use the first element (later elements were loaded together anyway).
 func parseEnvEntry(raw json.RawMessage) (*EnvEntry, error) {
 	var obj struct {
+		Scope     string          `json:"scope,omitempty"`
 		Label     string          `json:"label,omitempty"`
 		Path      json.RawMessage `json:"path,omitempty"`
+		Override  string          `json:"override,omitempty"`
 		Required  json.RawMessage `json:"required,omitempty"`
 		Variables json.RawMessage `json:"variables,omitempty"`
 	}
@@ -349,7 +361,7 @@ func parseEnvEntry(raw json.RawMessage) (*EnvEntry, error) {
 		return nil, err
 	}
 
-	entry := &EnvEntry{Label: obj.Label}
+	entry := &EnvEntry{Scope: obj.Scope, Label: obj.Label, Override: obj.Override}
 
 	// path: accept string or legacy []string
 	if len(obj.Path) > 0 {
@@ -438,148 +450,4 @@ func Save(root string, cfg Config) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
-}
-
-// expands globs; returns only paths that exist on disk
-func LoadWorkspaces(root string) ([]string, error) {
-	pkgPath := filepath.Join(root, "package.json")
-	data, err := os.ReadFile(pkgPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read package.json: %w", err)
-	}
-
-	var pkg struct {
-		Workspaces []string `json:"workspaces"`
-	}
-	if err := json.Unmarshal(data, &pkg); err != nil {
-		return nil, fmt.Errorf("parse package.json: %w", err)
-	}
-
-	if len(pkg.Workspaces) == 0 {
-		return nil, nil
-	}
-
-	var result []string
-	for _, pattern := range pkg.Workspaces {
-		if !filepath.IsAbs(pattern) {
-			pattern = filepath.Join(root, pattern)
-		}
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
-		}
-		for _, match := range matches {
-			info, err := os.Stat(match)
-			if err != nil {
-				continue
-			}
-			if info.IsDir() {
-				result = append(result, match)
-			}
-		}
-	}
-
-	return result, nil
-}
-
-// FindWorkspace matches a workspace identifier against discovered workspace paths.
-// The identifier is matched against three candidates per workspace, in order:
-//  1. Directory basename (e.g. "api" for /root/packages/api)
-//  2. Relative path from root (e.g. "packages/api")
-//  3. The "name" field in the workspace's package.json (e.g. "@myorg/api")
-//
-// If the identifier matches more than one workspace, an error is returned listing
-// the conflicting paths. If no match is found, an error is returned listing available
-// workspace basenames.
-func FindWorkspace(name string, workspaces []string, root string) (string, error) {
-	var matches []string
-
-	for _, ws := range workspaces {
-		if matchesWorkspace(name, ws, root) {
-			matches = append(matches, ws)
-		}
-	}
-
-	switch len(matches) {
-	case 1:
-		return matches[0], nil
-	case 0:
-		return "", fmt.Errorf("workspace %q not found (available: %s)", name, joinWorkspaceNames(workspaces))
-	default:
-		var paths []string
-		for _, m := range matches {
-			rel, err := filepath.Rel(root, m)
-			if err != nil {
-				paths = append(paths, m)
-			} else {
-				paths = append(paths, rel)
-			}
-		}
-		return "", fmt.Errorf("workspace %q is ambiguous — matches multiple workspaces: %s (use a more specific identifier)", name, joinStrings(paths))
-	}
-}
-
-// matchesWorkspace returns true if name matches the given workspace path
-// by basename, relative path from root, or package.json name field.
-func matchesWorkspace(name string, ws string, root string) bool {
-	// 1. basename
-	if filepath.Base(ws) == name {
-		return true
-	}
-
-	// 2. relative path from root
-	rel, err := filepath.Rel(root, ws)
-	if err == nil && filepath.ToSlash(rel) == filepath.ToSlash(name) {
-		return true
-	}
-
-	// 3. package.json name field
-	pkgName := readPackageJSONName(ws)
-	if pkgName != "" && pkgName == name {
-		return true
-	}
-
-	return false
-}
-
-// readPackageJSONName reads the "name" field from a workspace's package.json.
-// Returns empty string if the file is missing or the field is absent.
-func readPackageJSONName(wsDir string) string {
-	data, err := os.ReadFile(filepath.Join(wsDir, "package.json"))
-	if err != nil {
-		return ""
-	}
-	var pkg struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(data, &pkg); err != nil {
-		return ""
-	}
-	return pkg.Name
-}
-
-// joinWorkspaceNames returns a comma-separated list of workspace basenames.
-// Defined here (config package) — also duplicated in scripting package; do NOT import across packages.
-func joinWorkspaceNames(workspaces []string) string {
-	names := make([]string, 0, len(workspaces))
-	for _, ws := range workspaces {
-		names = append(names, filepath.Base(ws))
-	}
-	return joinStrings(names)
-}
-
-// joinStrings joins a slice of strings with ", ".
-// Defined here (config package) — also duplicated in scripting package; do NOT import across packages.
-func joinStrings(ss []string) string {
-	result := ""
-	for i, s := range ss {
-		if i > 0 {
-			result += ", "
-		}
-		result += s
-	}
-	return result
 }

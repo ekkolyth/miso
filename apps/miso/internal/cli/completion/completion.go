@@ -9,18 +9,12 @@ import (
 	"github.com/ekkolyth/miso/internal/scripts"
 )
 
-// BuiltinCommands is the list of Miso built-in commands for completion.
-var BuiltinCommands = []string{
-	"add", "dev", "i", "init", "install", "misox", "remove", "rm", "run",
-	"scripts", "upgrade", "v", "version",
-}
-
 // upgradeFlags are flags for the upgrade command.
 var upgradeFlags = []string{"--local"}
 
 // builtinSet: commands that take package names (no completion for now).
 var builtinSet = map[string]bool{
-	"add": true, "remove": true, "rm": true, "misox": true,
+	"add": true, "remove": true, "rm": true,
 }
 
 // Complete receives completion args and outputs matching completions to stdout, one per line.
@@ -52,11 +46,10 @@ func Complete(args []string, cwd string) {
 	}
 }
 
-func getCandidates(prev string, cur string, cwd string) []string {
+func getCandidates(prev string, _ string, cwd string) []string {
 	// Completing first word after "miso" (prev is "miso" or empty)
 	if prev == "miso" || prev == "" {
-		candidates := make([]string, 0, len(BuiltinCommands))
-		candidates = append(candidates, BuiltinCommands...)
+		candidates := cli.BuiltinNames()
 
 		// Add project scripts when in a project
 		if root, err := cli.FindProjectRoot(cwd); err == nil {
@@ -79,7 +72,7 @@ func getCandidates(prev string, cur string, cwd string) []string {
 		return candidates
 	}
 
-	// add, remove, misox: no package name completion (deferred)
+	// add, remove: no package name completion (deferred)
 	if builtinSet[prev] {
 		return nil
 	}

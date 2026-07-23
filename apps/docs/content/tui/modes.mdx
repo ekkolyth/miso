@@ -1,0 +1,64 @@
+---
+title: Modes
+description: Tabbed and merged TUI rendering
+---
+
+# Modes
+
+Miso's TUI renders in one of two modes, set by `tui` in `miso.json` (see [Configuration](/tui/configuration)). `off` disables it.
+
+## Tabbed Mode
+
+Tabbed mode shows a narrow sidebar on the left with your workspace/script list and a log panel on the right showing the selected workspace's output.
+
+### Keybindings
+
+| Key       | Action                                                        |
+| --------- | ------------------------------------------------------------- |
+| `↑` / `↓` | Navigate workspace list                                       |
+| `r`       | Restart selected workspace                                    |
+| `R`       | Restart all workspaces                                        |
+| `i`       | Enter interactive mode — forward keys to the selected process |
+| `Ctrl+Z`  | Exit interactive mode                                         |
+| `c`       | Copy selected text to clipboard                               |
+| `C`       | Copy full log buffer to clipboard                             |
+| `Ctrl+C`  | Quit (stops all processes)                                    |
+
+You can also click a workspace in the sidebar to switch to it, and click `[⎘ copy all]` in the header to copy the full log buffer.
+
+### Status Indicators
+
+- Green `●` — process is running
+- Green `✓` — process completed successfully (exit 0)
+- Grey `■` — process exited 0 suspiciously fast (may have crashed without a proper error code)
+- Red `✕` with exit code — process crashed
+
+## Merged Mode
+
+Merged mode shows all workspace output in a single interleaved stream. Each line is prefixed with a color-coded workspace label. A filter bar at the top lets you toggle which workspaces are visible.
+
+### Keybindings
+
+| Key       | Action                                                      |
+| --------- | ----------------------------------------------------------- |
+| `←` / `→` | Select workspace in filter bar                              |
+| `space`   | Toggle selected workspace visibility                        |
+| `r`       | Restart workspace at cursor                                 |
+| `R`       | Restart all workspaces                                      |
+| `i`       | Enter interactive mode — forward keys to the cursor process |
+| `Ctrl+Z`  | Exit interactive mode                                       |
+| `c`       | Copy selected text to clipboard                             |
+| `C`       | Copy all visible workspace logs to clipboard                |
+| `Ctrl+C`  | Quit (stops all processes)                                  |
+
+### Filter Bar
+
+Each workspace appears as a colored badge in the filter bar. Use arrow keys to move the cursor and space to toggle visibility. Hidden workspaces appear dimmed with strikethrough — their output is filtered from the stream.
+
+## Shared controls
+
+Both modes behave the same here:
+
+- Press `i` for **interactive mode** — keystrokes forward to the selected/cursor process's stdin; `Ctrl+Z` returns to miso's controls. Unavailable in delegated mode (Turbo/Nx). See [Interactive Mode](/tui#interactive-mode) for the full rundown.
+- In delegated mode (Turbo/Nx), single-process restart (`r`) is disabled — only `R` (restart all) is available.
+- Hold a modifier (⌘/Alt/Ctrl) while clicking to let your terminal handle the click natively — miso ignores modifier-held clicks so opening links and native text selection keep working.

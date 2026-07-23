@@ -1,12 +1,16 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 
+	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 // writePackageJSON writes a minimal package.json with the given scripts map to dir.
@@ -65,14 +69,14 @@ func TestDiscoverTuiScripts_PrefixMatching(t *testing.T) {
 		t.Fatalf("DiscoverTuiScripts: %v", err)
 	}
 
-	// expect 3 entries: app (single match) + api:dev + api:dev:worker
+	// expect 3 entries: app (single match) + api/dev + api/dev:worker
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 entries, got %d: %v", len(entries), labelsOf(entries))
 	}
 
 	// entries are sorted alphabetically by label
 	labels := labelsOf(entries)
-	expected := []string{"api:dev", "api:dev:worker", "app"}
+	expected := []string{"api/dev", "api/dev:worker", "app"}
 	sort.Strings(expected)
 	for i, want := range expected {
 		if labels[i] != want {
@@ -88,11 +92,67 @@ func TestDiscoverTuiScripts_PrefixMatching(t *testing.T) {
 	if labelToName["app"] != "dev" {
 		t.Errorf("app label should have script name 'dev', got %q", labelToName["app"])
 	}
-	if labelToName["api:dev"] != "dev" {
-		t.Errorf("api:dev label should have script name 'dev', got %q", labelToName["api:dev"])
+	if labelToName["api/dev"] != "dev" {
+		t.Errorf("api/dev label should have script name 'dev', got %q", labelToName["api/dev"])
 	}
-	if labelToName["api:dev:worker"] != "dev:worker" {
-		t.Errorf("api:dev:worker label should have script name 'dev:worker', got %q", labelToName["api:dev:worker"])
+	if labelToName["api/dev:worker"] != "dev:worker" {
+		t.Errorf("api/dev:worker label should have script name 'dev:worker', got %q", labelToName["api/dev:worker"])
+	}
+}
+
+// TestDiscoverEntries_CarriesScopedMemberName verifies a member whose package.json
+// name is scoped (@org/web) surfaces as label "@org/web", not the dir basename.
+func TestDiscoverEntries_CarriesScopedMemberName(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(webDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "package.json"),
+		[]byte(`{"name":"@org/web","scripts":{"dev":"vite"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) == 0 || entries[0].Label != "@org/web" {
+		t.Fatalf("label = %v, want @org/web", labelsOf(entries))
+	}
+}
+
+// TestDiscoverWorkspaceScripts_WorkspaceNameSurvivesLabelDedup verifies that a
+// member with two matching scripts carries the member name in WorkspaceName
+// even though Label is rewritten to "member/scriptName".
+func TestDiscoverWorkspaceScripts_WorkspaceNameSurvivesLabelDedup(t *testing.T) {
+	wsDir := t.TempDir()
+	writePackageJSON(t, wsDir, map[string]string{
+		"dev":      "next dev",
+		"dev:next": "next dev --turbo",
+	})
+
+	ws := WorkspaceInfo{Name: "web", Dir: wsDir}
+	entries, err := discoverWorkspaceScripts("dev", ws, "./scripts")
+	if err != nil {
+		t.Fatalf("discoverWorkspaceScripts: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %v", len(entries), labelsOf(entries))
+	}
+	for _, e := range entries {
+		if e.Label == ws.Name {
+			t.Errorf("Label = %q, want deduped (multiple matches in this member)", e.Label)
+		}
+		if e.WorkspaceName != ws.Name {
+			t.Errorf("WorkspaceName = %q, want %q (label = %q)", e.WorkspaceName, ws.Name, e.Label)
+		}
 	}
 }
 
@@ -189,6 +249,115 @@ func TestDiscoverTuiScripts_ScriptsFolder(t *testing.T) {
 	}
 }
 
+// TestDiscoverEntries_HonorsMemberScriptsFolder verifies a member whose miso.json
+// sets scripts:"./tasks" has its scripts discovered from <member>/tasks, not the
+// root default of ./scripts.
+func TestDiscoverEntries_HonorsMemberScriptsFolder(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	tasksDir := filepath.Join(webDir, "tasks")
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "miso.json"),
+		[]byte(`{"scripts":"./tasks"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	scriptPath := writeScript(t, tasksDir, "dev")
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d: %v", len(entries), labelsOf(entries))
+	}
+	e := entries[0]
+	if e.ScriptSource != "folder" {
+		t.Errorf("ScriptSource = %q, want folder", e.ScriptSource)
+	}
+	if e.ScriptPath != scriptPath {
+		t.Errorf("ScriptPath = %q, want %q (member tasks folder)", e.ScriptPath, scriptPath)
+	}
+}
+
+// TestDiscoverEntries_HonorsMemberShell verifies a member whose miso.json sets
+// shell:"zsh" produces an entry stamped with that shell, overriding the root shell.
+func TestDiscoverEntries_HonorsMemberShell(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	scriptsDir := filepath.Join(webDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "miso.json"),
+		[]byte(`{"shell":"zsh"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, scriptsDir, "dev")
+
+	cfg := config.Config{Scripts: "./scripts", Shell: "bash"}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d: %v", len(entries), labelsOf(entries))
+	}
+	if entries[0].Shell != "zsh" {
+		t.Errorf("Shell = %q, want zsh (member override)", entries[0].Shell)
+	}
+}
+
+// TestEntryLabelUsesPackageNameForm verifies multi-script members produce
+// "@scope/pkg/script" labels (not "@scope/pkg:script"), and a member with a
+// single matching script uses the bare package name.
+func TestEntryLabelUsesPackageNameForm(t *testing.T) {
+	multiDir := t.TempDir()
+	writePackageJSON(t, multiDir, map[string]string{
+		"dev":      "next dev",
+		"dev:next": "next dev --turbo",
+	})
+
+	singleDir := t.TempDir()
+	writePackageJSON(t, singleDir, map[string]string{
+		"dev": "vite",
+	})
+
+	workspaces := []WorkspaceInfo{
+		{Name: "@ekko/web", Dir: multiDir},
+		{Name: "@ekko/single", Dir: singleDir},
+	}
+
+	entries, err := DiscoverTuiScripts("dev", workspaces, "./scripts")
+	if err != nil {
+		t.Fatalf("DiscoverTuiScripts: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d: %v", len(entries), labelsOf(entries))
+	}
+
+	labels := labelsOf(entries)
+	sort.Strings(labels)
+	expected := []string{"@ekko/single", "@ekko/web/dev", "@ekko/web/dev:next"}
+	sort.Strings(expected)
+	for i, want := range expected {
+		if labels[i] != want {
+			t.Errorf("entry[%d]: label = %q, want %q", i, labels[i], want)
+		}
+	}
+}
+
 func TestDeduplicateLabels(t *testing.T) {
 	entries := []TuiScriptEntry{
 		{Label: "app", ScriptName: "dev", WorkspaceDir: "/ws/app"},
@@ -200,8 +369,8 @@ func TestDeduplicateLabels(t *testing.T) {
 
 	labels := labelsOf(result)
 	expected := map[string]bool{
-		"app:dev":      true,
-		"app:services": true,
+		"app/dev":      true,
+		"app/services": true,
 		"docker":       true,
 	}
 	if len(labels) != 3 {
@@ -227,6 +396,54 @@ func TestDeduplicateLabels_NoDuplicates(t *testing.T) {
 	}
 }
 
+// TestDiscoverTuiScriptsErrorsWhenScriptInBothSources verifies a member
+// defining the same script name in both scripts/ and package.json errors
+// instead of silently picking the folder script.
+func TestDiscoverTuiScriptsErrorsWhenScriptInBothSources(t *testing.T) {
+	dir := t.TempDir()
+	scriptsDir := filepath.Join(dir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, scriptsDir, "dev")
+	writePackageJSON(t, dir, map[string]string{"dev": "vite"})
+
+	_, err := DiscoverTuiScripts("dev", []WorkspaceInfo{{Name: "web", Dir: dir}}, "./scripts")
+	if err == nil {
+		t.Fatal("expected ambiguous-script error when dev is defined in both sources")
+	}
+	if !errors.Is(err, scripting.ErrAmbiguousScript) {
+		t.Errorf("error = %v, want ErrAmbiguousScript", err)
+	}
+}
+
+// TestDiscoverEntriesRootScriptWinsOverFanOut verifies a script resolving at
+// the root wins over fan-out, even when a member also defines it.
+func TestDiscoverEntriesRootScriptWinsOverFanOut(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"],"scripts":{"dev":"echo root"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(webDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePackageJSON(t, webDir, map[string]string{"dev": "vite"})
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 root entry (no fan-out), got %d: %v", len(entries), labelsOf(entries))
+	}
+	if entries[0].WorkspaceDir != root {
+		t.Errorf("entry dir = %q, want root %q", entries[0].WorkspaceDir, root)
+	}
+}
+
 // labelsOf returns the Label field from each entry in order.
 func labelsOf(entries []TuiScriptEntry) []string {
 	out := make([]string, len(entries))
@@ -234,4 +451,186 @@ func labelsOf(entries []TuiScriptEntry) []string {
 		out[i] = e.Label
 	}
 	return out
+}
+
+// TestDiscoverEntriesMemberConcurrentRunsWithinMember verifies a member's own
+// concurrent task (declared in that member's miso.json) is resolved within
+// that member, alongside its main script.
+func TestDiscoverEntriesMemberConcurrentRunsWithinMember(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/explorer"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	appDir := filepath.Join(root, "apps", "explorer")
+	scriptsDir := filepath.Join(appDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePackageJSON(t, appDir, map[string]string{"dev": "vite"})
+	writeScript(t, scriptsDir, "convex") // apps/explorer/scripts/convex.sh
+	if err := os.WriteFile(filepath.Join(appDir, "miso.json"),
+		[]byte(`{"repo":{"tasks":{"dev":{"concurrent":["convex"]}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	labels := labelsOf(entries)
+	if !slices.Contains(labels, "explorer/dev") || !slices.Contains(labels, "explorer/convex") {
+		t.Fatalf("want explorer/dev + explorer/convex, got %v", labels)
+	}
+}
+
+// TestDiscoverEntriesRootConcurrentTargetsMemberScope verifies a root-scope
+// concurrent entry written as "@member/script" resolves script inside that
+// member, not against the root scope.
+func TestDiscoverEntriesRootConcurrentTargetsMemberScope(t *testing.T) {
+	root := t.TempDir()
+	rootScripts := filepath.Join(root, "scripts")
+	if err := os.MkdirAll(rootScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, rootScripts, "dev") // root scripts/dev.sh → root-first single process
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	webScripts := filepath.Join(webDir, "scripts")
+	if err := os.MkdirAll(webScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, webScripts, "studio") // apps/web/scripts/studio.sh
+
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"@web/studio"}}},
+	}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	labels := labelsOf(entries)
+	if !slices.Contains(labels, "web") && !slices.Contains(labels, "web/studio") {
+		t.Fatalf("want a studio entry from the web member, got %v", labels)
+	}
+}
+
+// TestDiscoverEntriesMemberConcurrentCrossReferencesOtherMember verifies a
+// member's own concurrent entry written as "@other/script" resolves inside
+// that other member, not the declaring member — discoverMemberFanOut calling
+// resolveConcurrent with a non-nil local scope and an @-ref.
+func TestDiscoverEntriesMemberConcurrentCrossReferencesOtherMember(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/explorer","apps/worker"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	explorerDir := filepath.Join(root, "apps", "explorer")
+	if err := os.MkdirAll(explorerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePackageJSON(t, explorerDir, map[string]string{"dev": "vite"})
+	if err := os.WriteFile(filepath.Join(explorerDir, "miso.json"),
+		[]byte(`{"repo":{"tasks":{"dev":{"concurrent":["@worker/queue"]}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	workerScripts := filepath.Join(root, "apps", "worker", "scripts")
+	if err := os.MkdirAll(workerScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, workerScripts, "queue") // apps/worker/scripts/queue.sh
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	labels := labelsOf(entries)
+	if !slices.Contains(labels, "explorer") {
+		t.Fatalf("want explorer's own dev entry, got %v", labels)
+	}
+	if !slices.Contains(labels, "worker") {
+		t.Fatalf("want @worker/queue to resolve inside the worker member, got %v", labels)
+	}
+}
+
+// TestResolveConcurrentAtRefErrors verifies malformed and unknown @-refs in a
+// concurrent entry return errors instead of silently doing nothing.
+func TestResolveConcurrentAtRefErrors(t *testing.T) {
+	root := t.TempDir()
+	members := []workspace.Member{{Name: "web", Dir: filepath.Join(root, "apps", "web")}}
+	cfg := config.Config{Scripts: "./scripts"}
+
+	t.Run("missing slash", func(t *testing.T) {
+		if _, err := resolveConcurrent(cfg, "@web", root, nil, members); err == nil {
+			t.Fatal("expected error for @member with no /script")
+		}
+	})
+
+	t.Run("unknown member", func(t *testing.T) {
+		if _, err := resolveConcurrent(cfg, "@nope/script", root, nil, members); err == nil {
+			t.Fatal("expected error for unknown member @nope")
+		}
+	})
+}
+
+// TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename verifies an
+// "@member/script" concurrent entry resolves the member NAMED "web", not an
+// unrelated member whose directory basename happens to be "web" — the same
+// name-first tiering ResolveScopes already applies to explicit CLI @scopes.
+// The basename-collision workspace is listed first so an any-match, first-hit
+// loop (the pre-fix behavior) would have picked it by mistake.
+func TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename(t *testing.T) {
+	root := t.TempDir()
+	rootScripts := filepath.Join(root, "scripts")
+	if err := os.MkdirAll(rootScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScript(t, rootScripts, "dev") // root scripts/dev.sh → root-first single process
+
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["projects/legacy/web","apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyDir := filepath.Join(root, "projects", "legacy", "web")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "package.json"),
+		[]byte(`{"name":"legacy-web","scripts":{"build":"vite build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	webDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(webDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "package.json"),
+		[]byte(`{"name":"web","scripts":{"build":"vite build"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"@web/build"}}},
+	}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	labels := labelsOf(entries)
+	if !slices.Contains(labels, "web") {
+		t.Fatalf("want @web/build to resolve the member named web, got %v", labels)
+	}
+	if slices.Contains(labels, "legacy-web") {
+		t.Fatalf("resolved the dir-basename collision instead of the member named web: %v", labels)
+	}
 }

@@ -33,7 +33,7 @@ func fetchLatestVersion(client HTTPClient) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("fetch latest release: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
@@ -89,7 +89,7 @@ func extractBinaryFromTarGz(r io.Reader, entryName, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("open gzip: %w", err)
 	}
-	defer gr.Close()
+	defer func() { _ = gr.Close() }()
 
 	tr := tar.NewReader(gr)
 	for {
@@ -111,7 +111,7 @@ func extractBinaryFromTarGz(r io.Reader, entryName, destPath string) error {
 			return fmt.Errorf("create dest file: %w", err)
 		}
 		if _, err := io.Copy(f, tr); err != nil {
-			f.Close()
+			_ = f.Close()
 			return fmt.Errorf("write binary: %w", err)
 		}
 		return f.Close()
@@ -130,7 +130,7 @@ func installBinary(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("open source: %w", err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.CreateTemp(filepath.Dir(dst), ".miso-upgrade-*")
 	if err != nil {
@@ -138,24 +138,24 @@ func installBinary(src, dst string) error {
 	}
 	tmpDst := out.Name()
 	if err := out.Chmod(0755); err != nil {
-		out.Close()
-		os.Remove(tmpDst)
+		_ = out.Close()
+		_ = os.Remove(tmpDst)
 		return fmt.Errorf("chmod temp file: %w", err)
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(tmpDst)
+		_ = out.Close()
+		_ = os.Remove(tmpDst)
 		return fmt.Errorf("copy binary: %w", err)
 	}
 	if err := out.Close(); err != nil {
-		os.Remove(tmpDst)
+		_ = os.Remove(tmpDst)
 		return fmt.Errorf("close temp file: %w", err)
 	}
 	if err := os.Rename(tmpDst, dst); err != nil {
-		os.Remove(tmpDst)
+		_ = os.Remove(tmpDst)
 		return fmt.Errorf("rename to dest: %w", err)
 	}
-	os.Remove(src)
+	_ = os.Remove(src)
 	return nil
 }
 
@@ -167,7 +167,7 @@ func upgradeOneBinary(client HTTPClient, binaryName, version, target, entryName,
 	if err != nil {
 		return fmt.Errorf("download %s: %w", binaryName, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download %s failed: HTTP %d", binaryName, resp.StatusCode)
 	}
@@ -176,7 +176,7 @@ func upgradeOneBinary(client HTTPClient, binaryName, version, target, entryName,
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	const maxBinaryBytes = 100 * 1024 * 1024 // 100 MB
 	tmpBinary := filepath.Join(tmpDir, binaryName)
@@ -191,7 +191,7 @@ func upgradeOneBinary(client HTTPClient, binaryName, version, target, entryName,
 
 // Upgrade downloads the latest miso (and misox) binary from GitHub Releases
 // and replaces the current binary in-place. args is reserved for future flags.
-func Upgrade(args []string) error {
+func Upgrade(_ []string) error {
 	client := &http.Client{Timeout: 60 * time.Second}
 
 	// 1. Detect platform

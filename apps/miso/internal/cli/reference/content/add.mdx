@@ -1,0 +1,25 @@
+Adds one or more dependencies to your project.
+
+### When to use
+
+To pull in a new package. Flags pass straight through to the underlying package manager.
+
+### How it works
+
+Delegates to the detected package manager's add/install, forwarding every flag and package name unchanged.
+
+### Examples
+
+```bash
+miso add zod
+miso add -D vitest    # dev dependency
+miso add -E lodash    # exact version
+```
+
+### Flags
+
+All flags are forwarded to the package manager (`-D`, `-E`, `--global`, …).
+
+### Gotchas
+
+- A `scripts/` entry or a `package.json` script named `add` shadows this command.

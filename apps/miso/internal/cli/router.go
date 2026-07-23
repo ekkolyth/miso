@@ -38,7 +38,37 @@ type ParsedCLI struct {
 	ScriptArgs    []string
 	Command       string
 	Args          []string
-	WorkspaceName string // For @workspace/script syntax
+	WorkspaceName string   // For @workspace/script syntax
+	Scopes        []string // @-prefixed workspace filters (@web, @ekko/web)
+}
+
+// simple mode: folder scripts only, no package.json fallback.
+// main.go short-circuits simple mode before ParseCLI reaches here — this keeps
+// resolution correct for any other ParseCLI caller too.
+func resolveScript(name, root string, cfg config.Config) (scripting.ResolvedScript, error) {
+	if cfg.SimpleMode() {
+		return scripting.ResolveScriptFolderOnly(name, root, cfg)
+	}
+	return scripting.ResolveScript(name, root, cfg)
+}
+
+// scriptOverride resolves cmd as a folder/package.json script. It returns
+// (action, true, nil) when a single override exists, (_, false, nil) when none
+// does, and a fatal error when the name is defined in more than one place
+// (ErrAmbiguousScript). An ambiguous name must never fall through to the
+// built-in or passthrough — miso refuses to silently guess which you meant.
+func scriptOverride(cmd string, args []string, root string, cfg config.Config) (ParsedCLI, bool, error) {
+	resolved, err := resolveScript(cmd, root, cfg)
+	if err != nil {
+		if errors.Is(err, scripting.ErrAmbiguousScript) {
+			return ParsedCLI{}, false, err
+		}
+		return ParsedCLI{}, false, nil // other discovery errors are non-fatal
+	}
+	if resolved.Source == scripting.ScriptSourceNone {
+		return ParsedCLI{}, false, nil
+	}
+	return buildScriptAction(resolved, cmd, args), true, nil
 }
 
 func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) {
@@ -51,24 +81,27 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	// check built-in commands (can be overridden)
 	switch cmd {
 	case "install", "i":
-		// check script override
-		if resolved, err := scripting.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
-			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
+		if override, ok, err := scriptOverride(cmd, parseInlineArgs(args[1:]), root, cfg); err != nil {
+			return ParsedCLI{}, err
+		} else if ok {
+			return override, nil
 		}
 		return ParsedCLI{Action: ActionInstall}, nil
 	case "add":
-		// check script override
-		if resolved, err := scripting.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
-			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
+		if override, ok, err := scriptOverride(cmd, parseInlineArgs(args[1:]), root, cfg); err != nil {
+			return ParsedCLI{}, err
+		} else if ok {
+			return override, nil
 		}
 		if len(args) < 2 {
 			return ParsedCLI{}, errors.New("usage: miso add <pkg> [<pkg>...]")
 		}
 		return ParsedCLI{Action: ActionAdd, PackageNames: args[1:]}, nil
 	case "remove", "rm":
-		// check script override
-		if resolved, err := scripting.ResolveScript(cmd, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
-			return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
+		if override, ok, err := scriptOverride(cmd, parseInlineArgs(args[1:]), root, cfg); err != nil {
+			return ParsedCLI{}, err
+		} else if ok {
+			return override, nil
 		}
 		if len(args) < 2 {
 			return ParsedCLI{}, errors.New("usage: miso remove <pkg> [<pkg>...]")
@@ -78,29 +111,35 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		if len(args) < 2 {
 			return ParsedCLI{}, errors.New("usage: miso run <script> [<script>...] [-- <args...>]")
 		}
+		scopes, rest := extractScopes(args[1:])
 		// check for multiple scripts
-		scriptNames, scriptArgs := splitMultipleScripts(args[1:])
+		scriptNames, scriptArgs := splitMultipleScripts(rest)
 		if len(scriptNames) > 1 {
-			return ParsedCLI{Action: ActionRunMultiple, ScriptNames: scriptNames, ScriptArgs: scriptArgs}, nil
+			return ParsedCLI{Action: ActionRunMultiple, ScriptNames: scriptNames, ScriptArgs: scriptArgs, Scopes: scopes}, nil
 		}
 		if len(scriptNames) == 0 {
 			return ParsedCLI{}, errors.New("usage: miso run <script> [-- <args...>]")
 		}
 		script := scriptNames[0]
-		// check scripts folder and package.json
-		if resolved, err := scripting.ResolveScript(script, root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
-			return buildScriptAction(resolved, script, scriptArgs), nil
+		if override, ok, err := scriptOverride(script, scriptArgs, root, cfg); err != nil {
+			return ParsedCLI{}, err
+		} else if ok {
+			override.Scopes = scopes
+			return override, nil
 		}
 		// fall back to package manager
-		return ParsedCLI{Action: ActionRun, ScriptName: script, ScriptArgs: scriptArgs}, nil
+		return ParsedCLI{Action: ActionRun, ScriptName: script, ScriptArgs: scriptArgs, Scopes: scopes}, nil
 	case "dev":
-		inlineArgs := parseInlineArgs(args[1:])
-		// check scripts folder and package.json
-		if resolved, err := scripting.ResolveScript("dev", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
-			return buildScriptAction(resolved, "dev", inlineArgs), nil
+		scopes, rest := extractScopes(args[1:])
+		inlineArgs := parseInlineArgs(rest)
+		if override, ok, err := scriptOverride("dev", inlineArgs, root, cfg); err != nil {
+			return ParsedCLI{}, err
+		} else if ok {
+			override.Scopes = scopes
+			return override, nil
 		}
 		// dev is shortcut for "run dev"
-		return ParsedCLI{Action: ActionDev, ScriptArgs: inlineArgs}, nil
+		return ParsedCLI{Action: ActionDev, ScriptArgs: inlineArgs, Scopes: scopes}, nil
 	case "scripts":
 		return ParsedCLI{Action: ActionScripts}, nil
 	case "env":
@@ -110,9 +149,10 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	case "version", "v":
 		return ParsedCLI{Action: ActionVersion}, nil
 	case "upgrade":
-		// check script override
-		if resolved, err := scripting.ResolveScript("upgrade", root, cfg); err == nil && resolved.Source != scripting.ScriptSourceNone {
-			return buildScriptAction(resolved, "upgrade", parseInlineArgs(args[1:])), nil
+		if override, ok, err := scriptOverride("upgrade", parseInlineArgs(args[1:]), root, cfg); err != nil {
+			return ParsedCLI{}, err
+		} else if ok {
+			return override, nil
 		}
 		return ParsedCLI{
 			Action: ActionUpgrade,
@@ -120,45 +160,19 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		}, nil
 	}
 
-	// check for @workspace/script syntax
+	// @scope/script prefixed form was removed — guide to the verb-first standard.
 	if strings.HasPrefix(cmd, "@") {
-		inner := cmd[1:] // strip leading @
-		lastSlash := strings.LastIndex(inner, "/")
-		if lastSlash < 0 {
-			return ParsedCLI{}, fmt.Errorf("invalid workspace command %q: usage: @<workspace>/<script>", cmd)
-		}
-		workspaceName := inner[:lastSlash]
-		scriptName := inner[lastSlash+1:]
-		if workspaceName == "" || scriptName == "" {
-			return ParsedCLI{}, fmt.Errorf("invalid workspace command %q: usage: @<workspace>/<script>", cmd)
-		}
-		return ParsedCLI{
-			Action:        ActionWorkspaceScript,
-			WorkspaceName: workspaceName,
-			ScriptName:    scriptName,
-			ScriptArgs:    parseInlineArgs(args[1:]),
-		}, nil
+		return ParsedCLI{}, fmt.Errorf("run a workspace script as `miso <script> %s` (e.g. `miso dev %s`)", cmd, cmd)
 	}
 
-	// check scripts folder and package.json
-	resolved, err := scripting.ResolveScript(cmd, root, cfg)
-	if err != nil {
-		// handle script conflicts
-		if strings.Contains(err.Error(), "multiple scripts") {
-			return ParsedCLI{}, err
-		}
-		// discovery errors are non-fatal
+	scopes, rest := extractScopes(args[1:])
+	if override, ok, err := scriptOverride(cmd, parseInlineArgs(rest), root, cfg); err != nil {
+		return ParsedCLI{}, err
+	} else if ok {
+		override.Scopes = scopes
+		return override, nil
 	}
-	if resolved.Source != scripting.ScriptSourceNone {
-		return buildScriptAction(resolved, cmd, parseInlineArgs(args[1:])), nil
-	}
-
-	// passthrough to package manager
-	return ParsedCLI{
-		Action:  ActionPassthrough,
-		Command: cmd,
-		Args:    args[1:],
-	}, nil
+	return ParsedCLI{Action: ActionPassthrough, Command: cmd, Args: rest, Scopes: scopes}, nil
 }
 
 func parseInlineArgs(rest []string) []string {
@@ -168,6 +182,25 @@ func parseInlineArgs(rest []string) []string {
 		}
 	}
 	return rest
+}
+
+// extractScopes pulls @-prefixed workspace filters that appear before "--" out
+// of args. Filters keep their @ (matched later against the package name). Tokens
+// after "--" are passthrough and never scopes; original order is preserved.
+func extractScopes(args []string) (scopes, rest []string) {
+	past := false
+	for _, a := range args {
+		switch {
+		case a == "--":
+			past = true
+			rest = append(rest, a)
+		case !past && strings.HasPrefix(a, "@"):
+			scopes = append(scopes, a)
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return scopes, rest
 }
 
 // build script action from resolved script

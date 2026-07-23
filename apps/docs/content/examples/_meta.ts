@@ -1,5 +1,5 @@
 export default {
-    'single-repo': 'Single Repo',
+    'single-app': 'Single App',
     monorepo: 'Monorepo',
     'simple-mode': 'Simple Mode',
 }

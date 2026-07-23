@@ -1,6 +1,7 @@
 package env
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/testutil"
 )
 
 // writeTempEnv creates a temp .env file and returns the project root dir.
@@ -109,6 +111,7 @@ func TestRun_GroupedErrors_MultipleEntries(t *testing.T) {
 			{
 				Label: "alpha",
 				Path:  "a.env",
+				Scope: "global",
 				Variables: config.EnvVariables{
 					Array: []string{"MISSING_ONE", "MISSING_TWO"},
 				},
@@ -116,6 +119,7 @@ func TestRun_GroupedErrors_MultipleEntries(t *testing.T) {
 			{
 				Label: "beta",
 				Path:  "b.env",
+				Scope: "global",
 				Variables: config.EnvVariables{
 					Object: map[string]config.VarConfigOrString{
 						"BAD_PORT": {IsShorthand: true, Type: "port"},
@@ -145,6 +149,7 @@ func TestRun_SuccessfulEntries_StillPass(t *testing.T) {
 			{
 				Label: "good",
 				Path:  "good.env",
+				Scope: "global",
 				Variables: config.EnvVariables{
 					Object: map[string]config.VarConfigOrString{
 						"PORT": {IsShorthand: true, Type: "port"},
@@ -173,6 +178,7 @@ func TestRun_PassingEntryLogsInfo_WhenSiblingFails(t *testing.T) {
 			{
 				Label: "good",
 				Path:  "good.env",
+				Scope: "global",
 				Variables: config.EnvVariables{
 					Object: map[string]config.VarConfigOrString{
 						"PORT": {IsShorthand: true, Type: "port"},
@@ -183,6 +189,7 @@ func TestRun_PassingEntryLogsInfo_WhenSiblingFails(t *testing.T) {
 			{
 				Label: "bad",
 				Path:  "bad.env",
+				Scope: "global",
 				Variables: config.EnvVariables{
 					Array: []string{"MISSING_VAR"},
 				},
@@ -206,182 +213,181 @@ func TestRun_PassingEntryLogsInfo_WhenSiblingFails(t *testing.T) {
 	}
 }
 
-func TestBuildProcessEnv_SingleRepo_InjectsEnvFile(t *testing.T) {
-	dir := writeTempEnv(t, ".env.local", "DB_URL=postgres://localhost\nAPI_KEY=secret123\n")
+func TestRun_EmptyScopeIsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatalf("write temp env: %v", err)
+	}
 	cfg := config.Config{
 		Env: []*config.EnvEntry{
-			{Path: ".env.local"},
+			{Path: ".env"}, // no scope
 		},
 	}
-	environ, err := BuildProcessEnv(dir, cfg, dir)
-	if err != nil {
-		t.Fatalf("BuildProcessEnv() error: %v", err)
-	}
-	if environ == nil {
-		t.Fatal("environ is nil, want non-nil")
-	}
-	envMap := envSliceToMap(environ)
-	if envMap["DB_URL"] != "postgres://localhost" {
-		t.Errorf("DB_URL = %q, want %q", envMap["DB_URL"], "postgres://localhost")
-	}
-	if envMap["API_KEY"] != "secret123" {
-		t.Errorf("API_KEY = %q, want %q", envMap["API_KEY"], "secret123")
+	logger := log.New(io.Discard)
+	if err := Run(dir, cfg, logger); err == nil {
+		t.Error("expected error for entry with empty scope")
 	}
 }
 
-func TestBuildProcessEnv_ProcessEnvWins(t *testing.T) {
-	dir := writeTempEnv(t, ".env.local", "HOME=/from/file\n")
+func TestRun_DelegatedSkipsScopeRequirement(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatalf("write temp env: %v", err)
+	}
+	cfg := config.Config{
+		Repo: "turbo",
+		Env: []*config.EnvEntry{
+			{Path: ".env"}, // no scope — allowed in delegated mode
+		},
+	}
+	logger := log.New(io.Discard)
+	if err := Run(dir, cfg, logger); err != nil {
+		t.Errorf("delegated mode should not require scope: %v", err)
+	}
+}
+
+func TestRun_MemberLocalEnvEntry_MissingFileReported(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	memberDir := filepath.Join(dir, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	memberConfig := `{"scripts":"./scripts","env":[{"label":"member","path":".env.missing"}]}`
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"), []byte(memberConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	cfg := config.Config{
 		Env: []*config.EnvEntry{
-			{Path: ".env.local"},
+			{Label: "root", Path: ".env", Scope: "global"},
 		},
 	}
-	environ, err := BuildProcessEnv(dir, cfg, dir)
-	if err != nil {
-		t.Fatalf("BuildProcessEnv() error: %v", err)
-	}
-	envMap := envSliceToMap(environ)
-	if envMap["HOME"] == "/from/file" {
-		t.Error("HOME was overwritten by .env file, want process env to win")
+	logger := log.New(io.Discard)
+
+	if err := Run(dir, cfg, logger); err == nil {
+		t.Fatal("expected error for member env entry pointing at a missing file")
 	}
 }
 
-func TestBuildProcessEnv_NoConfig_Discovery(t *testing.T) {
-	dir := writeTempEnv(t, ".env.local", "DISCOVERED=yes\n")
-	cfg := config.Config{}
-	environ, err := BuildProcessEnv(dir, cfg, dir)
-	if err != nil {
-		t.Fatalf("BuildProcessEnv() error: %v", err)
-	}
-	envMap := envSliceToMap(environ)
-	if envMap["DISCOVERED"] != "yes" {
-		t.Errorf("DISCOVERED = %q, want %q", envMap["DISCOVERED"], "yes")
-	}
-}
-
-func TestBuildProcessEnv_NoConfig_NoFile_ReturnsNil(t *testing.T) {
+func TestRun_ReservedGlobalMemberName_IsError(t *testing.T) {
 	dir := t.TempDir()
-	cfg := config.Config{}
-	environ, err := BuildProcessEnv(dir, cfg, dir)
-	if err != nil {
-		t.Fatalf("BuildProcessEnv() error: %v", err)
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if environ != nil {
-		t.Errorf("environ = %v, want nil", environ)
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-}
+	memberDir := filepath.Join(dir, "apps", "global")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "package.json"), []byte(`{"name":"global"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-func TestBuildProcessEnv_MissingFile_SoftFail(t *testing.T) {
-	dir := t.TempDir()
 	cfg := config.Config{
 		Env: []*config.EnvEntry{
-			{Path: "nonexistent.env"},
+			{Label: "root", Path: ".env", Scope: "global"},
 		},
 	}
-	environ, err := BuildProcessEnv(dir, cfg, dir)
-	if err != nil {
-		t.Fatalf("BuildProcessEnv() should soft-fail, got error: %v", err)
+	logger := log.New(io.Discard)
+
+	err := Run(dir, cfg, logger)
+	if err == nil {
+		t.Fatal(`expected error for member named "global"`)
 	}
-	if environ != nil {
-		t.Errorf("environ should be nil when all files missing, got %d entries", len(environ))
+	if !strings.Contains(err.Error(), "reserved") {
+		t.Errorf("expected reserved-name error, got: %s", err.Error())
 	}
 }
 
-func TestBuildProcessEnv_Monorepo_ScopedByPath(t *testing.T) {
+func TestRun_UnknownScope_NotAnError(t *testing.T) {
 	dir := t.TempDir()
-	webDir := filepath.Join(dir, "apps", "web")
-	apiDir := filepath.Join(dir, "apps", "api")
-	os.MkdirAll(webDir, 0o755)
-	os.MkdirAll(apiDir, 0o755)
-	os.WriteFile(filepath.Join(webDir, ".env.local"), []byte("WEB_PORT=3000\n"), 0o644)
-	os.WriteFile(filepath.Join(apiDir, ".env"), []byte("API_PORT=4000\n"), 0o644)
-	cfg := config.Config{
-		Repo: "mono",
-		Env: []*config.EnvEntry{
-			{Label: "web", Path: "apps/web/.env.local"},
-			{Label: "api", Path: "apps/api/.env"},
-		},
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	environ, err := BuildProcessEnv(dir, cfg, webDir)
-	if err != nil {
-		t.Fatalf("BuildProcessEnv() error: %v", err)
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	envMap := envSliceToMap(environ)
-	if envMap["WEB_PORT"] != "3000" {
-		t.Errorf("WEB_PORT = %q, want %q", envMap["WEB_PORT"], "3000")
+	memberDir := filepath.Join(dir, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if envMap["API_PORT"] != "" {
-		t.Errorf("API_PORT = %q, want empty", envMap["API_PORT"])
-	}
-}
 
-func TestBuildProcessEnv_Monorepo_RootGetsAll(t *testing.T) {
-	dir := t.TempDir()
-	webDir := filepath.Join(dir, "apps", "web")
-	apiDir := filepath.Join(dir, "apps", "api")
-	os.MkdirAll(webDir, 0o755)
-	os.MkdirAll(apiDir, 0o755)
-	os.WriteFile(filepath.Join(webDir, ".env.local"), []byte("WEB_PORT=3000\n"), 0o644)
-	os.WriteFile(filepath.Join(apiDir, ".env"), []byte("API_PORT=4000\n"), 0o644)
-	cfg := config.Config{
-		Repo: "mono",
-		Env: []*config.EnvEntry{
-			{Label: "web", Path: "apps/web/.env.local"},
-			{Label: "api", Path: "apps/api/.env"},
-		},
-	}
-	environ, err := BuildProcessEnv(dir, cfg, dir)
-	if err != nil {
-		t.Fatalf("BuildProcessEnv() error: %v", err)
-	}
-	envMap := envSliceToMap(environ)
-	if envMap["WEB_PORT"] != "3000" {
-		t.Errorf("WEB_PORT = %q, want %q", envMap["WEB_PORT"], "3000")
-	}
-	if envMap["API_PORT"] != "4000" {
-		t.Errorf("API_PORT = %q, want %q", envMap["API_PORT"], "4000")
-	}
-}
-
-func TestBuildProcessEnv_Monorepo_NoConfig_PerWorkspaceDiscovery(t *testing.T) {
-	dir := t.TempDir()
-	webDir := filepath.Join(dir, "apps", "web")
-	os.MkdirAll(webDir, 0o755)
-	os.WriteFile(filepath.Join(webDir, ".env.local"), []byte("DISCOVERED_WEB=yes\n"), 0o644)
-	cfg := config.Config{Repo: "mono"}
-	environ, err := BuildProcessEnv(dir, cfg, webDir)
-	if err != nil {
-		t.Fatalf("BuildProcessEnv() error: %v", err)
-	}
-	envMap := envSliceToMap(environ)
-	if envMap["DISCOVERED_WEB"] != "yes" {
-		t.Errorf("DISCOVERED_WEB = %q, want %q", envMap["DISCOVERED_WEB"], "yes")
-	}
-}
-
-func TestBuildProcessEnv_MultipleEntries_LaterWins(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "a.env"), []byte("SHARED=from_a\nONLY_A=yes\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "b.env"), []byte("SHARED=from_b\nONLY_B=yes\n"), 0o644)
 	cfg := config.Config{
 		Env: []*config.EnvEntry{
-			{Path: "a.env"},
-			{Path: "b.env"},
+			{Label: "root", Path: ".env", Scope: "nonexistent-member"},
 		},
 	}
-	environ, err := BuildProcessEnv(dir, cfg, dir)
-	if err != nil {
-		t.Fatalf("BuildProcessEnv() error: %v", err)
+	var buf strings.Builder
+	logger := log.NewWithOptions(&buf, log.Options{})
+
+	// a scope may name a root script/task, so a non-member scope is neither an
+	// error nor a warning — the entry just validates as a root entry.
+	if err := Run(dir, cfg, logger); err != nil {
+		t.Fatalf("unknown scope must not error, got: %v", err)
 	}
-	envMap := envSliceToMap(environ)
-	if envMap["SHARED"] != "from_b" {
-		t.Errorf("SHARED = %q, want %q (later entry should win)", envMap["SHARED"], "from_b")
+	if strings.Contains(buf.String(), "scope matches no known member") {
+		t.Errorf("unknown scope must not warn, got: %s", buf.String())
 	}
-	if envMap["ONLY_A"] != "yes" {
-		t.Errorf("ONLY_A = %q, want %q", envMap["ONLY_A"], "yes")
+}
+
+func TestRun_DiscoverMembersError_ReturnsWrappedError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte("{not valid json"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if envMap["ONLY_B"] != "yes" {
-		t.Errorf("ONLY_B = %q, want %q", envMap["ONLY_B"], "yes")
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{Label: "root", Path: ".env", Scope: "global"},
+		},
+	}
+	logger := log.New(io.Discard)
+
+	err := Run(dir, cfg, logger)
+	if err == nil {
+		t.Fatal("expected error for malformed package.json")
+	}
+	if !strings.Contains(err.Error(), "discover members") {
+		t.Errorf("expected wrapped discover members error, got: %s", err.Error())
+	}
+}
+
+func TestHasEnvFlag(t *testing.T) {
+	testutil.Equal(t, HasEnvFlag([]string{"run", "--env", "build"}), true)
+	testutil.Equal(t, HasEnvFlag([]string{"run", "build"}), false)
+}
+
+func TestStripEnvFlag(t *testing.T) {
+	got := StripEnvFlag([]string{"run", "--env", "build"})
+	if len(got) != 2 || got[0] != "run" || got[1] != "build" {
+		t.Fatalf("StripEnvFlag = %v, want [run build]", got)
+	}
+}
+
+func TestStripEnvFromFlags(t *testing.T) {
+	cfg := config.Config{Flags: map[string][]string{
+		"install": {"--frozen-lockfile", "--env"},
+		"add":     {"--env"},
+	}}
+	out := StripEnvFromFlags(cfg)
+	for k, v := range out.Flags {
+		for _, f := range v {
+			if f == EnvFlag {
+				t.Errorf("flag group %q still contains %s", k, EnvFlag)
+			}
+		}
 	}
 }
 

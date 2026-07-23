@@ -1,6 +1,7 @@
 {
 	"$schema": "https://json-schema.org/draft-07/schema#",
 	"$id": "https://misojs.dev/miso.schema.json",
+	"version": "0.5.2",
 	"title": "Miso Configuration",
 	"description": "Configuration for Miso package manager",
 	"type": "object",
@@ -36,16 +37,16 @@
 			"oneOf": [
 				{
 					"type": "string",
-					"enum": ["single", "mono", "turbo", "nx"],
-					"description": "Repository type. 'single' for standard projects, 'mono' for miso-orchestrated monorepo, 'turbo' to delegate to Turborepo, 'nx' to delegate to Nx."
+					"enum": ["miso", "turbo", "nx"],
+					"description": "Orchestration mode. 'miso' (default) discovers workspace members from package.json workspaces or pnpm-workspace.yaml and fans out task execution; 'turbo' delegates to Turborepo; 'nx' delegates to Nx. Workspace membership is detected independently of this setting."
 				},
 				{
 					"type": "object",
 					"properties": {
 						"mode": {
 							"type": "string",
-							"enum": ["single", "mono", "turbo", "nx"],
-							"description": "Repository mode. Defaults to 'single' if omitted."
+							"enum": ["miso", "turbo", "nx"],
+							"description": "Orchestration mode. Defaults to 'miso' if omitted."
 						},
 						"tasks": {
 							"type": "object",
@@ -71,15 +72,15 @@
 				"additionalProperties": false
 			}
 		],
-		"default": "single",
-			"description": "Repository type and optional task configuration. String shorthand or object with mode and tasks."
+		"default": "miso",
+			"description": "Orchestration mode and optional task configuration. String shorthand or object with mode and tasks. Workspace membership is auto-detected from package.json workspaces or pnpm-workspace.yaml, independent of this setting."
 		},
 		"tui": {
 			"oneOf": [
 				{
 					"type": "string",
 					"enum": ["off", "tabbed", "merged"],
-					"description": "TUI mode shorthand. 'off' disables TUI (default), 'tabbed' shows panes in separate tabs, 'merged' shows all output in a single stream."
+					"description": "TUI mode shorthand. 'tabbed' shows panes in separate tabs (default), 'merged' shows all output in a single stream, 'off' disables the chrome — orchestration (fan-out, concurrent, dependsOn) still runs, output streams as plain prefixed lines."
 				},
 				{
 					"type": "object",
@@ -99,7 +100,7 @@
 					"additionalProperties": false
 				}
 			],
-			"default": "off",
+			"default": "tabbed",
 			"description": "Multi-terminal UI mode. String shorthand or object with mode and cleanExit option."
 		},
 		"env": {
@@ -127,6 +128,10 @@
 			"type": "object",
 			"description": "A single env file and its validation rules",
 			"properties": {
+				"scope": {
+					"type": "string",
+					"description": "Target name this entry applies to, or \"global\". Required on root config entries; member configs scope by file location."
+				},
 				"label": {
 					"type": "string",
 					"description": "Human-readable name for this env entry (e.g. 'web', 'api'). Used in log and error output."
@@ -137,6 +142,10 @@
 						{ "type": "array", "items": { "type": "string" } }
 					],
 					"description": "Path to the .env file, relative to project root (string). A legacy array is accepted; only the first element is used."
+				},
+				"override": {
+					"type": "string",
+					"description": "Path to this scope's override file, layered over populated values by `miso env -g -o` (override wins)."
 				},
 				"required": {
 					"oneOf": [

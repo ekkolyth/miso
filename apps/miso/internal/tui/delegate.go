@@ -3,16 +3,20 @@ package tui
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/proc"
 	"github.com/ekkolyth/miso/internal/turbo"
 )
 
@@ -27,13 +31,54 @@ func parseNxHeader(line string) (label string, isHeader bool) {
 	return m[1], true
 }
 
-// DelegateLaunch spawns turbo or nx as a single process and renders its output
-// in the miso TUI. Returns (true, nil) if the TUI ran successfully.
-func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs []string) (bool, error) {
-	if !cfg.TuiEnabled() {
-		return false, nil
-	}
+// metaTabLabel is the synthetic tab carrying turbo's own (non-task) output; it
+// is pinned below the real workspace tabs.
+const metaTabLabel = "turbo"
 
+// FORCE_COLOR=1 unless the caller already set FORCE_COLOR or opted out via
+// NO_COLOR (NO_COLOR wins, matching turbo/nx and the no-color.org convention).
+// Shared by the delegate and plain paths — both pipe their children.
+func forceColorEnv(base []string) []string {
+	for _, kv := range base {
+		key, _, _ := strings.Cut(kv, "=")
+		if key == "NO_COLOR" || key == "FORCE_COLOR" {
+			return base
+		}
+	}
+	return append(base, "FORCE_COLOR=1")
+}
+
+// delegateFilterArgs builds the scope-filter flags for a delegated run. turbo
+// takes one --filter=<name> per member; nx takes a single comma-joined
+// --projects=<a>,<b>.
+func delegateFilterArgs(mode string, filters []string) []string {
+	if len(filters) == 0 {
+		return nil
+	}
+	switch mode {
+	case "nx":
+		return []string{"--projects=" + strings.Join(filters, ",")}
+	default: // turbo
+		out := make([]string, 0, len(filters))
+		for _, name := range filters {
+			out = append(out, "--filter="+name)
+		}
+		return out
+	}
+}
+
+// DelegateLaunch spawns turbo or nx: chrome (the miso TUI) with an
+// interactive TTY and tui != off, plain with inherited stdio otherwise —
+// forwarding SIGINT/SIGTERM either way. A resolved delegate task always runs
+// one of the two, never falling through to package-manager execution, so a
+// nonzero delegate exit surfaces as a non-nil error.
+//
+// The delegated process is deliberately NOT given a pseudo-terminal (unlike the
+// direct-spawn ProcessManager.Start path). turbo and nx orchestrate their own
+// child processes — and turbo runs its own TTY-aware UI — so miso supplies only
+// the chrome (sidebar/tabs + log rendering) and leaves process lifecycle and
+// stdin to them. A pty here would collide with turbo's own terminal UI.
+func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs []string, filters []string) (bool, error) {
 	mode := cfg.RepoMode()
 
 	// Verify the binary exists
@@ -46,17 +91,33 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	var delegateArgs []string
 	switch mode {
 	case "turbo":
-		delegateArgs = append([]string{"run", scriptName, "--log-order=stream"}, extraArgs...)
+		delegateArgs = append([]string{"run", scriptName, "--log-order=stream"}, delegateFilterArgs(mode, filters)...)
+		delegateArgs = append(delegateArgs, extraArgs...)
 	case "nx":
-		delegateArgs = []string{"run-many", "--target=" + scriptName}
+		delegateArgs = append([]string{"run-many", "--target=" + scriptName}, delegateFilterArgs(mode, filters)...)
 	default:
 		return false, fmt.Errorf("unsupported delegated mode: %s", mode)
+	}
+
+	// miso pipes turbo/nx output, so they'd see a non-tty and strip color.
+	// FORCE_COLOR mirrors what a real terminal gives them: turbo/nx run their
+	// normal color path and forward FORCE_COLOR to tasks, matching a direct
+	// `turbo run`. NO_COLOR still wins per the shared convention.
+	env := forceColorEnv(os.Environ())
+
+	hasTTY := hasInteractiveTTY()
+	if SelectRenderer(cfg, hasTTY) == RendererPlain {
+		if !hasTTY && len(filters) == 0 {
+			fmt.Fprintln(os.Stderr, "miso: no interactive terminal — running plain")
+		}
+		return delegateRunPlain(mode, binary, delegateArgs, root, env)
 	}
 
 	// Build the command
 	cmd := exec.Command(binary, delegateArgs...)
 	cmd.Dir = root
-	setProcGroup(cmd)
+	cmd.Env = env
+	proc.SetGroup(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -82,7 +143,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	}
 
 	p := tea.NewProgram(model)
-	pm.SetProgram(p)
+	pm.SetSink(programSink{prog: p})
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -97,39 +158,47 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		if label == "" {
 			return
 		}
-		proc := pm.findProc(label)
-		if proc == nil {
+		process := pm.findProc(label)
+		if process == nil {
 			entry := TuiScriptEntry{Label: label, ScriptName: scriptName, WorkspaceDir: root}
-			proc = pm.Add(entry, "", nil, root, nil)
-			proc.State = StateRunning
-			pm.sendState(proc, StateRunning, 0)
+			process = pm.Add(entry, "", nil, root, nil)
+			process.State = StateRunning
+			pm.sendState(process, StateRunning, 0)
+			pm.PinLast(metaTabLabel)
 		}
-		proc.Buffer.Write(text)
-		pm.sendOutput(proc, text)
+		process.Buffer.Write(text)
+		pm.sendLine(process, OpAppend{Text: text})
 	}
 
 	// routeTurbo handles turbo output with per-task exit codes and cache metadata.
-	routeTurbo := func(meta turbo.LineMeta) {
-		if meta.Skip || meta.Label == "" {
+	// Lines with no task prefix (turbo's own orchestration, warnings, errors) are
+	// surfaced under a "turbo" tab instead of dropped — otherwise a failed or
+	// task-less run leaves the TUI blank and quits with no explanation.
+	routeTurbo := func(meta turbo.LineMeta, raw string) {
+		if meta.Label == "" {
+			if strings.TrimSpace(raw) != "" {
+				routeBasic(metaTabLabel, raw)
+			}
 			return
 		}
-		proc := pm.findProc(meta.Label)
-		if proc == nil {
+		process := pm.findProc(meta.Label)
+		if process == nil {
 			entry := TuiScriptEntry{Label: meta.Label, ScriptName: scriptName, WorkspaceDir: root}
-			proc = pm.Add(entry, "", nil, root, nil)
-			proc.State = StateRunning
-			pm.sendState(proc, StateRunning, 0)
+			process = pm.Add(entry, "", nil, root, nil)
+			process.State = StateRunning
+			pm.sendState(process, StateRunning, 0)
+			pm.PinLast(metaTabLabel)
 		}
 		if meta.IsExit {
-			proc.mu.Lock()
-			proc.State = StateExited
-			proc.ExitCode = meta.ExitCode
-			proc.mu.Unlock()
-			pm.sendState(proc, StateExited, meta.ExitCode)
+			process.mu.Lock()
+			process.State = StateExited
+			process.ExitCode = meta.ExitCode
+			process.mu.Unlock()
+			pm.sendState(process, StateExited, meta.ExitCode)
 			return
 		}
-		proc.Buffer.Write(meta.Text)
-		pm.sendOutput(proc, meta.Text)
+		process.Buffer.Write(meta.Text)
+		pm.sendLine(process, OpAppend{Text: meta.Text})
 	}
 
 	// Start the delegated process and output parsing in a goroutine.
@@ -145,7 +214,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		var scanWg sync.WaitGroup
 		scanWg.Add(2)
 
-		scanPipe := func(r interface{ Read([]byte) (int, error) }) {
+		scanPipe := func(r io.Reader) {
 			defer scanWg.Done()
 			scanner := bufio.NewScanner(r)
 			currentNxLabel := ""
@@ -153,7 +222,7 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 				line := stripNonColorANSI(scanner.Text())
 				switch mode {
 				case "turbo":
-					routeTurbo(turbo.ParseLine(line))
+					routeTurbo(turbo.ParseLine(line), line)
 				case "nx":
 					if hdrLabel, isHdr := parseNxHeader(line); isHdr {
 						currentNxLabel = hdrLabel
@@ -189,14 +258,14 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		nProcs := len(procs)
 		pm.mu.Unlock()
 
-		for _, proc := range procs {
-			proc.mu.Lock()
-			if proc.State != StateExited {
-				proc.State = StateExited
-				proc.ExitCode = code
+		for _, process := range procs {
+			process.mu.Lock()
+			if process.State != StateExited {
+				process.State = StateExited
+				process.ExitCode = code
 			}
-			proc.mu.Unlock()
-			pm.sendState(proc, StateExited, proc.ExitCode)
+			process.mu.Unlock()
+			pm.sendState(process, StateExited, process.ExitCode)
 		}
 
 		// If turbo exited before producing any workspace output (e.g. config error),
@@ -216,14 +285,54 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	// Kill the delegated process group
 	if cmd.Process != nil {
 		pgid := cmd.Process.Pid
-		_ = killGroup(pgid, syscall.SIGTERM)
+		_ = proc.KillGroup(pgid, syscall.SIGTERM)
 	}
 
-	failed := pm.FailedCount()
-	if failed > 0 {
-		total := len(pm.Processes)
-		fmt.Fprintf(os.Stderr, "miso: %d of %d tasks failed\n", failed, total)
+	if err != nil {
+		return true, err
+	}
+	if failed := pm.FailedCount(); failed > 0 {
+		return true, fmt.Errorf("%d of %d tasks failed", failed, len(pm.Processes))
+	}
+	return true, nil
+}
+
+// execs the delegate binary directly with inherited stdio — no pty, no
+// ProcessManager, no bubbletea. turbo/nx render their own output straight to
+// the terminal (or pipe). SIGINT/SIGTERM stop miso itself, so they are
+// forwarded to the delegate's process group the same way ExecScriptFile
+// forwards them to a spawned script: SIGTERM first, SIGKILL after a grace
+// period if it hasn't exited. A signal-triggered stop is not itself reported
+// as an error — only the delegate's own nonzero exit is
+func delegateRunPlain(mode, binary string, delegateArgs []string, root string, env []string) (bool, error) {
+	cmd := exec.Command(binary, delegateArgs...)
+	cmd.Dir = root
+	cmd.Env = env
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	proc.SetGroup(cmd)
+
+	if err := cmd.Start(); err != nil {
+		return true, fmt.Errorf("start %s: %w", mode, err)
 	}
 
-	return true, err
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	select {
+	case <-sigCh:
+		pgid := cmd.Process.Pid
+		_ = proc.KillGroup(pgid, syscall.SIGTERM)
+		killTimer := time.AfterFunc(2*time.Second, func() { _ = proc.KillGroup(pgid, syscall.SIGKILL) })
+		<-done
+		killTimer.Stop() // delegate already exited; don't SIGKILL a recycled pid
+		return true, nil
+	case err := <-done:
+		return true, err
+	}
 }

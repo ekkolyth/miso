@@ -1,0 +1,158 @@
+package tui
+
+import (
+	"bytes"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+)
+
+func TestKeyToBytes(t *testing.T) {
+	tests := []struct {
+		name string
+		key  tea.Key
+		want []byte
+	}{
+		{"printable", tea.Key{Text: "a"}, []byte("a")},
+		{"shifted", tea.Key{Text: "A"}, []byte("A")},
+		{"digit", tea.Key{Text: "1"}, []byte("1")},
+		{"enter", tea.Key{Code: tea.KeyEnter}, []byte{'\r'}},
+		{"tab", tea.Key{Code: tea.KeyTab}, []byte{'\t'}},
+		{"backspace", tea.Key{Code: tea.KeyBackspace}, []byte{0x7f}},
+		{"escape", tea.Key{Code: tea.KeyEscape}, []byte{0x1b}},
+		{"up", tea.Key{Code: tea.KeyUp}, []byte("\x1b[A")},
+		{"down", tea.Key{Code: tea.KeyDown}, []byte("\x1b[B")},
+		{"right", tea.Key{Code: tea.KeyRight}, []byte("\x1b[C")},
+		{"left", tea.Key{Code: tea.KeyLeft}, []byte("\x1b[D")},
+		{"ctrl+c", tea.Key{Code: 'c', Mod: tea.ModCtrl}, []byte{0x03}},
+		{"ctrl+r", tea.Key{Code: 'r', Mod: tea.ModCtrl}, []byte{0x12}},
+		{"f1", tea.Key{Code: tea.KeyF1}, []byte("\x1bOP")},
+		{"f5", tea.Key{Code: tea.KeyF5}, []byte("\x1b[15~")},
+		{"f12", tea.Key{Code: tea.KeyF12}, []byte("\x1b[24~")},
+		{"home", tea.Key{Code: tea.KeyHome}, []byte("\x1b[H")},
+		{"end", tea.Key{Code: tea.KeyEnd}, []byte("\x1b[F")},
+		{"delete", tea.Key{Code: tea.KeyDelete}, []byte("\x1b[3~")},
+		{"pgup", tea.Key{Code: tea.KeyPgUp}, []byte("\x1b[5~")},
+		{"alt+a", tea.Key{Text: "a", Mod: tea.ModAlt}, []byte("\x1ba")},
+		{"ctrl+space", tea.Key{Code: tea.KeySpace, Mod: tea.ModCtrl}, []byte{0}},
+		{"shift+up", tea.Key{Code: tea.KeyUp, Mod: tea.ModShift}, []byte("\x1b[1;2A")},
+		{"ctrl+left", tea.Key{Code: tea.KeyLeft, Mod: tea.ModCtrl}, []byte("\x1b[1;5D")},
+		{"plain up unaffected by mod handling", tea.Key{Code: tea.KeyUp}, []byte("\x1b[A")},
+		{"unknown", tea.Key{Code: tea.KeyF13}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := keyToBytes(tt.key)
+			if string(got) != string(tt.want) {
+				t.Errorf("keyToBytes(%v) = %v, want %v", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTabbedInteractiveRouting(t *testing.T) {
+	var sink bytes.Buffer
+	proc := &Process{stdin: &sink, State: StateRunning, Buffer: NewRingBuffer(10)}
+	pm := &ProcessManager{Processes: []*Process{proc}}
+	m := TabbedModel{pm: pm, keys: DefaultTabbedKeyMap()}
+
+	// 'i' enters interactive mode
+	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "i", Code: 'i'}))
+	m = next.(TabbedModel)
+	if !m.interactive {
+		t.Fatal("expected interactive mode after 'i'")
+	}
+
+	// 'r' forwards to the child instead of restarting
+	next, _ = m.Update(tea.KeyPressMsg(tea.Key{Text: "r", Code: 'r'}))
+	m = next.(TabbedModel)
+	if sink.String() != "r" {
+		t.Errorf("expected 'r' forwarded to stdin, got %q", sink.String())
+	}
+
+	// ctrl+z exits interactive mode
+	next, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: 'z', Mod: tea.ModCtrl}))
+	m = next.(TabbedModel)
+	if m.interactive {
+		t.Error("expected interactive mode off after ctrl+z")
+	}
+}
+
+func TestMergedInteractiveRouting(t *testing.T) {
+	var sink bytes.Buffer
+	proc := &Process{stdin: &sink, State: StateRunning, Buffer: NewRingBuffer(10)}
+	pm := &ProcessManager{Processes: []*Process{proc}}
+	m := MergedModel{pm: pm, keys: DefaultMergedKeyMap(), visible: map[int]bool{0: true}}
+
+	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "i", Code: 'i'}))
+	m = next.(MergedModel)
+	if !m.interactive {
+		t.Fatal("expected interactive mode after 'i'")
+	}
+
+	next, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	m = next.(MergedModel)
+	if sink.String() != "\r" {
+		t.Errorf("expected enter forwarded as CR, got %q", sink.String())
+	}
+
+	next, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: 'z', Mod: tea.ModCtrl}))
+	m = next.(MergedModel)
+	if m.interactive {
+		t.Error("expected interactive mode off after ctrl+z")
+	}
+}
+
+func TestModifierClickPassthrough(t *testing.T) {
+	pmT := &ProcessManager{Processes: []*Process{{Buffer: NewRingBuffer(10)}}}
+	mt := TabbedModel{pm: pmT, width: 80, height: 24}
+	next, _ := mt.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 40, Y: 5, Mod: tea.ModAlt})
+	if next.(TabbedModel).sel.active {
+		t.Error("tabbed: modifier+click should not start selection")
+	}
+
+	pmM := &ProcessManager{Processes: []*Process{{Entry: TuiScriptEntry{Label: "web"}}}}
+	mm := MergedModel{pm: pmM, width: 80, height: 24, visible: map[int]bool{0: true}}
+	next2, _ := mm.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 40, Y: 5, Mod: tea.ModAlt})
+	if next2.(MergedModel).sel.active {
+		t.Error("merged: modifier+click should not start selection")
+	}
+}
+
+func TestTabbedPasteForwards(t *testing.T) {
+	var sink bytes.Buffer
+	proc := &Process{stdin: &sink, State: StateRunning, Buffer: NewRingBuffer(10)}
+	pm := &ProcessManager{Processes: []*Process{proc}}
+
+	m := TabbedModel{pm: pm, interactive: true}
+	m.Update(tea.PasteMsg{Content: "hello"})
+	if sink.String() != "hello" {
+		t.Errorf("expected paste forwarded to stdin, got %q", sink.String())
+	}
+
+	sink.Reset()
+	m = TabbedModel{pm: pm, interactive: false}
+	m.Update(tea.PasteMsg{Content: "hello"})
+	if sink.String() != "" {
+		t.Errorf("expected no paste forwarded outside interactive mode, got %q", sink.String())
+	}
+}
+
+func TestMergedPasteForwards(t *testing.T) {
+	var sink bytes.Buffer
+	proc := &Process{stdin: &sink, State: StateRunning, Buffer: NewRingBuffer(10)}
+	pm := &ProcessManager{Processes: []*Process{proc}}
+
+	m := MergedModel{pm: pm, visible: map[int]bool{0: true}, interactive: true}
+	m.Update(tea.PasteMsg{Content: "hello"})
+	if sink.String() != "hello" {
+		t.Errorf("expected paste forwarded to stdin, got %q", sink.String())
+	}
+
+	sink.Reset()
+	m = MergedModel{pm: pm, visible: map[int]bool{0: true}, interactive: false}
+	m.Update(tea.PasteMsg{Content: "hello"})
+	if sink.String() != "" {
+		t.Errorf("expected no paste forwarded outside interactive mode, got %q", sink.String())
+	}
+}

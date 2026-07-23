@@ -88,9 +88,34 @@ mkdir -p "$INSTALL_DIR"
 chmod +x "$EXTRACTED_BINARY"
 mv "$EXTRACTED_BINARY" "${INSTALL_DIR}/miso"
 
+# ── Download + install misox (standalone npx stand-in) ────────────────────────
+
+MISOX_ARCHIVE="misox_${VERSION}_${OS}_${ARCH}.tar.gz"
+MISOX_URL="https://github.com/${REPO}/releases/download/${TAG}/${MISOX_ARCHIVE}"
+MISOX_ARCHIVE_PATH="${TMP_DIR}/${MISOX_ARCHIVE}"
+
+info "Downloading ${MISOX_URL}..."
+
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "$MISOX_URL" -o "$MISOX_ARCHIVE_PATH"
+else
+  wget -qO "$MISOX_ARCHIVE_PATH" "$MISOX_URL"
+fi
+
+tar -xzf "$MISOX_ARCHIVE_PATH" -C "$TMP_DIR"
+
+MISOX_BINARY="${TMP_DIR}/misox-${OS}-${ARCH}"
+if [ ! -f "$MISOX_BINARY" ]; then
+  fail "Could not find binary 'misox-${OS}-${ARCH}' in archive. Archive contents: $(ls "$TMP_DIR")"
+fi
+
+chmod +x "$MISOX_BINARY"
+mv "$MISOX_BINARY" "${INSTALL_DIR}/misox"
+
 # ── PATH hint ─────────────────────────────────────────────────────────────────
 
 ok "miso v${VERSION} installed to ${INSTALL_DIR}/miso"
+ok "misox v${VERSION} installed to ${INSTALL_DIR}/misox"
 
 case ":${PATH}:" in
   *":${INSTALL_DIR}:"*) ;;  # already on PATH

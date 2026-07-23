@@ -11,13 +11,13 @@ Miso includes a built-in terminal UI for running multiple scripts concurrently.
 
 ### Tabbed Mode
 
-[Tabbed Mode Docs →](/tui/tabbed-mode)
+[Tabbed Mode Docs →](/tui/modes#tabbed-mode)
 
 A sidebar lists your workspaces/scripts with status indicators. Select one to see its full log output. Navigate with arrow keys, restart individual processes with `r`.
 
 ### Merged Mode
 
-[Merged Mode Docs →](/tui/merged-mode)
+[Merged Mode Docs →](/tui/modes#merged-mode)
 
 All logs stream together in one view with color-coded labels per workspace. A filter bar lets you toggle which workspaces are visible.
 
@@ -49,6 +49,18 @@ miso dev
 
 Miso discovers all matching scripts and launches the TUI.
 
+## Interactive Mode
+
+Press `i` to hand keyboard input to the focused task. Every keystroke is forwarded to that process's stdin — press `r` to reload Metro, trigger a bundler's shortcuts, and so on. Press `Ctrl+Z` to leave interactive mode and return to miso's own controls.
+
+On Unix, each task runs in its own pseudo-terminal, so tools that gate color or interactive prompts on a TTY (dev servers, bundlers, Storybook) render exactly as they would when run directly (Windows uses pipes instead) — and long-lived dev servers such as Electron and Vite stay alive instead of shutting down on a closed stdin.
+
+Interactive mode applies to tasks miso orchestrates directly. In delegated mode (Turbo/Nx) turbo owns the child processes, so `i` is unavailable there — see [Turborepo Integration](/tui/turborepo-integration).
+
+## Non-interactive Environments
+
+When no terminal is attached — CI, a piped command, `docker` without `-t`, or an agent — miso prints `miso: no interactive terminal — running plain` and runs the script with normal inherited stdio instead of the TUI. Nothing hangs or crashes.
+
 ## Dependency Ordering
 
 For build commands that need to run in order, configure `dependsOn` in the `repo` field:
@@ -60,7 +72,7 @@ For build commands that need to run in order, configure `dependsOn` in the `repo
     config={`{
 \t"tui": "tabbed",
 \t"repo": {
-\t\t"mode": "mono",
+\t\t"mode": "miso",
 \t\t"tasks": {
 \t\t\t"build": {
 \t\t\t\t"dependsOn": ["^build"]

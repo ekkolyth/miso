@@ -1,0 +1,1 @@
+{ "packageManager": false, "scripts": "./scripts", "env": [{ "scope": "global", "label": "app", "path": ".env", "variables": { "PORT": "port" } }] }

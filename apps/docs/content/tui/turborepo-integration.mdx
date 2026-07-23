@@ -29,8 +29,10 @@ When you run `miso dev` or `miso build` with turbo mode:
 
 1. Miso spawns `turbo run <task>` as a single process
 2. Turbo handles dependency ordering, caching, and parallelism
-3. Miso displays the process output it in the TUI with per-workspace tabs
+3. Miso displays the process output in the TUI with per-workspace tabs
 4. Each workspace gets its own tab with independent scroll, exit code, and cache status
+
+You can still target specific workspaces with an `@scope` — miso passes it through as `turbo --filter` (or `nx --projects`).
 
 ### With TUI enabled
 
@@ -49,6 +51,8 @@ Miso stays invisible. Your command falls through to the package manager, which r
 | Parallelism                     | Turbo                   |
 | Output display (TUI)            | Miso                    |
 | Task discovery (`miso scripts`) | Miso (reads turbo.json) |
+
+Because turbo owns the child processes in delegated mode, miso's per-process features — single-task restart (`r`), interactive mode (`i`), and the per-task pseudo-terminal — apply only to tasks miso orchestrates directly (see [Overriding Tasks](#overriding-tasks-with-miso-orchestration) below). Delegated output is rendered as it arrives.
 
 ## Overriding Tasks with Miso Orchestration
 

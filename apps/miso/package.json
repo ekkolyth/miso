@@ -13,12 +13,10 @@
     "bin/miso-darwin-arm64",
     "bin/miso-linux-amd64",
     "bin/miso-linux-arm64",
-    "bin/miso-windows-amd64.exe",
     "bin/misox-darwin-amd64",
     "bin/misox-darwin-arm64",
     "bin/misox-linux-amd64",
-    "bin/misox-linux-arm64",
-    "bin/misox-windows-amd64.exe"
+    "bin/misox-linux-arm64"
   ],
   "license": "MIT",
   "name": "@ekkolyth/miso",

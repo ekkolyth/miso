@@ -41,8 +41,8 @@ func TestLoadTuiConfigDefaults(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if cfg.TuiMode != "off" {
-		t.Errorf("Tui = %q, want %q (default)", cfg.TuiMode, "off")
+	if cfg.TuiMode != "tabbed" {
+		t.Errorf("Tui = %q, want %q", cfg.TuiMode, "tabbed")
 	}
 }
 
@@ -82,19 +82,54 @@ func TestLoadTuiConfigObjectNoCleanExit(t *testing.T) {
 	}
 }
 
+func TestLoadTuiConfigOff(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"tui": "off"
+	}`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.TuiMode != "off" {
+		t.Errorf("TuiMode = %q, want %q", cfg.TuiMode, "off")
+	}
+}
+
+func TestLoad_RejectsInvalidTuiMode(t *testing.T) {
+	dir := writeTempConfig(t, `{"tui":"wibble","scripts":"./scripts"}`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected load error for unknown tui mode \"wibble\"")
+	}
+	if !strings.Contains(err.Error(), "unknown mode") {
+		t.Errorf("error = %q, want it to mention \"unknown mode\"", err.Error())
+	}
+}
+
+func TestLoad_RejectsInvalidTuiModeObject(t *testing.T) {
+	dir := writeTempConfig(t, `{"tui":{"mode":"wibble"},"scripts":"./scripts"}`)
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected load error for unknown tui mode \"wibble\" in object form")
+	}
+	if !strings.Contains(err.Error(), "unknown mode") {
+		t.Errorf("error = %q, want it to mention \"unknown mode\"", err.Error())
+	}
+}
+
 func TestLoadRepoStringValues(t *testing.T) {
 	tests := []struct {
 		name string
 		json string
 		repo string
-		mono bool
 		dele bool
 	}{
-		{"single", `{"repo":"single"}`, "single", false, false},
-		{"mono", `{"repo":"mono"}`, "mono", true, false},
-		{"turbo", `{"repo":"turbo"}`, "turbo", true, true},
-		{"nx", `{"repo":"nx"}`, "nx", true, true},
-		{"empty", `{}`, "", false, false},
+		{"miso", `{"repo":"miso"}`, "miso", false},
+		{"turbo", `{"repo":"turbo"}`, "turbo", true},
+		{"nx", `{"repo":"nx"}`, "nx", true},
+		{"empty", `{}`, "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -106,9 +141,6 @@ func TestLoadRepoStringValues(t *testing.T) {
 			if cfg.Repo != tt.repo {
 				t.Errorf("Repo = %q, want %q", cfg.Repo, tt.repo)
 			}
-			if cfg.IsMonorepo() != tt.mono {
-				t.Errorf("IsMonorepo() = %v, want %v", cfg.IsMonorepo(), tt.mono)
-			}
 			if cfg.IsDelegated() != tt.dele {
 				t.Errorf("IsDelegated() = %v, want %v", cfg.IsDelegated(), tt.dele)
 			}
@@ -119,7 +151,7 @@ func TestLoadRepoStringValues(t *testing.T) {
 func TestLoadRepoObject(t *testing.T) {
 	dir := writeTempConfig(t, `{
 		"repo": {
-			"mode": "mono",
+			"mode": "turbo",
 			"tasks": {
 				"build": { "dependsOn": ["^build"] },
 				"dev": {}
@@ -131,8 +163,8 @@ func TestLoadRepoObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
-	if cfg.Repo != "mono" {
-		t.Errorf("Repo = %q, want %q", cfg.Repo, "mono")
+	if cfg.Repo != "turbo" {
+		t.Errorf("Repo = %q, want %q", cfg.Repo, "turbo")
 	}
 	if cfg.Tasks == nil {
 		t.Fatal("Tasks is nil, want populated map")
@@ -179,10 +211,10 @@ func TestLoadRepoObjectTurboWithTasks(t *testing.T) {
 	}
 }
 
-func TestLoadRepoObjectSingleWithDependsOn(t *testing.T) {
+func TestLoadRepoObjectMisoWithDependsOn(t *testing.T) {
 	dir := writeTempConfig(t, `{
 		"repo": {
-			"mode": "single",
+			"mode": "miso",
 			"tasks": { "build": { "dependsOn": ["^build"] } }
 		}
 	}`)
@@ -201,11 +233,12 @@ func TestRepoMode(t *testing.T) {
 		repo string
 		want string
 	}{
+		// direct-construction passthrough; Load rejects these values
 		{"single", "single"},
 		{"mono", "mono"},
 		{"turbo", "turbo"},
 		{"nx", "nx"},
-		{"", "single"},
+		{"", "miso"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.repo, func(t *testing.T) {
@@ -243,10 +276,10 @@ func TestLoadRepoObjectWithConcurrent(t *testing.T) {
 	}
 }
 
-func TestLoadRepoObjectSingleWithTasks(t *testing.T) {
+func TestLoadRepoObjectMisoWithTasks(t *testing.T) {
 	dir := writeTempConfig(t, `{
 		"repo": {
-			"mode": "single",
+			"mode": "miso",
 			"tasks": {
 				"dev": { "concurrent": ["frontend", "backend"] }
 			}
@@ -257,8 +290,8 @@ func TestLoadRepoObjectSingleWithTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error: %v, want success (tasks valid in all modes)", err)
 	}
-	if cfg.Repo != "single" {
-		t.Errorf("Repo = %q, want %q", cfg.Repo, "single")
+	if cfg.Repo != "miso" {
+		t.Errorf("Repo = %q, want %q", cfg.Repo, "miso")
 	}
 	if cfg.Tasks == nil {
 		t.Fatal("Tasks is nil, want populated map")
@@ -434,94 +467,194 @@ func TestSaveOmitsPackageManagerWhenNil(t *testing.T) {
 	}
 }
 
-func TestFindWorkspaceByBasename(t *testing.T) {
-	root := t.TempDir()
-	wsDir := filepath.Join(root, "packages", "api")
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
-		t.Fatal(err)
+// mirrors what init writes for a single project, or a monorepo where the
+// user picks miso orchestration: Repo left unset, so the saved config must
+// load back as miso mode.
+func TestSaveOmitsRepoWhenUnset(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		Schema:  SchemaURL,
+		Scripts: "./scripts",
+		Flags:   make(map[string][]string),
 	}
-	workspaces := []string{wsDir}
+	if err := Save(dir, cfg); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
 
-	got, err := FindWorkspace("api", workspaces, root)
+	data, err := os.ReadFile(filepath.Join(dir, FileName))
 	if err != nil {
-		t.Fatalf("FindWorkspace() error: %v", err)
+		t.Fatalf("read saved config: %v", err)
 	}
-	if got != wsDir {
-		t.Errorf("got %q, want %q", got, wsDir)
+	if strings.Contains(string(data), `"repo"`) {
+		t.Error("saved config contains repo, want it omitted when unset")
 	}
-}
 
-func TestFindWorkspaceByRelativePath(t *testing.T) {
-	root := t.TempDir()
-	wsDir := filepath.Join(root, "packages", "api")
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	workspaces := []string{wsDir}
-
-	got, err := FindWorkspace("packages/api", workspaces, root)
+	loaded, err := Load(dir)
 	if err != nil {
-		t.Fatalf("FindWorkspace() error: %v", err)
+		t.Fatalf("Load() after Save() error: %v", err)
 	}
-	if got != wsDir {
-		t.Errorf("got %q, want %q", got, wsDir)
+	if got := loaded.RepoMode(); got != "miso" {
+		t.Errorf("RepoMode() after round-trip = %q, want miso", got)
 	}
 }
 
-func TestFindWorkspaceByPackageName(t *testing.T) {
-	root := t.TempDir()
-	wsDir := filepath.Join(root, "packages", "api")
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
-		t.Fatal(err)
+// mirrors what init writes for a monorepo where the user picks turbo/nx
+// orchestration: Repo set explicitly, so the saved config must load back
+// as the delegated mode.
+func TestSaveWritesRepoWhenDelegated(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		Schema:  SchemaURL,
+		Scripts: "./scripts",
+		Flags:   make(map[string][]string),
+		Repo:    "turbo",
 	}
-	pkgJSON := `{"name": "@myorg/api"}`
-	if err := os.WriteFile(filepath.Join(wsDir, "package.json"), []byte(pkgJSON), 0o644); err != nil {
-		t.Fatal(err)
+	if err := Save(dir, cfg); err != nil {
+		t.Fatalf("Save() error: %v", err)
 	}
-	workspaces := []string{wsDir}
 
-	got, err := FindWorkspace("@myorg/api", workspaces, root)
+	data, err := os.ReadFile(filepath.Join(dir, FileName))
 	if err != nil {
-		t.Fatalf("FindWorkspace() error: %v", err)
+		t.Fatalf("read saved config: %v", err)
 	}
-	if got != wsDir {
-		t.Errorf("got %q, want %q", got, wsDir)
+	if !strings.Contains(string(data), `"repo": "turbo"`) {
+		t.Errorf("saved config = %s, want it to contain repo: turbo", data)
+	}
+
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() after Save() error: %v", err)
+	}
+	if got := loaded.RepoMode(); got != "turbo" {
+		t.Errorf("RepoMode() after round-trip = %q, want turbo", got)
+	}
+	if !loaded.IsDelegated() {
+		t.Error("IsDelegated() after round-trip = false, want true")
 	}
 }
 
-func TestFindWorkspaceAmbiguous(t *testing.T) {
-	root := t.TempDir()
-	ws1 := filepath.Join(root, "apps", "api")
-	ws2 := filepath.Join(root, "packages", "api")
-	for _, d := range []string{ws1, ws2} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	workspaces := []string{ws1, ws2}
-
-	_, err := FindWorkspace("api", workspaces, root)
-	if err == nil {
-		t.Error("expected error for ambiguous match, got nil")
-	}
-	if !strings.Contains(err.Error(), "ambiguous") {
-		t.Errorf("expected error to contain %q, got: %v", "ambiguous", err)
+func TestRepoMode_DefaultsToMiso(t *testing.T) {
+	cfg := Config{}
+	if got := cfg.RepoMode(); got != "miso" {
+		t.Errorf("RepoMode() = %q, want miso", got)
 	}
 }
 
-func TestFindWorkspaceNotFound(t *testing.T) {
-	root := t.TempDir()
-	wsDir := filepath.Join(root, "packages", "api")
-	if err := os.MkdirAll(wsDir, 0o755); err != nil {
+func TestLoad_RejectsLegacyRepoValue(t *testing.T) {
+	dir := writeTempConfig(t, `{"repo":"single","scripts":"./scripts"}`)
+	if _, err := Load(dir); err == nil {
+		t.Error("expected load error for legacy repo value \"single\"")
+	}
+}
+
+func TestLoad_AcceptsMisoMode(t *testing.T) {
+	dir := writeTempConfig(t, `{"repo":"turbo","scripts":"./scripts"}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.IsDelegated() || cfg.RepoMode() != "turbo" {
+		t.Errorf("got mode %q delegated=%v, want turbo delegated", cfg.RepoMode(), cfg.IsDelegated())
+	}
+}
+
+func TestLoad_ParsesEnvScope(t *testing.T) {
+	dir := t.TempDir()
+	body := `{"scripts":"./scripts","env":[{"scope":"web","path":"apps/web/.env.local"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "miso.json"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	workspaces := []string{wsDir}
-
-	_, err := FindWorkspace("web", workspaces, root)
-	if err == nil {
-		t.Error("expected error for not found, got nil")
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("expected error to contain %q, got: %v", "not found", err)
+	if len(cfg.Env) != 1 || cfg.Env[0].Scope != "web" {
+		t.Fatalf("Scope = %q, want web (entries: %+v)", scopeOf(cfg), cfg.Env)
+	}
+}
+
+func scopeOf(cfg Config) string {
+	if len(cfg.Env) == 0 {
+		return ""
+	}
+	return cfg.Env[0].Scope
+}
+
+func TestLoadEnv_ArrayForm(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"env": [
+			{"label": "app", "path": ".env", "variables": {"PORT": "port"}}
+		]
+	}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Env) != 1 {
+		t.Fatalf("got %d env entries, want 1", len(cfg.Env))
+	}
+	e := cfg.Env[0]
+	if e.Label != "app" || e.Path != ".env" {
+		t.Errorf("entry = %+v, want label=app path=.env", e)
+	}
+	v, ok := e.Variables.Object["PORT"]
+	if !ok || !v.IsShorthand || v.Type != "port" {
+		t.Errorf("PORT var = %+v, want shorthand port", v)
+	}
+}
+
+func TestLoadEnv_BareStringForm(t *testing.T) {
+	dir := writeTempConfig(t, `{ "env": ".env.local" }`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Env) != 1 || cfg.Env[0].Path != ".env.local" {
+		t.Fatalf("env = %+v, want single entry path=.env.local", cfg.Env)
+	}
+}
+
+func TestLoadEnv_RequiredModeString(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"env": [{"path": ".env", "required": "none", "variables": {"X": "string"}}]
+	}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Env[0].Required.Mode != "none" {
+		t.Errorf("required.Mode = %q, want none", cfg.Env[0].Required.Mode)
+	}
+}
+
+func TestLoadEnv_VariablesArrayForm(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"env": [{"path": ".env", "variables": ["A", "B"]}]
+	}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	arr := cfg.Env[0].Variables.Array
+	if len(arr) != 2 || arr[0] != "A" || arr[1] != "B" {
+		t.Errorf("variables array = %v, want [A B]", arr)
+	}
+}
+
+func TestParseEnvEntry_Override(t *testing.T) {
+	dir := writeTempConfig(t, `{
+		"env": [
+			{"scope": "web", "path": ".env.local", "override": ".env.infra", "variables": ["API_URL"]}
+		]
+	}`)
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Env) != 1 {
+		t.Fatalf("env entries = %d, want 1", len(cfg.Env))
+	}
+	if cfg.Env[0].Override != ".env.infra" {
+		t.Errorf("Override = %q, want %q", cfg.Env[0].Override, ".env.infra")
 	}
 }

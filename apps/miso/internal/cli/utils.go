@@ -12,6 +12,7 @@ import (
 
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
+	"github.com/ekkolyth/miso/internal/ui"
 )
 
 // find project root by walking up directories
@@ -128,37 +129,46 @@ func EnsureManager(root string, cfg config.Config) (string, config.Config, error
 	return "", cfg, errors.New("could not determine package manager: add a packageManager field to package.json, or run 'miso init'")
 }
 
-// print error and exit with code 1
-func Fail(logger *log.Logger, err error, showUsage bool) {
-	fmt.Fprintf(os.Stderr, "ERROR miso: %s\n", err.Error())
+// print styled error and exit with code 1
+func Fail(_ *log.Logger, err error, showUsage bool) {
+	s := ui.Default()
+	fmt.Fprintf(os.Stderr, "%s %s %s\n", s.Error.Render("ERROR"), s.Muted.Render("miso:"), err.Error())
 	if showUsage {
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, UsageText())
+		// UsageText owns its own leading/trailing spacing
+		fmt.Fprint(os.Stderr, UsageText())
 	}
 	os.Exit(1)
 }
 
-// return usage help text
+// return styled usage help text
 func UsageText() string {
-	return strings.TrimSpace(`
-Miso – the agnostic package manager
-
-Usage:
-  miso init
-  miso version
-  miso env
-  miso upgrade [--local]
-  miso completion [bash|zsh|fish]
-  miso install
-  miso add <pkg>
-  miso remove <pkg>
-  miso run <script> <args>
-  miso dev <args>
-  miso misox <package> [args...]
-  miso <command> [args...]
-
-  - Automatically detects bun, npm, pnpm, or yarn.
-  - Generates a miso.json so you can override the manager or define scripts.
-  - Unknown commands pass through to the detected package manager.
-`)
+	s := ui.Default()
+	var b strings.Builder
+	b.WriteString("\n") // one line above the whole thing
+	b.WriteString(s.Heading.Render("Miso") + " – the agnostic package manager\n\n")
+	b.WriteString(s.Label.Render("Usage:") + "\n")
+	for _, sub := range []string{
+		"init",
+		"version",
+		"env",
+		"upgrade [--local]",
+		"completion [bash|zsh|fish]",
+		"install",
+		"add <pkg>",
+		"remove <pkg>",
+		"run <script> <args>",
+		"dev <args>",
+		"<command> [args...]",
+	} {
+		b.WriteString("  " + s.Flavor.Render("miso") + " " + sub + "\n")
+	}
+	b.WriteString("\n")
+	for _, note := range []string{
+		"Miso automatically detects your package manager (bun, pnpm, npm, yarn)",
+		"Configure miso for your repo using miso.json",
+	} {
+		b.WriteString("  " + s.Muted.Render("- "+note) + "\n")
+	}
+	b.WriteString("\n\n") // two line breaks under the grey text
+	return b.String()
 }

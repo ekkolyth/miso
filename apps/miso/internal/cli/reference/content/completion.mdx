@@ -1,0 +1,21 @@
+Prints a shell completion script for bash, zsh, or fish.
+
+### When to use
+
+Once, to enable tab-completion of miso commands and scripts.
+
+### How it works
+
+Emits the completion script for the named shell to stdout. Source it from your shell profile.
+
+### Examples
+
+```bash
+miso completion bash
+miso completion zsh
+miso completion fish
+```
+
+### Gotchas
+
+- Completions cover built-in commands and your project's scripts, not passthrough package-manager subcommands.

@@ -1,0 +1,21 @@
+Runs a script by name from your scripts folder or `package.json`.
+
+### When to use
+
+To execute a defined script. `miso run <script>` resolves the scripts folder first, then `package.json`, then falls back to the package manager.
+
+### How it works
+
+Pass one script to run it, or several to run them in sequence. Arguments after `--` are forwarded to the script.
+
+### Examples
+
+```bash
+miso run build
+miso run lint test
+miso run test -- --watch
+```
+
+### Gotchas
+
+- Unknown script names fall through to the package manager as a passthrough command.
