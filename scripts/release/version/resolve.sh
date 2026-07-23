@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Resolve the next release version from the merged PR's release:* label.
-# Finds the PR for the pushed merge commit, reads its release:{patch|minor|major}
+# Resolve the next release version from the merged PR's patch/minor/major label.
+# Finds the PR for the pushed merge commit, reads its patch/minor/major
 # label, and computes the next semver from the latest git tag.
-# Fails (non-zero) when no release:* label is present.
+# Fails (non-zero) when no patch/minor/major label is present.
 set -euo pipefail
 
 SHA="${GITHUB_SHA:?GITHUB_SHA required}"
@@ -17,14 +17,14 @@ LABELS=$(gh pr view "$PR_NUM" --json labels -q '.labels[].name')
 LEVEL=""
 for l in $LABELS; do
     case "$l" in
-        release:patch) LEVEL="patch" ;;
-        release:minor) LEVEL="minor" ;;
-        release:major) LEVEL="major" ;;
+        patch) LEVEL="patch" ;;
+        minor) LEVEL="minor" ;;
+        major) LEVEL="major" ;;
     esac
 done
 
 if [[ -z "$LEVEL" ]]; then
-    echo "::error::PR #$PR_NUM has no release:{patch|minor|major} label — refusing to release" >&2
+    echo "::error::PR #$PR_NUM has no patch/minor/major label — refusing to release" >&2
     exit 1
 fi
 
