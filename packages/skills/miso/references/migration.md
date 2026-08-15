@@ -24,7 +24,7 @@ The binary and the skill aren't version-locked, so an upgraded binary can sit ne
 
 # 0.6.x → 0.7.0
 
-Script resolution collapsed into one ladder that reads the same in every repo mode. Most projects need no edit. The ones that do relied on a root script shadowing workspace fan-out, or had a `concurrent` entry that was silently doing nothing.
+Script resolution collapsed into one ladder that reads the same in every repo mode, and env validation now covers the whole repo in every mode. Most projects need no edit. The ones that do relied on a root script shadowing workspace fan-out, had a `concurrent` entry that was silently doing nothing, or declared the same env scope in two configs.
 
 ## The resolution ladder
 
@@ -37,6 +37,33 @@ Script resolution collapsed into one ladder that reads the same in every repo mo
 5. **Passthrough** — forwarded to the package manager.
 
 A task entry never carries a command body. It decorates whatever steps 3–4 resolve.
+
+## Decide which tool owns each delegated task
+
+The string shorthand gives every recognized pipeline task to Turbo or Nx:
+
+```jsonc
+// turbo owns dev
+{ "repo": "turbo" }
+```
+
+If Miso should discover and manage the workspace processes — for example, to
+give `miso dev` one tab per app — opt that task into Miso explicitly:
+
+```json
+{
+  "repo": {
+    "mode": "turbo",
+    "tasks": {
+      "dev": {}
+    }
+  }
+}
+```
+
+An empty task object is enough when matching workspace or root scripts provide
+the body. Recognized pipeline tasks not listed under `repo.tasks` continue to
+delegate normally, including the delegate's caching and dependency graph.
 
 ## Breaking changes
 
@@ -62,6 +89,25 @@ If a root script was deliberately shadowing fan-out, declare it as a task or add
 ```
 
 Single repos and simple mode are unaffected — no members means no fan-out set, so the root script is the body as always.
+
+### Duplicate workspace commands now fan out together
+
+An unscoped command intentionally runs every workspace member that defines it.
+Audit platform names such as `ios`, `android`, `tv`, `desktop`, and `web`
+instead of assuming the command name selects an app type.
+
+If both `mobile/package.json` and `tv/package.json` define `ios`, `miso ios`
+starts both. Keep only the commands each workspace owns:
+
+```jsonc
+// apps/mobile/package.json
+{ "scripts": { "ios": "expo run:ios", "android": "expo run:android" } }
+
+// apps/tv/package.json
+{ "scripts": { "tv": "EXPO_TV=1 expo run:ios" } }
+```
+
+If a shared name is deliberate, scope the invocation: `miso ios @mobile`.
 
 ### `concurrent` entries that resolve nowhere now fail the launch
 
@@ -94,6 +140,65 @@ repo.tasks.ghost declares nothing: no script named "ghost" found and no concurre
 In turbo/nx mode, a name turbo doesn't own used to exec literally with no TUI. It now runs under miso's single-pane chrome. `"tui": "off"` restores plain output.
 
 Nx repos see more of this than turbo repos: miso parses `turbo.json` only, so in nx mode every name without a `repo.tasks` entry runs under miso's own orchestration rather than falling through.
+
+### Env validation traverses workspace members in every repo mode
+
+**This supersedes the 0.6.0 behavior note below.** In a delegated repo (`repo: "turbo"`/`"nx"`), `miso env` and `--env` used to validate only the root `miso.json` entries — a workspace member's own schema was never read, so a clean exit said nothing about it. Both now read the root config and every member's config, in every mode.
+
+Nothing to edit, but a turbo/nx repo that was passing can now fail: member schemas that were silently skipped are finally being checked. Run `miso env` once after upgrading and clear whatever it surfaces before trusting it as a CI gate.
+
+Membership comes from `package.json` workspaces or `pnpm-workspace.yaml`. A `miso.json` outside that set still isn't traversed — declare those schemas at the root.
+
+### A scope belongs to the root config or the member's, never both
+
+A root entry scoped to a member that also declares its own `env` is now a config error:
+
+```
+env scope declared in two places — keep it in the root config or the member's, not both
+    web — root miso.json and apps/web/miso.json
+```
+
+If you duplicated member scopes into the root to work around the old traversal gap, delete the copies — traversal covers them now. Otherwise pick one home per scope:
+
+```jsonc
+// before (0.6.x) — both files describe "web", layered at run time
+// miso.json
+"env": [{ "scope": "web", "path": "apps/web/.env.local", "variables": { "PORT": "port" } }]
+// apps/web/miso.json
+"env": [{ "path": ".env.local", "variables": { "WEB_TOKEN": "string" } }]
+
+// after (0.7.0) — the member owns its own env
+// miso.json
+"env": [{ "scope": "global", "path": ".env" }]
+// apps/web/miso.json
+"env": [{ "path": ".env.local", "variables": { "PORT": "port", "WEB_TOKEN": "string" } }]
+```
+
+`"global"`-scoped root entries are unaffected — they still layer under a member's own config. Resolution is two layers now rather than three: global, then either the root entry scoped to the target or the member's own config.
+
+### A member `miso.json` that won't load fails the run
+
+An unparseable member config used to be skipped in silence, so its declared variables went unchecked while the command reported success. It now fails and names the file:
+
+```
+failed to read a workspace config error="load apps/web/miso.json: parse config: …"
+```
+
+Fix the config or delete it.
+
+## Behavior changes (no edit required)
+
+- **Env injection follows orchestration, not repo mode.** In a delegated repo, a task handed to miso by a `repo.tasks.<name>` override now gets its resolved env injected — miso spawns those processes, so it owns their env. Names that turbo/nx actually runs are untouched; the delegate owns those and miso injects nothing. Previously `repo: "turbo"` suppressed injection for both, including the tasks miso itself was running.
+
+## Repository audit checklist
+
+1. Convert delegated `repo` shorthand to object form for every task Miso should own.
+2. Audit duplicate command names across workspace `package.json` files.
+3. Review root scripts that previously shadowed member scripts.
+4. Update companions to use bare `name`, root `#name`, or `@member/name` addressing.
+5. Resolve pipeline/script and folder-script/package-script name collisions.
+6. Run `miso env` when env schemas are configured.
+7. Run primary commands from the root and confirm the expected process list.
 
 ## New in 0.7.0
 
@@ -251,7 +356,7 @@ Update any script that scraped the `miso ` prefix.
 
 ## Behavior changes (no edit required)
 
-- **Env scope and injection are miso-mode only.** In a delegated repo (`repo: "turbo"`/`"nx"`) the delegate owns env — `miso env` type-checks the declared root entries only; nothing is scoped or injected. See `miso-env`.
+- **Env scope and injection are miso-mode only.** In a delegated repo (`repo: "turbo"`/`"nx"`) the delegate owns env — `miso env` type-checks the declared root entries only; nothing is scoped or injected. See `miso-env`. **Superseded in 0.7.0:** validation traverses member schemas in every mode, and injection follows orchestration rather than repo mode.
 - **`.bash` scripts run under `bash`.** Previously `sh`. `.sh` still uses `sh`. See `miso-scripting`.
 - **A name defined in both `scripts/` and `package.json` is an error.** miso stops and asks you to rename one instead of quietly picking a winner.
 - **Workspace discovery is always on.** Members are detected from the package manager's own config independent of `repo`, so a monorepo no longer needs `repo: "mono"` to fan out.

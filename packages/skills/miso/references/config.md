@@ -166,7 +166,7 @@ Persistent flags injected into specific commands. Useful for CI or project-wide 
 
 Env file paths and validation rules. When not set, miso auto-discovers `.env.local` → `.env.production` → `.env.development` → `.env` (first found per variable).
 
-Each **root** `env` entry requires a `scope` — the target it applies to, or the reserved `"global"`. Scoping keeps one workspace's variables out of another's. See `miso-env` for scopes, variable types, and validation.
+Each **root** `env` entry requires a `scope` — the target it applies to, or the reserved `"global"`. Scoping keeps one workspace's variables out of another's. A scope lives in the root config or the member's own `miso.json`, never both. See `miso-env` for scopes, variable types, and validation.
 
 ---
 
