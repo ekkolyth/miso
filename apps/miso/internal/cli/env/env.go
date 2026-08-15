@@ -183,6 +183,14 @@ func collectMemberEntries(projectRoot string, members []workspace.Member) ([]mem
 	return entries, nil
 }
 
+// resolveAgainst joins path onto baseDir unless it's already absolute.
+func resolveAgainst(baseDir, path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(filepath.Join(baseDir, path))
+}
+
 // relativeTo trims projectRoot off path for display, falling back to path itself.
 func relativeTo(projectRoot, path string) string {
 	if rel, err := filepath.Rel(projectRoot, path); err == nil {
@@ -191,25 +199,41 @@ func relativeTo(projectRoot, path string) string {
 	return path
 }
 
-// checkScopeExclusivity fails when a root entry scopes to a member that declares
-// its own env. A scope lives in one config or the other, never split across both.
+// checkScopeExclusivity fails when a root entry and a member's own config both
+// describe the same env. A scope lives in one config or the other, never split
+// across both. Two axes catch that: the scope name, and the file it resolves to
+// — a root scope renamed away from its member ("ekko-api" over member "api")
+// stops matching by name while still describing the same file.
 func checkScopeExclusivity(projectRoot string, cfg config.Config, memberEntries []memberEntry, logger *log.Logger) error {
-	declaring := make(map[string]workspace.Member)
+	byName := make(map[string]workspace.Member)
+	byPath := make(map[string]memberEntry)
 	for _, owned := range memberEntries {
-		declaring[owned.member.Name] = owned.member
-		declaring[filepath.Base(owned.member.Dir)] = owned.member
+		byName[owned.member.Name] = owned.member
+		byName[filepath.Base(owned.member.Dir)] = owned.member
+		if owned.entry.Path != "" {
+			byPath[resolveAgainst(owned.member.Dir, owned.entry.Path)] = owned
+		}
 	}
 
 	var conflicts []string
 	for _, entry := range cfg.Env {
-		if entry.Scope == "" || entry.Scope == "global" {
+		if entry.Scope != "" && entry.Scope != "global" {
+			if member, ok := byName[entry.Scope]; ok {
+				conflicts = append(conflicts, fmt.Sprintf("%s — root %s and %s",
+					entry.Scope, config.FileName, relativeTo(projectRoot, member.ConfigPath)))
+				continue
+			}
+		}
+		if entry.Path == "" {
 			continue
 		}
-		member, ok := declaring[entry.Scope]
+		owned, ok := byPath[resolveAgainst(projectRoot, entry.Path)]
 		if !ok {
 			continue
 		}
-		conflicts = append(conflicts, fmt.Sprintf("%s — root %s and %s", entry.Scope, config.FileName, relativeTo(projectRoot, member.ConfigPath)))
+		conflicts = append(conflicts, fmt.Sprintf("%s — root %s (scope %q) and %s describe the same file",
+			relativeTo(projectRoot, resolveAgainst(projectRoot, entry.Path)),
+			config.FileName, entry.Scope, relativeTo(projectRoot, owned.member.ConfigPath)))
 	}
 	if len(conflicts) == 0 {
 		return nil

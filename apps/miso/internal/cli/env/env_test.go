@@ -528,3 +528,105 @@ func TestRun_MalformedMemberConfig_IsError(t *testing.T) {
 		t.Errorf("expected the offending config path in the error, got: %s", err.Error())
 	}
 }
+
+func TestRun_SameFileUnderDivergentScopeNames_IsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberDir := filepath.Join(dir, "apps", "api")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "package.json"), []byte(`{"name":"api"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberConfig := `{"scripts":"./scripts","env":[{"path":".env.local","variables":["TOKEN"]}]}`
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"), []byte(memberConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, ".env.local"), []byte("TOKEN=t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// scope "ekko-api" matches no member name, but points at the member's file
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{Scope: "global", Path: ".env"},
+			{Scope: "ekko-api", Path: "apps/api/.env.local"},
+		},
+	}
+	logger := log.New(io.Discard)
+
+	err := Run(dir, cfg, logger)
+	if err == nil {
+		t.Fatal("a root entry pointing at a member's env file must fail even when the scope name diverges")
+	}
+	if !strings.Contains(err.Error(), "two places") {
+		t.Errorf("expected two-places error, got: %s", err.Error())
+	}
+}
+
+func TestRun_GlobalEntryOverMemberFile_IsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberDir := filepath.Join(dir, "apps", "api")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "package.json"), []byte(`{"name":"api"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberConfig := `{"scripts":"./scripts","env":[{"path":".env.local","variables":["TOKEN"]}]}`
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"), []byte(memberConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, ".env.local"), []byte("TOKEN=t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{{Scope: "global", Path: "apps/api/.env.local"}},
+	}
+	logger := log.New(io.Discard)
+
+	if err := Run(dir, cfg, logger); err == nil {
+		t.Fatal("a global root entry over a member's own env file must fail")
+	}
+}
+
+func TestRun_DistinctFilesPerScope_NoConflict(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberDir := filepath.Join(dir, "apps", "api")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "package.json"), []byte(`{"name":"api"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberConfig := `{"scripts":"./scripts","env":[{"path":".env.local","variables":["TOKEN"]}]}`
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"), []byte(memberConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, ".env.local"), []byte("TOKEN=t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
+	logger := log.New(io.Discard)
+
+	if err := Run(dir, cfg, logger); err != nil {
+		t.Fatalf("distinct files must not conflict: %v", err)
+	}
+}
