@@ -354,20 +354,18 @@ func (m MergedModel) renderFilterBar() string {
 			color = exitedColor
 		}
 
-		style := lipgloss.NewStyle().Padding(0, 1).Bold(true)
-
-		if !m.visible[i] {
-			style = style.
+		var rendered string
+		if m.visible[i] {
+			rendered = ui.Label(color, label)
+		} else {
+			rendered = lipgloss.NewStyle().
+				Padding(0, 1).
+				Bold(true).
 				Background(lipgloss.Color("#444444")).
 				Foreground(lipgloss.Color("#888888")).
-				Strikethrough(true)
-		} else {
-			style = style.
-				Background(color).
-				Foreground(lipgloss.Color("#ffffff"))
+				Strikethrough(true).
+				Render(label)
 		}
-
-		rendered := style.Render(label)
 		items = append(items, rendered)
 
 		// Build selector line: ▔▔▔ under selected tab, spaces under others

@@ -32,10 +32,24 @@ var LabelColors = []color.Color{
 // warning-level highlights (e.g. var names in validation errors)
 var WarningColor = lipgloss.Color("#f59e0b") // amber
 
+// miso's own tint, deliberately outside LabelColors so no workspace can be
+// rendered in it
+var MisoColor = lipgloss.Color("#a855f7") // purple
+
+// Label renders a filled label block — the same shape the TUI's tabs use.
+func Label(background color.Color, text string) string {
+	return lipgloss.NewStyle().
+		Padding(0, 1).
+		Bold(true).
+		Background(background).
+		Foreground(lipgloss.Color("#ffffff")).
+		Render(text)
+}
+
 // MisoLine badges a line miso authored itself, so a pane reads at a glance as
 // miso's own rather than the child process's output.
 func (s Styles) MisoLine(text string) string {
-	return s.Heading.Render("[miso]") + " " + s.Muted.Render(text)
+	return Label(MisoColor, "miso") + " " + s.Muted.Render(text)
 }
 
 func Default() Styles {
