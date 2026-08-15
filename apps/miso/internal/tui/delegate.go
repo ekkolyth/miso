@@ -35,6 +35,73 @@ func parseNxHeader(line string) (label string, isHeader bool) {
 // is pinned below the real workspace tabs.
 const metaTabLabel = "turbo"
 
+// routes delegate output into per-task panes, discovering tabs as prefixed
+// output arrives
+type delegateRouter struct {
+	pm         *ProcessManager
+	scriptName string
+	root       string
+}
+
+// the simple (label, text) routing used by nx and as a fallback
+func (r *delegateRouter) routeBasic(label, text string) {
+	if label == "" {
+		return
+	}
+	process := r.pm.findProc(label)
+	if process == nil {
+		entry := TuiScriptEntry{Label: label, ScriptName: r.scriptName, WorkspaceDir: r.root}
+		process = r.pm.Add(entry, "", nil, r.root, nil)
+		process.State = StateRunning
+		r.pm.sendState(process, StateRunning, 0)
+		r.pm.PinLast(metaTabLabel)
+	}
+	process.Buffer.Write(text)
+	r.pm.sendLine(process, OpAppend{Text: text})
+}
+
+// turbo output with per-task exit codes and cache metadata. Lines with no task
+// prefix (turbo's own orchestration, warnings, errors) are surfaced under a
+// "turbo" tab instead of dropped — otherwise a failed or task-less run leaves
+// the TUI blank and quits with no explanation.
+func (r *delegateRouter) routeTurbo(meta turbo.LineMeta, raw string) {
+	if meta.Label == "" {
+		if strings.TrimSpace(raw) != "" {
+			r.routeBasic(metaTabLabel, raw)
+		}
+		return
+	}
+	process := r.pm.findProc(meta.Label)
+	if process == nil {
+		entry := TuiScriptEntry{Label: meta.Label, ScriptName: r.scriptName, WorkspaceDir: r.root}
+		process = r.pm.Add(entry, "", nil, r.root, nil)
+		process.State = StateRunning
+		r.pm.sendState(process, StateRunning, 0)
+		r.pm.PinLast(metaTabLabel)
+	}
+	if meta.IsExit {
+		process.mu.Lock()
+		process.State = StateExited
+		process.ExitCode = meta.ExitCode
+		process.mu.Unlock()
+		r.pm.sendState(process, StateExited, meta.ExitCode)
+		return
+	}
+	process.Buffer.Write(meta.Text)
+	r.pm.sendLine(process, OpAppend{Text: meta.Text})
+}
+
+// the delegate prints its own run summary, so miso surfaces the delegate's exit
+// status rather than counting panes: the pane set carries the synthetic meta tab
+// and any task the delegate killed before it reported, so a count taken from it
+// contradicts the summary printed directly above it.
+func delegateResult(programErr, delegateExit error) (bool, error) {
+	if programErr != nil {
+		return true, programErr
+	}
+	return true, delegateExit
+}
+
 // FORCE_COLOR=1 unless the caller already set FORCE_COLOR or opted out via
 // NO_COLOR (NO_COLOR wins, matching turbo/nx and the no-color.org convention).
 // Shared by the delegate and plain paths — both pipe their children.
@@ -153,58 +220,20 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 	}()
 	defer signal.Stop(sigCh)
 
-	// routeBasic handles the simple (label, text) routing used by nx and as a fallback.
-	routeBasic := func(label, text string) {
-		if label == "" {
-			return
-		}
-		process := pm.findProc(label)
-		if process == nil {
-			entry := TuiScriptEntry{Label: label, ScriptName: scriptName, WorkspaceDir: root}
-			process = pm.Add(entry, "", nil, root, nil)
-			process.State = StateRunning
-			pm.sendState(process, StateRunning, 0)
-			pm.PinLast(metaTabLabel)
-		}
-		process.Buffer.Write(text)
-		pm.sendLine(process, OpAppend{Text: text})
-	}
+	router := &delegateRouter{pm: pm, scriptName: scriptName, root: root}
+	routeBasic := router.routeBasic
+	routeTurbo := router.routeTurbo
 
-	// routeTurbo handles turbo output with per-task exit codes and cache metadata.
-	// Lines with no task prefix (turbo's own orchestration, warnings, errors) are
-	// surfaced under a "turbo" tab instead of dropped — otherwise a failed or
-	// task-less run leaves the TUI blank and quits with no explanation.
-	routeTurbo := func(meta turbo.LineMeta, raw string) {
-		if meta.Label == "" {
-			if strings.TrimSpace(raw) != "" {
-				routeBasic(metaTabLabel, raw)
-			}
-			return
-		}
-		process := pm.findProc(meta.Label)
-		if process == nil {
-			entry := TuiScriptEntry{Label: meta.Label, ScriptName: scriptName, WorkspaceDir: root}
-			process = pm.Add(entry, "", nil, root, nil)
-			process.State = StateRunning
-			pm.sendState(process, StateRunning, 0)
-			pm.PinLast(metaTabLabel)
-		}
-		if meta.IsExit {
-			process.mu.Lock()
-			process.State = StateExited
-			process.ExitCode = meta.ExitCode
-			process.mu.Unlock()
-			pm.sendState(process, StateExited, meta.ExitCode)
-			return
-		}
-		process.Buffer.Write(meta.Text)
-		pm.sendLine(process, OpAppend{Text: meta.Text})
-	}
+	// the delegate's own exit status, surfaced instead of a pane count
+	var delegateExit error
+	var delegateExitMu sync.Mutex
+	waited := make(chan struct{})
 
 	// Start the delegated process and output parsing in a goroutine.
 	// prog.Send() blocks until bubbletea's event loop is running, so all
 	// sends must happen after p.Run() begins — otherwise we deadlock.
 	go func() {
+		defer close(waited)
 		if err := cmd.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "miso: failed to start %s: %v\n", mode, err)
 			p.Quit()
@@ -242,6 +271,9 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		scanWg.Wait()
 
 		exitErr := cmd.Wait()
+		delegateExitMu.Lock()
+		delegateExit = exitErr
+		delegateExitMu.Unlock()
 		code := 0
 		if exitErr != nil {
 			if exitError, ok := exitErr.(*exec.ExitError); ok {
@@ -288,13 +320,17 @@ func DelegateLaunch(cfg config.Config, scriptName string, root string, extraArgs
 		_ = proc.KillGroup(pgid, syscall.SIGTERM)
 	}
 
-	if err != nil {
-		return true, err
+	// the kill above makes Wait return, so this is a short wait on an
+	// already-finishing goroutine rather than a poll
+	select {
+	case <-waited:
+	case <-time.After(2 * time.Second):
 	}
-	if failed := pm.FailedCount(); failed > 0 {
-		return true, fmt.Errorf("%d of %d tasks failed", failed, len(pm.Processes))
-	}
-	return true, nil
+	delegateExitMu.Lock()
+	exit := delegateExit
+	delegateExitMu.Unlock()
+
+	return delegateResult(err, exit)
 }
 
 // execs the delegate binary directly with inherited stdio — no pty, no
