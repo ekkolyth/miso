@@ -505,3 +505,32 @@ func TestBuildRunMemberFanOutConcurrentCompanionExemptFromDependsOn(t *testing.T
 		}
 	}
 }
+
+// a task entry that resolves no body and declares no companions is dead
+// config — error, not silence
+func TestDiscoverEntriesEmptyTaskEntryErrors(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "apps", "web"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "apps", "web", "package.json"),
+		[]byte(`{"name":"web"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"ghost": {}},
+	}
+	_, err := discoverEntries(cfg, "ghost", root, nil)
+	if err == nil {
+		t.Fatal("expected error for empty task entry, got nil")
+	}
+	if !strings.Contains(err.Error(), "ghost") || !strings.Contains(err.Error(), "declares nothing") {
+		t.Errorf("error %q does not describe the empty entry", err.Error())
+	}
+}

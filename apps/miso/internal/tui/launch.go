@@ -270,6 +270,9 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 		return nil, err
 	}
 	if rootScopeEmpty(cfg, scriptName, rootResolved) {
+		if taskErr := emptyTaskEntryError(cfg, scriptName); taskErr != nil {
+			return nil, taskErr
+		}
 		return nil, nil // nothing anywhere — fall through to passthrough
 	}
 	return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
@@ -279,6 +282,19 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 // root scope for scriptName
 func rootScopeEmpty(cfg config.Config, scriptName string, rootResolved []TuiScriptEntry) bool {
 	return len(rootResolved) == 0 && len(cfg.TaskConcurrent(scriptName)) == 0
+}
+
+// nothing resolved and the task declares no orchestration — if a task entry
+// exists it is dead config; otherwise fall through to passthrough
+func emptyTaskEntryError(cfg config.Config, scriptName string) error {
+	task, exists := cfg.Tasks[scriptName]
+	if !exists {
+		return nil
+	}
+	if len(task.Concurrent) == 0 && len(task.DependsOn) == 0 {
+		return fmt.Errorf("repo.tasks.%s declares nothing: no script named %q found and no concurrent entries", scriptName, scriptName)
+	}
+	return nil
 }
 
 // zero-member path: root resolves directly and root companions attach
@@ -294,6 +310,9 @@ func discoverSingleRepo(cfg config.Config, scriptName, root string, scriptArgs [
 		return nil, err
 	}
 	if rootScopeEmpty(cfg, scriptName, rootResolved) {
+		if taskErr := emptyTaskEntryError(cfg, scriptName); taskErr != nil {
+			return nil, taskErr
+		}
 		return nil, nil
 	}
 	return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
