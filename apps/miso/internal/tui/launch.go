@@ -266,42 +266,60 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 	return discoverMemberFanOut(cfg, scriptName, root, members)
 }
 
-// resolves one concurrent entry. A bare name is local scope: the root when
-// local is nil, otherwise that member. "#name" pins resolution to the root
-// regardless of declaring scope. "@member/script" resolves script inside
-// the named member regardless of local scope, via the same name-first tiered
-// matching as an explicit CLI @scope (workspace.ResolveScopes)
+// resolves one concurrent entry and errors if it resolves to zero entries.
+// A bare name is local scope: the root when local is nil, otherwise that
+// member. "#name" pins resolution to the root regardless of declaring scope.
+// "@member/script" resolves script inside the named member regardless of
+// local scope, via the same name-first tiered matching as an explicit CLI
+// @scope (workspace.ResolveScopes).
 func resolveConcurrent(cfg config.Config, concName, root string, local *WorkspaceInfo, members []workspace.Member) ([]TuiScriptEntry, error) {
-	// "#name" pins resolution to the root regardless of declaring scope
-	if strings.HasPrefix(concName, "#") {
+	var entries []TuiScriptEntry
+	var err error
+	var scopeDesc string
+
+	switch {
+	case strings.HasPrefix(concName, "#"):
 		rootName := strings.TrimPrefix(concName, "#")
+		scopeDesc = fmt.Sprintf("root (scripts folder %q or root package.json)", cfg.Scripts)
 		if cfg.SimpleMode() {
-			return ResolveSingleRepoScriptsFolderOnly([]string{rootName}, root, cfg)
+			entries, err = ResolveSingleRepoScriptsFolderOnly([]string{rootName}, root, cfg)
+		} else {
+			entries, err = ResolveSingleRepoScripts([]string{rootName}, root, cfg)
 		}
-		return ResolveSingleRepoScripts([]string{rootName}, root, cfg)
-	}
-	if strings.HasPrefix(concName, "@") {
+	case strings.HasPrefix(concName, "@"):
 		parts := strings.SplitN(strings.TrimPrefix(concName, "@"), "/", 2)
 		if len(parts) != 2 {
 			return nil, fmt.Errorf("concurrent %q: expected @member/script", concName)
 		}
 		memberName, script := parts[0], parts[1]
-		resolved, err := workspace.ResolveScopes([]string{"@" + memberName}, members, root)
-		if err != nil {
-			return nil, err
+		resolved, scopeErr := workspace.ResolveScopes([]string{"@" + memberName}, members, root)
+		if scopeErr != nil {
+			return nil, scopeErr
 		}
 		member := resolved[0]
 		effective := workspace.EffectiveConfig(cfg, member)
-		ws := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
-		return DiscoverTuiScripts(script, []WorkspaceInfo{ws}, cfg.Scripts)
-	}
-	if local == nil {
+		memberInfo := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
+		scopeDesc = fmt.Sprintf("member %q", member.Name)
+		entries, err = DiscoverTuiScripts(script, []WorkspaceInfo{memberInfo}, cfg.Scripts)
+	case local == nil:
+		scopeDesc = fmt.Sprintf("root (scripts folder %q or root package.json)", cfg.Scripts)
 		if cfg.SimpleMode() {
-			return ResolveSingleRepoScriptsFolderOnly([]string{concName}, root, cfg)
+			entries, err = ResolveSingleRepoScriptsFolderOnly([]string{concName}, root, cfg)
+		} else {
+			entries, err = ResolveSingleRepoScripts([]string{concName}, root, cfg)
 		}
-		return ResolveSingleRepoScripts([]string{concName}, root, cfg)
+	default:
+		scopeDesc = fmt.Sprintf("member %q", local.Name)
+		entries, err = DiscoverTuiScripts(concName, []WorkspaceInfo{*local}, cfg.Scripts)
 	}
-	return DiscoverTuiScripts(concName, []WorkspaceInfo{*local}, cfg.Scripts)
+
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("concurrent %q: no script found at %s", concName, scopeDesc)
+	}
+	return entries, nil
 }
 
 // only "@"-prefixed entries need the member list

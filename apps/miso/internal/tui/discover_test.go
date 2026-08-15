@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/cli/scripting"
@@ -635,8 +636,8 @@ func TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename(t *testing.T) {
 	}
 }
 
-// TestResolveConcurrentHashPrefixResolvesAtRoot verifies that "#name" concurrent entry resolves at root scope even when declared in a
-// member's own task list.
+// verifies "#name" resolves at root scope even when declared in a member's
+// own task list.
 func TestResolveConcurrentHashPrefixResolvesAtRoot(t *testing.T) {
 	root := t.TempDir()
 	rootScripts := filepath.Join(root, "scripts", "db")
@@ -667,5 +668,33 @@ func TestResolveConcurrentHashPrefixResolvesAtRoot(t *testing.T) {
 	}
 	if entries[0].ScriptName != "db/up" {
 		t.Errorf("ScriptName = %q, want db/up", entries[0].ScriptName)
+	}
+}
+
+// an unresolvable concurrent entry fails the run instead of vanishing
+func TestResolveConcurrentUnresolvableEntryErrors(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Config{Scripts: "./scripts"}
+
+	testCases := []struct {
+		name     string
+		concName string
+		local    *WorkspaceInfo
+	}{
+		{name: "bare name at root", concName: "ghost", local: nil},
+		{name: "hash name", concName: "#ghost", local: nil},
+		{name: "bare name in member", concName: "ghost",
+			local: &WorkspaceInfo{Name: "web", Dir: filepath.Join(root, "apps", "web"), ScriptsFolder: "./scripts"}},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := resolveConcurrent(cfg, testCase.concName, root, testCase.local, nil)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), "ghost") {
+				t.Errorf("error %q does not name the entry", err.Error())
+			}
+		})
 	}
 }
