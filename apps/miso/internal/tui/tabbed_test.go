@@ -50,7 +50,7 @@ func TestBuildLogVisualRowsFreezesDuringSelection(t *testing.T) {
 	m := TabbedModel{pm: pm, selected: 0, width: 40, height: 8}
 
 	bottom := m.currentBottomSeq()
-	m.sel = SelectionState{active: true, startSeq: bottom, endSeq: bottom, anchorBottomSeq: bottom}
+	m.sel = SelectionState{active: true, dragging: true, startSeq: bottom, endSeq: bottom, anchorBottomSeq: bottom}
 
 	lastReal := func(seqs []int64) int64 {
 		for i := len(seqs) - 1; i >= 0; i-- {
@@ -73,6 +73,32 @@ func TestBuildLogVisualRowsFreezesDuringSelection(t *testing.T) {
 	if lastReal(after) != bottom {
 		t.Errorf("frozen bottom seq = %d, want anchored %d", lastReal(after), bottom)
 	}
+}
+
+func TestBuildLogVisualRowsScrollsAfterSelectionRelease(t *testing.T) {
+	pm := NewProcessManager()
+	proc := pm.Add(TuiScriptEntry{Label: "api:dev"}, "", nil, "", nil)
+	for i := 0; i < 20; i++ {
+		proc.Buffer.Write(fmt.Sprintf("line %d", i))
+	}
+	m := TabbedModel{pm: pm, selected: 0, width: 40, height: 8, scrollOffset: 3}
+	bottom := m.currentBottomSeq()
+	m.sel = SelectionState{active: true, startSeq: bottom, endSeq: bottom, anchorBottomSeq: bottom + 3}
+
+	_, seqs := m.buildLogVisualRows(m.width-1, m.logHeight())
+	wantBottom := proc.Buffer.BaseSeq() + int64(proc.Buffer.Len()-1-m.scrollOffset)
+	if got := lastRealSeq(seqs); got != wantBottom {
+		t.Errorf("completed selection froze scrolling at %d, want %d", got, wantBottom)
+	}
+}
+
+func lastRealSeq(seqs []int64) int64 {
+	for i := len(seqs) - 1; i >= 0; i-- {
+		if seqs[i] >= 0 {
+			return seqs[i]
+		}
+	}
+	return -1
 }
 
 func TestTabbedWindowResizeForwards(t *testing.T) {
@@ -144,7 +170,7 @@ func TestMouseToTabIdx(t *testing.T) {
 
 func TestCopyAllText(t *testing.T) {
 	rb := NewRingBuffer(100)
-	rb.Write("line one")
+	rb.Write("\x1b[37mline one\x1b[0m")
 	rb.Write("line two")
 	rb.Write("line three")
 
@@ -170,7 +196,7 @@ func TestCopyAllText(t *testing.T) {
 
 func TestTabbedSelectedTextBySeq(t *testing.T) {
 	rb := NewRingBuffer(100)
-	rb.Write("alpha")
+	rb.Write("\x1b[36malpha\x1b[0m")
 	rb.Write("bravo")
 	rb.Write("charlie")
 	pm := &ProcessManager{Processes: []*Process{{Buffer: rb, Entry: TuiScriptEntry{Label: "x"}}}}

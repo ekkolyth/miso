@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 
 	"github.com/charmbracelet/x/term"
 	"github.com/creack/pty"
@@ -22,8 +23,26 @@ func spawnProcess(cmd *exec.Cmd, rows, cols int) (*spawnResult, error) {
 		}
 	}
 	ws := &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}
-	ptmx, err := pty.StartWithSize(cmd, ws)
+	ptmx, tty, err := pty.Open()
 	if err != nil {
+		return nil, err
+	}
+	if err := pty.Setsize(ptmx, ws); err != nil {
+		_ = ptmx.Close()
+		_ = tty.Close()
+		return nil, err
+	}
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setsid = true
+	cmd.SysProcAttr.Setctty = true
+	if err := cmd.Start(); err != nil {
+		_ = ptmx.Close()
+		_ = tty.Close()
 		return nil, err
 	}
 	return &spawnResult{
@@ -34,6 +53,10 @@ func spawnProcess(cmd *exec.Cmd, rows, cols int) (*spawnResult, error) {
 				_ = pty.Setsize(ptmx, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
 			}
 		},
-		closer: func() { _ = ptmx.Close() },
+		releaseAfterWait: func() { _ = tty.Close() },
+		closer: func() {
+			_ = tty.Close()
+			_ = ptmx.Close()
+		},
 	}, nil
 }

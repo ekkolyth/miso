@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ekkolyth/miso/internal/ui"
 )
@@ -507,7 +508,7 @@ func (m MergedModel) copyAllText() string {
 			lines = append(lines, line.text)
 		}
 	}
-	return strings.Join(lines, "\n")
+	return ansi.Strip(strings.Join(lines, "\n"))
 }
 
 // mouseToLogRow converts absolute terminal coordinates to a 0-based visual
@@ -534,7 +535,7 @@ func (m MergedModel) selectedText() string {
 			out = append(out, line.text)
 		}
 	}
-	return strings.Join(out, "\n")
+	return ansi.Strip(strings.Join(out, "\n"))
 }
 
 // buildLogVisualRows re-derives the visual rows for the merged log panel,

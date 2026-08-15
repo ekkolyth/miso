@@ -22,6 +22,7 @@ type copyConfirmDoneMsg struct{}
 // sequence numbers, so it survives re-wrapping and new output.
 type SelectionState struct {
 	active   bool
+	dragging bool
 	startSeq int64
 	endSeq   int64
 	// anchorBottomSeq freezes the visible window at the bottom seq present when
@@ -204,7 +205,7 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_, rowSeqs := m.buildLogVisualRows(logWidth, m.logHeight())
 				if row < len(rowSeqs) && rowSeqs[row] >= 0 {
 					seq := rowSeqs[row]
-					m.sel = SelectionState{active: true, startSeq: seq, endSeq: seq, anchorBottomSeq: m.currentBottomSeq()}
+					m.sel = SelectionState{active: true, dragging: true, startSeq: seq, endSeq: seq, anchorBottomSeq: m.currentBottomSeq()}
 				}
 			}
 		}
@@ -222,7 +223,7 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseReleaseMsg:
-		// selection remains until cleared with esc or new click
+		m.sel.dragging = false
 
 	case tea.MouseWheelMsg:
 		switch msg.Button {
@@ -284,7 +285,7 @@ func (m TabbedModel) copyAllText() string {
 	if m.selected >= len(m.pm.Processes) {
 		return ""
 	}
-	return strings.Join(m.pm.Processes[m.selected].Buffer.Lines(), "\n")
+	return ansi.Strip(strings.Join(m.pm.Processes[m.selected].Buffer.Lines(), "\n"))
 }
 
 func (m TabbedModel) logHeight() int {
@@ -603,7 +604,7 @@ func (m TabbedModel) selectedText() string {
 			out = append(out, line)
 		}
 	}
-	return strings.Join(out, "\n")
+	return ansi.Strip(strings.Join(out, "\n"))
 }
 
 // highlightRow paints the selection background across the whole row, re-asserting
@@ -652,10 +653,10 @@ func (m TabbedModel) buildLogVisualRows(logWidth, logHeight int) ([]string, []in
 	totalLines := len(lines)
 
 	endIdx := totalLines - m.scrollOffset
-	if m.sel.active {
+	if m.sel.dragging {
 		// Freeze the window at the seq that was at the bottom when the selection
 		// began — streaming output keeps filling the buffer but the drag target
-		// stays put. Resumes tailing once the selection is cleared.
+		// stays put. Resumes tailing once the drag ends.
 		endIdx = int(m.sel.anchorBottomSeq-base) + 1
 	}
 	if endIdx > totalLines {
