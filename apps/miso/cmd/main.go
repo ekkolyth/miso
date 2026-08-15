@@ -345,14 +345,21 @@ func main() {
 
 			filters := scopeFilters
 
+			renderer := tui.SelectRenderer(cfg, tui.InteractiveTTY())
+
 			if cfg.IsDelegated() {
 				_, taskOverridden := cfg.Tasks[scriptName]
 				if !taskOverridden {
-					// no miso task entry — turbo owns pipeline names
+					// no task entry — falls to the delegated pipeline's own task names
 					turboCfg, turboErr := turbo.LoadConfig(projectRoot)
 					if turboErr == nil {
 						if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
-							renderer := tui.SelectRenderer(cfg, tui.InteractiveTTY())
+							resolved, resolveErr := scripting.ResolveScript(scriptName, projectRoot, cfg)
+							if resolveErr == nil && resolved.Source != scripting.ScriptSourceNone {
+								cli.Fail(logger, fmt.Errorf(
+									"%q is both a turbo task and a miso script — declare repo.tasks.%s to have miso own it, or rename the script so turbo owns it",
+									scriptName, scriptName), false)
+							}
 							_, turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
 							ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
 							if err != nil {
@@ -371,7 +378,7 @@ func main() {
 			if !ok {
 				cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
 			}
-			switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
+			switch renderer {
 			case tui.RendererChrome:
 				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
 				if err != nil {
