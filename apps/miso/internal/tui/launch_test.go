@@ -201,10 +201,10 @@ func TestBuildRunMemberFanOutDropsArgs(t *testing.T) {
 	}
 }
 
-// TestBuildRunRootConcurrentUnresolvableAtRootErrors fences the root-exclusion
-// rule: a root concurrent list resolves at ROOT scope only, never broadcasting
-// into fan-out members. A companion that exists only inside a member is
-// unresolvable at root and must hard-error, naming the concurrent entry.
+// fences the root-exclusion rule: a root concurrent list resolves at ROOT
+// scope only, never broadcasting into fan-out members. A companion that
+// exists only inside a member is unresolvable at root and must hard-error,
+// naming the concurrent entry.
 func TestBuildRunRootConcurrentUnresolvableAtRootErrors(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "package.json"),
@@ -292,11 +292,11 @@ func TestDiscoverEntriesRootCompanionRunsOnceWithFanOut(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	rootDb := filepath.Join(root, "scripts", "db")
-	if err := os.MkdirAll(rootDb, 0o755); err != nil {
+	rootDB := filepath.Join(root, "scripts", "db")
+	if err := os.MkdirAll(rootDB, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(rootDb, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(rootDB, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -340,11 +340,11 @@ func TestDiscoverEntriesRootBodyWhenNoMemberDefinesName(t *testing.T) {
 		[]byte(`{"name":"web"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rootDb := filepath.Join(root, "scripts", "db")
-	if err := os.MkdirAll(rootDb, 0o755); err != nil {
+	rootDB := filepath.Join(root, "scripts", "db")
+	if err := os.MkdirAll(rootDB, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(rootDb, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(rootDB, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -374,11 +374,11 @@ func TestDiscoverEntriesConcurrentOnlyLaunchesAlone(t *testing.T) {
 		[]byte(`{"name":"web"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rootDb := filepath.Join(root, "scripts", "db")
-	if err := os.MkdirAll(rootDb, 0o755); err != nil {
+	rootDB := filepath.Join(root, "scripts", "db")
+	if err := os.MkdirAll(rootDB, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(rootDb, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(rootDB, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -532,5 +532,212 @@ func TestDiscoverEntriesEmptyTaskEntryErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ghost") || !strings.Contains(err.Error(), "declares nothing") {
 		t.Errorf("error %q does not describe the empty entry", err.Error())
+	}
+}
+
+// TestDiscoverEntriesResolutionLadder is the spec's exhaustiveness artifact
+// for the routes discoverEntries can take. cmd/main.go's own delegation into
+// discoverEntries is out of scope — each case builds cfg + fixture directly.
+func TestDiscoverEntriesResolutionLadder(t *testing.T) {
+	testCases := []struct {
+		name       string
+		setup      func(t *testing.T) (cfg config.Config, root, scriptName string)
+		wantErr    string
+		checkEntry func(t *testing.T, root string, entries []TuiScriptEntry)
+	}{
+		{
+			name: "single repo, root scripts folder file resolves to root entry",
+			setup: func(t *testing.T) (config.Config, string, string) {
+				root := t.TempDir()
+				scriptsDir := filepath.Join(root, "scripts")
+				if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writeScript(t, scriptsDir, "dev")
+				return config.Config{Scripts: "./scripts"}, root, "dev"
+			},
+			checkEntry: func(t *testing.T, root string, entries []TuiScriptEntry) {
+				if len(entries) != 1 || entries[0].WorkspaceDir != root || entries[0].ScriptSource != "folder" {
+					t.Fatalf("entries = %+v, want single root folder entry", entries)
+				}
+			},
+		},
+		{
+			name: "single repo, root package.json script resolves to root entry",
+			setup: func(t *testing.T) (config.Config, string, string) {
+				root := t.TempDir()
+				writePackageJSON(t, root, map[string]string{"build": "echo build"})
+				return config.Config{Scripts: "./scripts"}, root, "build"
+			},
+			checkEntry: func(t *testing.T, root string, entries []TuiScriptEntry) {
+				if len(entries) != 1 || entries[0].WorkspaceDir != root || entries[0].ScriptSource != "packagejson" {
+					t.Fatalf("entries = %+v, want single root packagejson entry", entries)
+				}
+			},
+		},
+		{
+			name: "monorepo, member defines name, root package.json defines same name: member wins, root excluded",
+			setup: func(t *testing.T) (config.Config, string, string) {
+				root := t.TempDir()
+				if err := os.WriteFile(filepath.Join(root, "package.json"),
+					[]byte(`{"workspaces":["apps/web"],"scripts":{"dev":"echo root"}}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				webDir := filepath.Join(root, "apps", "web")
+				if err := os.MkdirAll(webDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writePackageJSON(t, webDir, map[string]string{"dev": "vite"})
+				return config.Config{Scripts: "./scripts"}, root, "dev"
+			},
+			checkEntry: func(t *testing.T, root string, entries []TuiScriptEntry) {
+				webDir := filepath.Join(root, "apps", "web")
+				if len(entries) != 1 || entries[0].WorkspaceDir != webDir {
+					t.Fatalf("entries = %v, want single member entry at %q", labelsOf(entries), webDir)
+				}
+			},
+		},
+		{
+			name: "monorepo, no member defines name, root scripts folder file resolves to root entry",
+			setup: func(t *testing.T) (config.Config, string, string) {
+				root := t.TempDir()
+				if err := os.WriteFile(filepath.Join(root, "package.json"),
+					[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.MkdirAll(filepath.Join(root, "apps", "web"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, "apps", "web", "package.json"),
+					[]byte(`{"name":"web"}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				rootDB := filepath.Join(root, "scripts", "db")
+				if err := os.MkdirAll(rootDB, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(rootDB, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return config.Config{Scripts: "./scripts"}, root, "db/up"
+			},
+			checkEntry: func(t *testing.T, root string, entries []TuiScriptEntry) {
+				if len(entries) != 1 || entries[0].WorkspaceDir != root {
+					t.Fatalf("entries = %v, want single root entry", labelsOf(entries))
+				}
+			},
+		},
+		{
+			name: "monorepo, member defines name, root task concurrent resolvable at root: member entry + one root companion",
+			setup: func(t *testing.T) (config.Config, string, string) {
+				root := t.TempDir()
+				if err := os.WriteFile(filepath.Join(root, "package.json"),
+					[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				webDir := filepath.Join(root, "apps", "web")
+				if err := os.MkdirAll(webDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writePackageJSON(t, webDir, map[string]string{"dev": "vite"})
+				rootDB := filepath.Join(root, "scripts", "db")
+				if err := os.MkdirAll(rootDB, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(rootDB, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				cfg := config.Config{
+					Scripts: "./scripts",
+					Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"#db/up"}}},
+				}
+				return cfg, root, "dev"
+			},
+			checkEntry: func(t *testing.T, root string, entries []TuiScriptEntry) {
+				webDir := filepath.Join(root, "apps", "web")
+				companions := 0
+				members := 0
+				for _, entry := range entries {
+					if entry.IsConcurrent {
+						companions++
+						if entry.WorkspaceDir != root {
+							t.Errorf("companion resolved at %q, want root", entry.WorkspaceDir)
+						}
+						continue
+					}
+					members++
+					if entry.WorkspaceDir != webDir {
+						t.Errorf("member entry resolved at %q, want %q", entry.WorkspaceDir, webDir)
+					}
+				}
+				if members != 1 || companions != 1 {
+					t.Fatalf("entries = %v, want 1 member + 1 companion", labelsOf(entries))
+				}
+			},
+		},
+		{
+			name: "monorepo, task entry resolves nothing and declares no orchestration: declares-nothing error",
+			setup: func(t *testing.T) (config.Config, string, string) {
+				root := t.TempDir()
+				if err := os.WriteFile(filepath.Join(root, "package.json"),
+					[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.MkdirAll(filepath.Join(root, "apps", "web"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, "apps", "web", "package.json"),
+					[]byte(`{"name":"web"}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				cfg := config.Config{
+					Scripts: "./scripts",
+					Tasks:   map[string]config.TaskConfig{"ghost": {}},
+				}
+				return cfg, root, "ghost"
+			},
+			wantErr: "declares nothing",
+		},
+		{
+			name: "monorepo, root task concurrent unresolvable at root: concurrent error",
+			setup: func(t *testing.T) (config.Config, string, string) {
+				root := t.TempDir()
+				if err := os.WriteFile(filepath.Join(root, "package.json"),
+					[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				webDir := filepath.Join(root, "apps", "web")
+				if err := os.MkdirAll(webDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writePackageJSON(t, webDir, map[string]string{"dev": "vite"})
+				cfg := config.Config{
+					Scripts: "./scripts",
+					Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"#ghost"}}},
+				}
+				return cfg, root, "dev"
+			},
+			wantErr: "concurrent",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg, root, scriptName := testCase.setup(t)
+			entries, err := discoverEntries(cfg, scriptName, root, nil)
+			if testCase.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", testCase.wantErr)
+				}
+				if !strings.Contains(err.Error(), testCase.wantErr) {
+					t.Fatalf("error = %q, want it to contain %q", err.Error(), testCase.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("discoverEntries: %v", err)
+			}
+			testCase.checkEntry(t, root, entries)
+		})
 	}
 }

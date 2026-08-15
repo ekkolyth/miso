@@ -269,7 +269,7 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 	if err != nil {
 		return nil, err
 	}
-	if rootScopeEmpty(cfg, scriptName, rootResolved) {
+	if isRootScopeEmpty(cfg, scriptName, rootResolved) {
 		if taskErr := emptyTaskEntryError(cfg, scriptName); taskErr != nil {
 			return nil, taskErr
 		}
@@ -280,7 +280,7 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 
 // true when neither a direct script nor a concurrent companion resolves at
 // root scope for scriptName
-func rootScopeEmpty(cfg config.Config, scriptName string, rootResolved []TuiScriptEntry) bool {
+func isRootScopeEmpty(cfg config.Config, scriptName string, rootResolved []TuiScriptEntry) bool {
 	return len(rootResolved) == 0 && len(cfg.TaskConcurrent(scriptName)) == 0
 }
 
@@ -309,7 +309,7 @@ func discoverSingleRepo(cfg config.Config, scriptName, root string, scriptArgs [
 	if err != nil {
 		return nil, err
 	}
-	if rootScopeEmpty(cfg, scriptName, rootResolved) {
+	if isRootScopeEmpty(cfg, scriptName, rootResolved) {
 		if taskErr := emptyTaskEntryError(cfg, scriptName); taskErr != nil {
 			return nil, taskErr
 		}
@@ -331,7 +331,6 @@ func appendRootCompanions(cfg config.Config, scriptName, root string, entries []
 	return DeduplicateLabels(entries), nil
 }
 
-// resolves one concurrent entry and errors if it resolves to zero entries.
 // A bare name is local scope: the root when local is nil, otherwise that
 // member. "#name" pins resolution to the root regardless of declaring scope.
 // "@member/script" resolves script inside the named member regardless of
@@ -345,7 +344,7 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 	switch {
 	case strings.HasPrefix(concName, "#"):
 		rootName := strings.TrimPrefix(concName, "#")
-		scopeDesc = fmt.Sprintf("root (scripts folder %q or root package.json)", cfg.Scripts)
+		scopeDesc = rootScopeDesc(cfg)
 		if cfg.SimpleMode() {
 			entries, err = ResolveSingleRepoScriptsFolderOnly([]string{rootName}, root, cfg)
 		} else {
@@ -364,17 +363,17 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 		member := resolved[0]
 		effective := workspace.EffectiveConfig(cfg, member)
 		memberInfo := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
-		scopeDesc = fmt.Sprintf("member %q", member.Name)
+		scopeDesc = memberScopeDesc(member.Name, effective.Scripts)
 		entries, err = DiscoverTuiScripts(script, []WorkspaceInfo{memberInfo}, cfg.Scripts)
 	case local == nil:
-		scopeDesc = fmt.Sprintf("root (scripts folder %q or root package.json)", cfg.Scripts)
+		scopeDesc = rootScopeDesc(cfg)
 		if cfg.SimpleMode() {
 			entries, err = ResolveSingleRepoScriptsFolderOnly([]string{concName}, root, cfg)
 		} else {
 			entries, err = ResolveSingleRepoScripts([]string{concName}, root, cfg)
 		}
 	default:
-		scopeDesc = fmt.Sprintf("member %q", local.Name)
+		scopeDesc = memberScopeDesc(local.Name, local.ScriptsFolder)
 		entries, err = DiscoverTuiScripts(concName, []WorkspaceInfo{*local}, cfg.Scripts)
 	}
 
@@ -382,9 +381,22 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 		return nil, err
 	}
 	if len(entries) == 0 {
-		return nil, fmt.Errorf("concurrent %q: no script found at %s", concName, scopeDesc)
+		return nil, fmt.Errorf("concurrent %q: no script found; searched %s", concName, scopeDesc)
 	}
 	return entries, nil
+}
+
+// root-scope search-location description for an unresolvable concurrent entry
+func rootScopeDesc(cfg config.Config) string {
+	if cfg.SimpleMode() {
+		return fmt.Sprintf("root scope (scripts folder %q)", cfg.Scripts)
+	}
+	return fmt.Sprintf("root scope (scripts folder %q and root package.json)", cfg.Scripts)
+}
+
+// member-scope search-location description for an unresolvable concurrent entry
+func memberScopeDesc(name, scriptsFolder string) string {
+	return fmt.Sprintf("member %q (scripts folder %q and its package.json)", name, scriptsFolder)
 }
 
 // only "@"-prefixed entries need the member list

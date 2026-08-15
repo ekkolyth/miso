@@ -418,9 +418,8 @@ func TestDiscoverTuiScriptsErrorsWhenScriptInBothSources(t *testing.T) {
 	}
 }
 
-// TestDiscoverEntriesMemberFanOutWinsOverRootScript verifies a member's script
-// wins fan-out even when the root also defines the same name — root is never
-// a fan-out member.
+// a member's script wins fan-out even when the root also defines the same
+// name — root is never a fan-out member.
 func TestDiscoverEntriesMemberFanOutWinsOverRootScript(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "package.json"),
@@ -678,14 +677,16 @@ func TestResolveConcurrentUnresolvableEntryErrors(t *testing.T) {
 	cfg := config.Config{Scripts: "./scripts"}
 
 	testCases := []struct {
-		name     string
-		concName string
-		local    *WorkspaceInfo
+		name       string
+		concName   string
+		local      *WorkspaceInfo
+		wantSearch string
 	}{
-		{name: "bare name at root", concName: "ghost", local: nil},
-		{name: "hash name", concName: "#ghost", local: nil},
+		{name: "bare name at root", concName: "ghost", local: nil, wantSearch: "scripts folder"},
+		{name: "hash name", concName: "#ghost", local: nil, wantSearch: "scripts folder"},
 		{name: "bare name in member", concName: "ghost",
-			local: &WorkspaceInfo{Name: "web", Dir: filepath.Join(root, "apps", "web"), ScriptsFolder: "./scripts"}},
+			local:      &WorkspaceInfo{Name: "web", Dir: filepath.Join(root, "apps", "web"), ScriptsFolder: "./scripts"},
+			wantSearch: `member "web"`},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -695,6 +696,9 @@ func TestResolveConcurrentUnresolvableEntryErrors(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "ghost") {
 				t.Errorf("error %q does not name the entry", err.Error())
+			}
+			if !strings.Contains(err.Error(), testCase.wantSearch) {
+				t.Errorf("error %q does not name a searched location (%s)", err.Error(), testCase.wantSearch)
 			}
 		})
 	}
