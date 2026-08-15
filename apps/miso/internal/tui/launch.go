@@ -267,10 +267,19 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 }
 
 // resolves one concurrent entry. A bare name is local scope: the root when
-// local is nil, otherwise that member. "@member/script" resolves script inside
+// local is nil, otherwise that member. "#name" pins resolution to the root
+// regardless of declaring scope. "@member/script" resolves script inside
 // the named member regardless of local scope, via the same name-first tiered
 // matching as an explicit CLI @scope (workspace.ResolveScopes)
 func resolveConcurrent(cfg config.Config, concName, root string, local *WorkspaceInfo, members []workspace.Member) ([]TuiScriptEntry, error) {
+	// "#name" pins resolution to the root regardless of declaring scope
+	if strings.HasPrefix(concName, "#") {
+		rootName := strings.TrimPrefix(concName, "#")
+		if cfg.SimpleMode() {
+			return ResolveSingleRepoScriptsFolderOnly([]string{rootName}, root, cfg)
+		}
+		return ResolveSingleRepoScripts([]string{rootName}, root, cfg)
+	}
 	if strings.HasPrefix(concName, "@") {
 		parts := strings.SplitN(strings.TrimPrefix(concName, "@"), "/", 2)
 		if len(parts) != 2 {

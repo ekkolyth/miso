@@ -634,3 +634,38 @@ func TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename(t *testing.T) {
 		t.Fatalf("resolved the dir-basename collision instead of the member named web: %v", labels)
 	}
 }
+
+// TestResolveConcurrentHashPrefixResolvesAtRoot verifies that "#name" concurrent entry resolves at root scope even when declared in a
+// member's own task list.
+func TestResolveConcurrentHashPrefixResolvesAtRoot(t *testing.T) {
+	root := t.TempDir()
+	rootScripts := filepath.Join(root, "scripts", "db")
+	if err := os.MkdirAll(rootScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootScripts, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	memberDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Scripts: "./scripts"}
+	local := WorkspaceInfo{Name: "web", Dir: memberDir, ScriptsFolder: "./scripts"}
+
+	entries, err := resolveConcurrent(cfg, "#db/up", root, &local, nil)
+	if err != nil {
+		t.Fatalf("resolveConcurrent: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(entries))
+	}
+	if entries[0].WorkspaceDir != root {
+		t.Errorf("WorkspaceDir = %q, want root %q", entries[0].WorkspaceDir, root)
+	}
+	if entries[0].ScriptName != "db/up" {
+		t.Errorf("ScriptName = %q, want db/up", entries[0].ScriptName)
+	}
+}
