@@ -2,23 +2,9 @@
 
 Understanding how Miso resolves commands is important for organizing your scripts and avoiding conflicts. This page explains the resolution order and priority.
 
-## Resolution Order
+## Core Built-In Commands
 
-When you run a command with Miso, it resolves the command in the following order:
-
-1. **Core built-in commands** — core Miso functionality
-2. **Scripts folder** — custom scripts in your configured scripts directory
-3. **Package-management commands** — commands to manage dependencies
-4. **package.json scripts** — scripts defined in package.json
-5. **Passthrough** — forwarded to the package manager
-
-Let's examine each step in detail.
-
-> In [simple mode](/working-with-miso/simple-mode) (`"packageManager": false`), steps 3–5 are dropped — Miso resolves core commands and folder scripts only, and ignores `package.json` entirely.
-
-### 1. Core Built-In Commands
-
-Miso starts with its core commands. These always win over a same-named script in your scripts folder:
+Before anything else, Miso checks its own built-in commands. These always win over a same-named script:
 
 - `init` — initialize a new project
 - `version` — display the Miso version
@@ -28,9 +14,21 @@ Miso starts with its core commands. These always win over a same-named script in
 
 The package-management verbs (`install`, `add`, `remove`, `run`, `dev`) and `upgrade` work the other way around: a folder script sharing one of those names runs instead of the built-in, so you can shadow them when you need to.
 
-### 2. Scripts Folder
+## The Resolution Ladder
 
-After the core commands, Miso searches your configured scripts folder recursively and runs the match:
+After built-in commands, `miso <name>` resolves in this order — identical in every repo mode:
+
+1. **Task entry** — `repo.tasks.<name>` in `miso.json`. Miso orchestrates: the task contributes `concurrent` and `dependsOn`, and the command body itself still resolves through the steps below. In turbo/nx repos this is the opt-out — declare a task and miso owns that name instead of the delegated runner.
+2. **Delegated pipeline task** — turbo/nx mode only. If the name appears in `turbo.json`, turbo runs it (graph, cache, and all) inside Miso's wrapper.
+3. **Workspace member fan-out** — every member defining the name runs in the shared TUI. The root is the orchestrator, not a fan-out member: root scripts never join fan-out and never preempt it, so a root `"dev": "miso dev"` entry point is safe.
+4. **Root script** — root `package.json` script or scripts-folder file, run in a single Miso pane.
+5. **Passthrough** — forwarded to the package manager.
+
+> In [simple mode](/working-with-miso/simple-mode) (`"packageManager": false`), the ladder doesn't apply — there's no package manager to delegate to or fan out through. Miso resolves core commands and scripts-folder files only, and ignores tasks, turbo/nx, and `package.json` entirely.
+
+### Scripts Folder
+
+Miso searches your configured scripts folder recursively and runs the match:
 
 ```
 scripts/
@@ -42,19 +40,9 @@ scripts/
 
 A file is discovered if it has executable permissions or a recognized extension (`.sh`, `.ts`, `.py`, and the rest — see [Script Execution](/scripting/script-execution#changing-the-interpreter)); files starting with `.` or `_` are skipped. The extension is optional when you invoke it, and an `index` file is a directory's default — `scripts/publish/index.sh` runs as `miso publish`.
 
-If two scripts resolve to the same command name, Miso stops with an error instead of guessing which one you meant.
+### package.json Scripts
 
-### 3. Package-Management Commands
-
-If no script matches, Miso checks its package-management commands:
-
-- `install` or `i` — install dependencies
-- `add` — add new dependencies
-- `remove` — remove dependencies
-
-### 4. package.json Scripts
-
-If nothing has matched yet, Miso looks for an entry in `package.json`:
+Miso also checks for an entry in `package.json`:
 
 ```json
 {
@@ -73,11 +61,17 @@ miso dev
 # Executes: npm run dev (or bun dev, pnpm dev, etc)
 ```
 
-A name defined in **both** your scripts folder and `package.json` is treated as ambiguous — Miso stops and asks you to rename one so the invocation is unambiguous, rather than quietly picking a winner.
+### Package-Management Commands
 
-### 5. Passthrough
+Alongside the ladder above, Miso checks its package-management commands:
 
-If the command isn't found in any of the previous steps, Miso forwards it to your package manager:
+- `install` or `i` — install dependencies
+- `add` — add new dependencies
+- `remove` — remove dependencies
+
+### Passthrough
+
+If the command isn't found anywhere in the ladder, Miso forwards it to your package manager:
 
 ```bash
 miso outdated
@@ -86,5 +80,28 @@ miso outdated
 ```
 
 This lets you use Miso as a unified interface for all package-manager commands without needing to remember which package manager you're using.
+
+## Collisions Are Errors
+
+Miso never silently picks a winner:
+
+- A name in both root `package.json` and the scripts folder — error, rename one.
+- A name in both `turbo.json` and a Miso script, with no task entry to break the tie — error:
+
+    ```
+    "<name>" is both a turbo task and a miso script — declare repo.tasks.<name> to have miso own it, or rename the script so turbo owns it
+    ```
+
+- A `concurrent` entry that resolves nowhere — the launch fails, naming the entry and where Miso looked:
+
+    ```
+    concurrent "<entry>": no script found at <scope>
+    ```
+
+- A task entry with no body and no `concurrent`/`dependsOn` — config error:
+
+    ```
+    repo.tasks.<name> declares nothing: no script named "<name>" found and no concurrent entries
+    ```
 
 > Targeting specific workspaces with an `@scope` (e.g. `miso build @api`) is covered in [Monorepos](/scripting/monorepos#how-workspace-matching-works).

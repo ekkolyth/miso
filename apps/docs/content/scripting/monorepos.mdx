@@ -108,6 +108,33 @@ miso deploy          # runs apps/api/scripts/deploy.sh
 
 A member without its own `miso.json` resolves against the repo root instead — target it from the root with `miso build @api`.
 
+## Root Is the Orchestrator
+
+When workspace members exist, the root is not a fan-out member. Root `package.json` scripts are entry points (`"dev": "miso dev"` is safe — it never gets shadowed by member fan-out), and root-owned work is addressed explicitly with `#`:
+
+| Form | Resolves against |
+|---|---|
+| `name` | the scope declaring it — a root list resolves at root, a member list resolves at that member |
+| `#name` | the repo root, explicitly, regardless of declaring scope |
+| `@member/name` | the named workspace member, regardless of declaring scope |
+
+A root task's own list spawns once per run, no matter how many members fan out. That's how you fan every member's `dev` out while bringing up a single root Compose stack alongside it:
+
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"repo": {
+\t\t"tasks": {
+\t\t\t"dev": { "concurrent": ["#db/up"] }
+\t\t}
+\t}
+}`}
+/>
+
+Each member's own `miso.json` declares its own companions, resolved inside that member — a root task's `concurrent` list never broadcasts into members.
+
 ## Per-Workspace `miso.json`
 
 A workspace member can carry its own `miso.json`. When miso runs a task scoped to that member, the member's config overlays the root config for these fields: `scripts`, `shell`, `flags`, `tui`, and `tasks`. Any field the member omits falls back to the root value.
@@ -147,3 +174,11 @@ If no workspace matches, Miso exits with an error listing the available scopes:
 ```
 scope "@typo" matched no workspace (available: @myorg/api, @myorg/web, @myorg/ui)
 ```
+
+## Migrating to 0.7.0
+
+- Root scripts no longer preempt member fan-out. If a root script was deliberately shadowing a member fan-out, declare `repo.tasks.<name>` or address it with `#name` instead.
+- `concurrent` entries that resolve nowhere now fail the launch instead of being silently skipped.
+- A name claimed by both `turbo.json` and a Miso script now errors instead of the script silently winning.
+- Nx repos: Miso only parses `turbo.json` for delegated pipeline tasks, so in nx mode every non-task name now runs under Miso's own orchestration and chrome rather than falling through to nx directly. Set `"tui": "off"` to get plain output back.
+- Plain scripts in turbo/nx repos now run under Miso's single-pane TUI; `"tui": "off"` restores plain output there too.

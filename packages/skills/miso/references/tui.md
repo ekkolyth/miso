@@ -67,24 +67,22 @@ Controls **orchestration** — who runs the processes. Workspace membership is d
 
 ## Script Resolution
 
-`miso <script>` resolves the **root scope first** — its `scripts/` folder and
-its `package.json`, same both-sources rule as a single-repo project (defined
-in both → error, not a silent pick; see `miso-scripting`). Resolves at root
-→ that's **one** process, and miso does not also fan out to members. Only
-when the root has no matching script does miso resolve across workspace
-members — one process per member that defines it, each member subject to the
-same both-sources error within its own scope. This applies to every script
-(`dev`, `build`, `test`, …), not just `dev`. Simple mode (`packageManager:
-false`) never fans out — there's no workspace concept without a package
-manager.
+`miso <script>` resolves against **workspace members first** when members
+exist — the root is the orchestrator, not a fan-out member. Every member
+defining the name runs, one process each (each member subject to the same
+both-sources error within its own scope — defined in both folder and
+`package.json` → error, not a silent pick; see `miso-scripting`). This
+applies to every script (`dev`, `build`, `test`, …), not just `dev`.
 
-A root script always wins over fan-out. To fan `miso dev` out across
-members, remove the root `dev` (folder or `package.json`) so resolution
-falls through to them.
+Only when **no member** defines the name does the root's own `scripts/`
+folder + `package.json` become the body, run as a single process. A root
+task's `concurrent` companions attach exactly once per run either way — they
+never re-broadcast per fan-out member. Simple mode (`packageManager: false`)
+never fans out — there's no workspace concept without a package manager.
 
 Positional args (`miso dev --inspect`) reach the spawned process only when
-the run resolves to that single root entry — a member fan-out drops them,
-since which member should receive them is ambiguous.
+the run resolves to a single root entry — a member fan-out drops them, since
+which member should receive them is ambiguous.
 
 Whatever the resolved set — one root process, or N member processes — is
 what gets rendered: chrome on a TTY with `tui != off`, plain `[label] line`
@@ -216,7 +214,7 @@ An empty task entry is enough to make miso take over `dev`.
 - **`repo: "turbo"` without Turbo installed** — Turbo must be in PATH; miso shells out to `turbo` directly
 - **`dependsOn` without `^`** — `"dependsOn": ["build"]` means same-workspace dependency; use `"dependsOn": ["^build"]` for cross-workspace topological ordering
 - **Assuming no TTY means no orchestration** — an agent or CI run still fans out, runs `concurrent`, and orders `dependsOn`; it just renders plain `[label] line` instead of chrome
-- **Defining a root `dev` when you wanted fan-out** — a root `scripts/dev.sh` or `package.json` `"dev"` always wins over workspace members; remove it if you want `miso dev` to fan out across them
+- **Assuming a root `dev` blocks fan-out** — the root is the orchestrator, not a fan-out member: a root `scripts/dev.sh` or `package.json` `"dev"` only runs as the body when no member defines `dev`; it never preempts fan-out. Address the root explicitly with `#dev` if you need it alongside member fan-out
 - **Expecting chrome to need 2+ processes** — `tabbed`/`merged` render for a single process too; there's no minimum. Use `tui: "off"` for plain output on a lone script
 - **`tui` nested inside `repo`** — `tui` is a top-level field, not under `repo`
 - **`"repo": "turbo"` when you want miso to run dev** — string shorthand `"turbo"` fully delegates all tasks to turbo; to make miso handle specific tasks, use the object form with `tasks`: `{ "mode": "turbo", "tasks": { "dev": {} } }`
