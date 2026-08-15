@@ -331,10 +331,6 @@ func main() {
 	}
 
 	if isRoot {
-		// ActionScriptFolder orchestrates natively but runs literally under
-		// delegation: miso can't wrap a folder script's output in turbo/nx chrome
-		// (that needs miso to control the turbo invocation — see tui.DelegateLaunch),
-		// so a delegated folder script falls through to the literal-exec path.
 		switch parsed.Action {
 		case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough, cli.ActionScriptFolder:
 			scriptName := parsed.ScriptName
@@ -350,25 +346,15 @@ func main() {
 			filters := scopeFilters
 
 			if cfg.IsDelegated() {
-				if parsed.Action != cli.ActionScriptFolder {
-					// Check if this task is overridden by miso's direct orchestration
-					_, taskOverridden := cfg.Tasks[scriptName]
-					if taskOverridden {
-						mgr, ok := manager.GetManager(managerName)
-						if !ok {
-							cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
-						}
-						switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
-						case tui.RendererChrome:
-							ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
-							if err != nil {
-								cli.Fail(logger, err, false)
-							}
-							if ran {
-								return
-							}
-						case tui.RendererPlain:
-							ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+				_, taskOverridden := cfg.Tasks[scriptName]
+				if !taskOverridden {
+					// no miso task entry — turbo owns pipeline names
+					turboCfg, turboErr := turbo.LoadConfig(projectRoot)
+					if turboErr == nil {
+						if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
+							renderer := tui.SelectRenderer(cfg, tui.InteractiveTTY())
+							_, turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
+							ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
 							if err != nil {
 								cli.Fail(logger, err, false)
 							}
@@ -376,46 +362,31 @@ func main() {
 								return
 							}
 						}
-					} else {
-						// Only delegate to turbo/nx if the script is actually a pipeline task
-						turboCfg, turboErr := turbo.LoadConfig(projectRoot)
-						if turboErr == nil {
-							if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
-								renderer := tui.SelectRenderer(cfg, tui.InteractiveTTY())
-								_, turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
-								ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
-								if err != nil {
-									cli.Fail(logger, err, false)
-								}
-								if ran {
-									return
-								}
-							}
-						}
 					}
 				}
-			} else {
-				mgr, ok := manager.GetManager(managerName)
-				if !ok {
-					cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+				// task override, or a miso-only name in a delegated repo —
+				// miso orchestrates with chrome, same as native mode below
+			}
+			mgr, ok := manager.GetManager(managerName)
+			if !ok {
+				cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+			}
+			switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
+			case tui.RendererChrome:
+				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+				if err != nil {
+					cli.Fail(logger, err, false)
 				}
-				switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
-				case tui.RendererChrome:
-					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
-					if err != nil {
-						cli.Fail(logger, err, false)
-					}
-					if ran {
-						return
-					}
-				case tui.RendererPlain:
-					ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
-					if err != nil {
-						cli.Fail(logger, err, false)
-					}
-					if ran {
-						return
-					}
+				if ran {
+					return
+				}
+			case tui.RendererPlain:
+				ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+				if err != nil {
+					cli.Fail(logger, err, false)
+				}
+				if ran {
+					return
 				}
 			}
 			// Orchestration/delegation not applicable — fall through. The Task 4
