@@ -1,6 +1,7 @@
 {
 	"$schema": "https://json-schema.org/draft-07/schema#",
 	"$id": "https://misojs.dev/miso.schema.json",
+	"version": "0.6.0",
 	"title": "Miso Configuration",
 	"description": "Configuration for Miso package manager",
 	"type": "object",
@@ -21,14 +22,25 @@
 		},
 		"shell": {
 			"type": "string",
-			"enum": ["sh", "zsh", "bash", "dash", "ksh", "fish", "nu", "pwsh"],
+			"enum": [
+				"sh",
+				"zsh",
+				"bash",
+				"dash",
+				"ksh",
+				"fish",
+				"nu",
+				"pwsh"
+			],
 			"description": "Default interpreter for scripts with no shebang or recognized extension (e.g. sh, bash, zsh)"
 		},
 		"flags": {
 			"type": "object",
 			"additionalProperties": {
 				"type": "array",
-				"items": { "type": "string" }
+				"items": {
+					"type": "string"
+				}
 			},
 			"description": "Default flags for package manager commands (add, remove, install, dev)"
 		},
@@ -36,7 +48,11 @@
 			"oneOf": [
 				{
 					"type": "string",
-					"enum": ["miso", "turbo", "nx"],
+					"enum": [
+						"miso",
+						"turbo",
+						"nx"
+					],
 					"description": "Orchestration mode. 'miso' (default) discovers workspace members from package.json workspaces or pnpm-workspace.yaml and fans out task execution; 'turbo' delegates to Turborepo; 'nx' delegates to Nx. Workspace membership is detected independently of this setting."
 				},
 				{
@@ -44,7 +60,11 @@
 					"properties": {
 						"mode": {
 							"type": "string",
-							"enum": ["miso", "turbo", "nx"],
+							"enum": [
+								"miso",
+								"turbo",
+								"nx"
+							],
 							"description": "Orchestration mode. Defaults to 'miso' if omitted."
 						},
 						"tasks": {
@@ -54,31 +74,39 @@
 								"properties": {
 									"dependsOn": {
 										"type": "array",
-										"items": { "type": "string" },
-										"description": "Task dependencies. Use '^taskName' prefix to run upstream workspace dependencies first."
+										"items": {
+											"type": "string"
+										},
+										"description": "Task dependencies. Use '^taskName' prefix to run upstream workspace dependencies first. Only main entries participate in ordering; concurrent companions always start immediately."
 									},
 									"concurrent": {
 										"type": "array",
-										"items": { "type": "string" },
-										"description": "Additional tasks to discover and run in parallel alongside the main task."
+										"items": {
+											"type": "string"
+										},
+										"description": "Companion scripts run alongside the main task in the shared TUI. Three forms: 'name' resolves in the declaring scope (root list → root, member list → that member); '#name' resolves at the repo root explicitly; '@member/script' resolves inside the named workspace member. The root list spawns once per run, including during member fan-out. An entry that resolves nowhere fails the launch."
 									}
 								},
 								"additionalProperties": false
 							},
-							"description": "Per-task configuration. Available in all repo modes. Defines dependency ordering (dependsOn) and companion tasks (concurrent). In turbo/nx mode, tasks listed here use miso's direct orchestration instead of delegation."
+							"description": "Per-task orchestration metadata. A task entry never defines a command body — the body resolves by name (workspace member scripts, then root package.json / scripts folder). Declaring a task in turbo/nx mode opts that one name out of delegation and into miso's orchestration. An entry with no resolvable body and no concurrent/dependsOn is a config error."
 						}
-				},
-				"additionalProperties": false
-			}
-		],
-		"default": "miso",
+					},
+					"additionalProperties": false
+				}
+			],
+			"default": "miso",
 			"description": "Orchestration mode and optional task configuration. String shorthand or object with mode and tasks. Workspace membership is auto-detected from package.json workspaces or pnpm-workspace.yaml, independent of this setting."
 		},
 		"tui": {
 			"oneOf": [
 				{
 					"type": "string",
-					"enum": ["off", "tabbed", "merged"],
+					"enum": [
+						"off",
+						"tabbed",
+						"merged"
+					],
 					"description": "TUI mode shorthand. 'tabbed' shows panes in separate tabs (default), 'merged' shows all output in a single stream, 'off' disables the chrome — orchestration (fan-out, concurrent, dependsOn) still runs, output streams as plain prefixed lines."
 				},
 				{
@@ -86,7 +114,11 @@
 					"properties": {
 						"mode": {
 							"type": "string",
-							"enum": ["off", "tabbed", "merged"],
+							"enum": [
+								"off",
+								"tabbed",
+								"merged"
+							],
 							"description": "TUI display mode"
 						},
 						"cleanExit": {
@@ -95,7 +127,9 @@
 							"description": "When true, suppress log dump on TUI exit. By default, all buffered output is printed to stdout when the TUI exits."
 						}
 					},
-					"required": ["mode"],
+					"required": [
+						"mode"
+					],
 					"additionalProperties": false
 				}
 			],
@@ -114,7 +148,9 @@
 				},
 				{
 					"type": "array",
-					"items": { "$ref": "#/$defs/envEntry" },
+					"items": {
+						"$ref": "#/$defs/envEntry"
+					},
 					"description": "One entry per app or .env file to validate"
 				}
 			],
@@ -137,8 +173,15 @@
 				},
 				"path": {
 					"oneOf": [
-						{ "type": "string" },
-						{ "type": "array", "items": { "type": "string" } }
+						{
+							"type": "string"
+						},
+						{
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						}
 					],
 					"description": "Path to the .env file, relative to project root (string). A legacy array is accepted; only the first element is used."
 				},
@@ -148,8 +191,19 @@
 				},
 				"required": {
 					"oneOf": [
-						{ "type": "string", "enum": ["all", "none"] },
-						{ "type": "array", "items": { "type": "string" } }
+						{
+							"type": "string",
+							"enum": [
+								"all",
+								"none"
+							]
+						},
+						{
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						}
 					],
 					"description": "Which variables must be present: 'all' (default), 'none', or a list of specific keys"
 				},
@@ -157,7 +211,9 @@
 					"oneOf": [
 						{
 							"type": "array",
-							"items": { "type": "string" },
+							"items": {
+								"type": "string"
+							},
 							"description": "Variable names — presence-only validation"
 						},
 						{
@@ -168,7 +224,9 @@
 										"type": "string",
 										"description": "Type shorthand (e.g. 'port', 'url', 'string', 'bool')"
 									},
-									{ "$ref": "#/$defs/varConfig" }
+									{
+										"$ref": "#/$defs/varConfig"
+									}
 								]
 							},
 							"description": "Variable names mapped to type shorthands or full VarConfig objects"
@@ -220,26 +278,36 @@
 				},
 				"values": {
 					"type": "array",
-					"items": { "type": "string" },
+					"items": {
+						"type": "string"
+					},
 					"description": "Allowed values (required for 'enum' type)"
 				},
 				"schemes": {
 					"type": "array",
-					"items": { "type": "string" },
+					"items": {
+						"type": "string"
+					},
 					"description": "Allowed URL schemes for 'url' type (default: ['http', 'https'])"
 				},
 				"trueValues": {
 					"type": "array",
-					"items": { "type": "string" },
+					"items": {
+						"type": "string"
+					},
 					"description": "Strings treated as true for 'bool' type (default: ['true','1','yes','on'])"
 				},
 				"falseValues": {
 					"type": "array",
-					"items": { "type": "string" },
+					"items": {
+						"type": "string"
+					},
 					"description": "Strings treated as false for 'bool' type (default: ['false','0','no','off'])"
 				}
 			},
-			"required": ["type"],
+			"required": [
+				"type"
+			],
 			"additionalProperties": false
 		}
 	}
