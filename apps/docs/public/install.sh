@@ -13,6 +13,19 @@ info()  { printf '\033[1;34m[miso]\033[0m %s\n' "$*"; }
 ok()    { printf '\033[1;32m[miso]\033[0m %s\n' "$*"; }
 fail()  { printf '\033[1;31m[miso]\033[0m error: %s\n' "$*" >&2; exit 1; }
 
+# Stage alongside the destination then rename, so the swap is a real rename and
+# never a copy over the live inode. Overwriting in place reuses the inode, which
+# invalidates the kernel's cached ad-hoc signature on macOS and gets the binary
+# SIGKILLed on next exec.
+install_atomic() {
+  src=$1
+  dest=$2
+  tmp=$(mktemp "$(dirname "$dest")/.miso.XXXXXX") || fail "Could not stage $dest"
+  cp "$src" "$tmp" || { rm -f "$tmp"; fail "Could not stage $dest"; }
+  chmod 755 "$tmp" || { rm -f "$tmp"; fail "Could not stage $dest"; }
+  mv -f "$tmp" "$dest" || { rm -f "$tmp"; fail "Could not install $dest"; }
+}
+
 # ── Detect OS ─────────────────────────────────────────────────────────────────
 
 OS="$(uname -s)"
@@ -85,8 +98,7 @@ fi
 # ── Install ───────────────────────────────────────────────────────────────────
 
 mkdir -p "$INSTALL_DIR"
-chmod +x "$EXTRACTED_BINARY"
-mv "$EXTRACTED_BINARY" "${INSTALL_DIR}/miso"
+install_atomic "$EXTRACTED_BINARY" "${INSTALL_DIR}/miso"
 
 # ── Download + install misox (standalone npx stand-in) ────────────────────────
 
@@ -109,8 +121,7 @@ if [ ! -f "$MISOX_BINARY" ]; then
   fail "Could not find binary 'misox-${OS}-${ARCH}' in archive. Archive contents: $(ls "$TMP_DIR")"
 fi
 
-chmod +x "$MISOX_BINARY"
-mv "$MISOX_BINARY" "${INSTALL_DIR}/misox"
+install_atomic "$MISOX_BINARY" "${INSTALL_DIR}/misox"
 
 # ── PATH hint ─────────────────────────────────────────────────────────────────
 
