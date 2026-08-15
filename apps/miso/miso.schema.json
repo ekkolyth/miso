@@ -13,7 +13,7 @@
 		"packageManager": {
 			"type": "boolean",
 			"default": true,
-			"description": "Enable or disable package manager features. When false, miso operates as a pure script runner — no install/add/remove commands, no package.json script discovery. Default: true."
+			"description": "Enable or disable package manager features. When false, miso operates as a pure script runner \u2014 no install/add/remove commands, no package.json script discovery. Default: true."
 		},
 		"scripts": {
 			"type": "string",
@@ -77,19 +77,19 @@
 										"items": {
 											"type": "string"
 										},
-										"description": "Task dependencies. Use '^taskName' prefix to run upstream workspace dependencies first."
+										"description": "Task dependencies. Use '^taskName' prefix to run upstream workspace dependencies first. Only main entries participate in ordering; concurrent companions always start immediately."
 									},
 									"concurrent": {
 										"type": "array",
 										"items": {
 											"type": "string"
 										},
-										"description": "Additional tasks to discover and run in parallel alongside the main task."
+										"description": "Companion scripts run alongside the main task in the shared TUI. Three forms: 'name' resolves in the declaring scope (root list \u2192 root, member list \u2192 that member); '#name' resolves at the repo root explicitly; '@member/script' resolves inside the named workspace member. The root list spawns once per run, including during member fan-out. An entry that resolves nowhere fails the launch."
 									}
 								},
 								"additionalProperties": false
 							},
-							"description": "Per-task configuration. Available in all repo modes. Defines dependency ordering (dependsOn) and companion tasks (concurrent). In turbo/nx mode, tasks listed here use miso's direct orchestration instead of delegation."
+							"description": "Per-task orchestration metadata. A task entry never defines a command body \u2014 the body resolves by name (workspace member scripts, then root package.json / scripts folder). Declaring a task in turbo/nx mode opts that one name out of delegation and into miso's orchestration. An entry with no resolvable body and no concurrent/dependsOn is a config error."
 						}
 					},
 					"additionalProperties": false
@@ -107,7 +107,7 @@
 						"tabbed",
 						"merged"
 					],
-					"description": "TUI mode shorthand. 'tabbed' shows panes in separate tabs (default), 'merged' shows all output in a single stream, 'off' disables the chrome — orchestration (fan-out, concurrent, dependsOn) still runs, output streams as plain prefixed lines."
+					"description": "TUI mode shorthand. 'tabbed' shows panes in separate tabs (default), 'merged' shows all output in a single stream, 'off' disables the chrome \u2014 orchestration (fan-out, concurrent, dependsOn) still runs, output streams as plain prefixed lines."
 				},
 				{
 					"type": "object",
@@ -214,7 +214,7 @@
 							"items": {
 								"type": "string"
 							},
-							"description": "Variable names — presence-only validation"
+							"description": "Variable names \u2014 presence-only validation"
 						},
 						{
 							"type": "object",
