@@ -70,6 +70,20 @@ Each entry is validated independently, and every failure is reported in one pass
     REDIS_URL: missing required variable
 ```
 
+## What gets checked
+
+`miso env` and `--env` read the root `miso.json` **and** every workspace member's `miso.json`, in every repo mode. A clean exit means the whole repo's declared variables are present and well-typed — that's what makes it usable as a CI gate.
+
+Two consequences worth knowing:
+
+- **A member `miso.json` that won't parse fails the run.** Skipping it would report a pass over requirements nothing checked, which is the failure mode the gate exists to prevent.
+
+    ```
+    failed to read a workspace config error="load apps/web/miso.json: parse config: …"
+    ```
+
+- **Membership is the package manager's.** Members come from `package.json` workspaces or `pnpm-workspace.yaml`. A `miso.json` in a directory that isn't a workspace member isn't traversed — if you keep schemas outside the workspace set, declare them at the root instead.
+
 ## Auto-Discovery
 
 Even without an `env` block in `miso.json`, Miso automatically loads a `.env` file into every script it runs. It walks the following candidates in order and loads the first one it finds:
