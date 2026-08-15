@@ -1,6 +1,7 @@
 package env
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,67 @@ import (
 // order: global, then root entries scoped to the target, then member-local (member
 // targets only). Later layers win on key conflict. Result is gap-filled under
 // os.Environ() so the ambient shell wins.
+// targetEntries returns the declared entries that apply to target, in layer
+// order: global first, then whichever config names the target — a root-scoped
+// entry or the member's own, never both (checkScopeExclusivity enforces that).
+func targetEntries(projectRoot string, cfg config.Config, target workspace.Target) []scopedEntry {
+	var applied []scopedEntry
+	for _, entry := range cfg.Env {
+		if entry.Scope == "global" {
+			applied = append(applied, scopedEntry{entry: entry, baseDir: projectRoot})
+		}
+	}
+	for _, entry := range cfg.Env {
+		if entry.Scope == "global" {
+			continue
+		}
+		if entry.Scope == target.Name {
+			applied = append(applied, scopedEntry{entry: entry, baseDir: projectRoot})
+			continue
+		}
+		if target.Kind == workspace.TargetMember && target.Dir != "" && entry.Scope == filepath.Base(target.Dir) {
+			applied = append(applied, scopedEntry{entry: entry, baseDir: projectRoot})
+		}
+	}
+	if target.Kind == workspace.TargetMember && target.Dir != "" {
+		if memberCfg, err := config.Load(target.Dir); err == nil {
+			for _, entry := range memberCfg.Env {
+				applied = append(applied, scopedEntry{entry: entry, baseDir: target.Dir})
+			}
+		}
+	}
+	return applied
+}
+
+// TargetSummary counts the declared scopes and variables that apply to target —
+// what `--env` checked on its behalf. Zero scopes means nothing was declared for
+// it, so callers have nothing to report.
+func TargetSummary(projectRoot string, cfg config.Config, target workspace.Target) (scopes int, variables int) {
+	for _, applied := range targetEntries(projectRoot, cfg, target) {
+		scopes++
+		variables += len(applied.entry.Variables.Object) + len(applied.entry.Variables.Array)
+	}
+	return scopes, variables
+}
+
+// ValidatedLine reports what --env checked on this target's behalf, for a
+// runner to print above the process's own output. Empty when nothing was
+// declared for it — there's no result to report.
+func ValidatedLine(projectRoot string, cfg config.Config, target workspace.Target) string {
+	scopes, variables := TargetSummary(projectRoot, cfg, target)
+	if scopes == 0 {
+		return ""
+	}
+	return fmt.Sprintf("env validated — %s, %s", plural(scopes, "scope"), plural(variables, "variable"))
+}
+
+func plural(count int, noun string) string {
+	if count == 1 {
+		return fmt.Sprintf("%d %s", count, noun)
+	}
+	return fmt.Sprintf("%d %ss", count, noun)
+}
+
 func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Target) ([]string, error) {
 	vars := make(map[string]string)
 	loaded := false
@@ -52,29 +114,8 @@ func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Targ
 		}
 	}
 
-	for _, entry := range cfg.Env {
-		if entry.Scope == "global" {
-			apply(entry, projectRoot)
-		}
-	}
-	for _, entry := range cfg.Env {
-		if entry.Scope == "global" {
-			continue
-		}
-		if entry.Scope == target.Name {
-			apply(entry, projectRoot)
-			continue
-		}
-		if target.Kind == workspace.TargetMember && target.Dir != "" && entry.Scope == filepath.Base(target.Dir) {
-			apply(entry, projectRoot)
-		}
-	}
-	if target.Kind == workspace.TargetMember && target.Dir != "" {
-		if memberCfg, err := config.Load(target.Dir); err == nil {
-			for _, entry := range memberCfg.Env {
-				apply(entry, target.Dir)
-			}
-		}
+	for _, applied := range targetEntries(projectRoot, cfg, target) {
+		apply(applied.entry, applied.baseDir)
 	}
 
 	startDir := projectRoot

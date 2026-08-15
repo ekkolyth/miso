@@ -229,7 +229,8 @@ func main() {
 		scriptArgs := args[1:]
 
 		// Handle --env flag: run env validation before script execution
-		if env.HasEnvFlag(scriptArgs) {
+		envValidated := env.HasEnvFlag(scriptArgs)
+		if envValidated {
 			if err := env.Run(projectRoot, cfg, logger); err != nil {
 				os.Exit(1)
 			}
@@ -241,7 +242,7 @@ func main() {
 		// below only when nothing was orchestrated.
 		switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
 		case tui.RendererChrome:
-			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs)
+			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -249,7 +250,7 @@ func main() {
 				return
 			}
 		case tui.RendererPlain:
-			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs)
+			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -310,7 +311,7 @@ func main() {
 	}
 
 	// --env flag: run env validation first, then strip from args before passing to command
-	cfg, parsed = runEnvIfRequested(projectRoot, cfg, parsed, logger)
+	cfg, parsed, envValidated := runEnvIfRequested(projectRoot, cfg, parsed, logger)
 
 	// Resolve explicit @scope filters up front so an unknown or ambiguous scope
 	// fails with a precise message regardless of TUI/root/action routing, and so
@@ -354,10 +355,9 @@ func main() {
 					turboCfg, turboErr := turbo.LoadConfig(projectRoot)
 					if turboErr == nil {
 						if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
-							resolved, resolveErr := scripting.ResolveScript(scriptName, projectRoot, cfg)
-							if resolveErr == nil && resolved.Source != scripting.ScriptSourceNone {
+							if delegatedFolderClash(scriptName, projectRoot, cfg) {
 								cli.Fail(logger, fmt.Errorf(
-									"%q is both a turbo task and a miso script — declare repo.tasks.%s to have miso own it, or rename the script so turbo owns it",
+									"%q is both a turbo task and a folder script — declare repo.tasks.%s to have miso own it, or rename the script so turbo owns it",
 									scriptName, scriptName), false)
 							}
 							_, turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
@@ -380,7 +380,7 @@ func main() {
 			}
 			switch renderer {
 			case tui.RendererChrome:
-				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated)
 				if err != nil {
 					cli.Fail(logger, err, false)
 				}
@@ -388,7 +388,7 @@ func main() {
 					return
 				}
 			case tui.RendererPlain:
-				ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+				ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated)
 				if err != nil {
 					cli.Fail(logger, err, false)
 				}
@@ -519,6 +519,15 @@ func main() {
 	}
 }
 
+// a folder script sharing a delegated pipeline task's name would never run —
+// the delegate owns the name — so the two can't coexist. package.json scripts
+// are entry points, not claimants: a root "build": "turbo run build" is the
+// turbo convention, so they never count as a clash.
+func delegatedFolderClash(scriptName, projectRoot string, cfg config.Config) bool {
+	resolved, err := scripting.ResolveScript(scriptName, projectRoot, cfg)
+	return err == nil && resolved.Source == scripting.ScriptSourceFolder
+}
+
 // scopeFilterNames resolves parsed.Scopes to full member package names. An
 // unknown or ambiguous scope token the user typed is fatal — miso refuses to
 // run when it can't honor an explicit scope.
@@ -540,7 +549,7 @@ func scopeFilterNames(scopes []string, projectRoot string, cfg config.Config, lo
 
 // runEnvIfRequested checks for --env in effective args (config flags + CLI args).
 // If present, runs env validation first; on success, strips --env from cfg and parsed.
-func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedCLI, logger *log.Logger) (config.Config, cli.ParsedCLI) {
+func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedCLI, logger *log.Logger) (config.Config, cli.ParsedCLI, bool) {
 	var effective []string
 	switch parsed.Action {
 	case cli.ActionAdd:
@@ -558,11 +567,11 @@ func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedC
 		scriptFlags := cfg.Flags[parsed.ScriptName]
 		effective = append(scriptFlags, parsed.ScriptArgs...)
 	default:
-		return cfg, parsed
+		return cfg, parsed, false
 	}
 
 	if !env.HasEnvFlag(effective) {
-		return cfg, parsed
+		return cfg, parsed, false
 	}
 
 	if err := env.Run(projectRoot, cfg, logger); err != nil {
@@ -580,5 +589,5 @@ func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedC
 		cli.ActionScriptOverride, cli.ActionScriptFolder, cli.ActionScriptPackageJSON:
 		parsed.ScriptArgs = env.StripEnvFlag(parsed.ScriptArgs)
 	}
-	return cfg, parsed
+	return cfg, parsed, true
 }

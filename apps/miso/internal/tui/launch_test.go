@@ -59,7 +59,7 @@ func TestBuildRunRootScriptArgsReachScript(t *testing.T) {
 	}
 
 	cfg := config.Config{Scripts: "./scripts"}
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, "echo-args", root, nil, nil, []string{"staging"})
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, "echo-args", root, nil, nil, []string{"staging"}, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestBuildRunPackageJSONScriptArgsReachScript(t *testing.T) {
 	}
 
 	cfg := config.Config{Scripts: "./scripts"}
-	pm, _, _, ran, err := buildRun(cfg, "deploy", root, bun.Bun{}, nil, []string{"staging"})
+	pm, _, _, ran, err := buildRun(cfg, "deploy", root, bun.Bun{}, nil, []string{"staging"}, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestBuildRunConcurrentCompanionDoesNotReceiveArgs(t *testing.T) {
 		Scripts: "./scripts",
 		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"worker"}}},
 	}
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, []string{"staging"})
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, []string{"staging"}, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestBuildRunMemberFanOutDropsArgs(t *testing.T) {
 	}
 
 	cfg := config.Config{Scripts: "./scripts"}
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, []string{"staging"})
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, []string{"staging"}, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestBuildRunRootConcurrentUnresolvableAtRootErrors(t *testing.T) {
 		Scripts: "./scripts",
 		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"services"}}},
 	}
-	_, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil)
+	_, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
 	if err == nil {
 		t.Fatal("expected error: root concurrent \"services\" is unresolvable at root scope")
 	}
@@ -482,7 +482,7 @@ func TestBuildRunMemberFanOutConcurrentCompanionExemptFromDependsOn(t *testing.T
 		Scripts: "./scripts",
 		Tasks:   map[string]config.TaskConfig{"dev": {DependsOn: []string{"^dev"}}},
 	}
-	_, levels, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, nil)
+	_, levels, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}

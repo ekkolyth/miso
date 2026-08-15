@@ -71,6 +71,7 @@ type Process struct {
 	Dir       string   // working directory for the process
 	Environ   []string // environment variables for the process (nil = inherit)
 	NoPTY     bool     // plain mode: pipe stdio (no pty) so a tool self-formats for a non-tty
+	Preamble  []string // miso's own lines, emitted into the pane before the child starts
 	State     ProcessState
 	ExitCode  int
 	StartedAt time.Time
@@ -158,7 +159,16 @@ func (pm *ProcessManager) Start(p *Process) error {
 	cmd := p.cmd
 	done := p.done
 	noPTY := p.NoPTY
+	preamble := append([]string(nil), p.Preamble...)
 	p.mu.Unlock()
+
+	// Emitted before the child's first byte so a pane opens with what miso did
+	// on its behalf. Buffer write mirrors captureOutput so every renderer — the
+	// buffer-rendering ones and the op-streaming plain sink — sees it the same.
+	for _, line := range preamble {
+		p.Buffer.Write(line)
+		pm.sendLine(p, OpAppend{Text: line})
+	}
 
 	// pipes when noPTY (plain mode — the tool sees a non-tty and self-formats to
 	// line output), else a pty so chrome children stay interactive and colored.

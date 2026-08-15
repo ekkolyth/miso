@@ -50,8 +50,8 @@ func filterEntriesByWorkspace(entries []TuiScriptEntry, names []string) []TuiScr
 // there. Returns (true, nil) on a clean run, (true, err) when the program
 // errored or a child exited non-zero, (false, nil) when nothing resolved so
 // the caller falls through to normal execution
-func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (bool, error) {
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs)
+func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (bool, error) {
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated)
 	if err != nil {
 		return false, err
 	}
@@ -110,8 +110,8 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 // the plain sibling of Launch: shares buildRun's discovery + process setup,
 // then streams "[label] line" to stdout instead of rendering bubbletea chrome.
 // Same (ran, err) contract as Launch
-func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (bool, error) {
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs)
+func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (bool, error) {
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated)
 	if err != nil {
 		return false, err
 	}
@@ -142,7 +142,7 @@ func markPlain(procs []*Process) {
 // (LaunchPlain) paths: resolves entries, applies workspace filters, adds a
 // process per entry with scoped env, and pre-computes dependency levels. ran is
 // false when no entries resolve — the caller falls through to normal execution
-func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (*ProcessManager, [][]TuiScriptEntry, []*Process, bool, error) {
+func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (*ProcessManager, [][]TuiScriptEntry, []*Process, bool, error) {
 	entries, err := discoverEntries(cfg, scriptName, root, scriptArgs)
 	if err != nil {
 		return nil, nil, nil, false, err
@@ -205,7 +205,12 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 			return nil, nil, nil, false, fmt.Errorf("build env for %s: %w", entry.Label, envErr)
 		}
 
-		pm.Add(entry, cmd, args, dir, processEnv)
+		proc := pm.Add(entry, cmd, args, dir, processEnv)
+		if envValidated {
+			if line := env.ValidatedLine(root, cfg, target); line != "" {
+				proc.Preamble = append(proc.Preamble, line)
+			}
+		}
 	}
 
 	// Pre-compute dependency levels when the command declares dependsOn. Only

@@ -736,3 +736,28 @@ func TestStripNonColorANSI(t *testing.T) {
 		})
 	}
 }
+
+// The preamble must land in the ring buffer (what the tabbed and merged
+// renderers draw from) ahead of the child's own first line.
+func TestStartEmitsPreambleBeforeChildOutput(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "web"}, "sh",
+		[]string{"-c", `printf 'next dev booting\n'`}, "", nil)
+	p.Preamble = []string{"env validated — 2 scopes, 3 variables"}
+
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+	pm.WaitAllExited([]*Process{p})
+
+	lines := p.Buffer.Lines()
+	if len(lines) < 2 {
+		t.Fatalf("got %d lines, want preamble + child output: %v", len(lines), lines)
+	}
+	if lines[0] != "env validated — 2 scopes, 3 variables" {
+		t.Errorf("first line = %q, want the preamble", lines[0])
+	}
+	if !strings.Contains(lines[1], "next dev booting") {
+		t.Errorf("second line = %q, want the child's output", lines[1])
+	}
+}
