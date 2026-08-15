@@ -119,13 +119,15 @@ concurrent "db/up": no script found at root scope (scripts folder "./scripts" an
 
 The error names the entry and every location searched. Fix the name or create the script.
 
-### A turbo task and a miso script can't share a name
+### A turbo task and a folder script can't share a name
 
-In a delegated repo, a name claimed by both `turbo.json` and a miso script used to let the script win silently. Now it's an error:
+In a delegated repo, a name claimed by both `turbo.json` and a scripts-folder file used to let the script win silently. Now it's an error:
 
 ```
-"build" is both a turbo task and a miso script — declare repo.tasks.build to have miso own it, or rename the script so turbo owns it
+"build" is both a turbo task and a folder script — declare repo.tasks.build to have miso own it, or rename the script so turbo owns it
 ```
+
+Root `package.json` scripts are entry points, not claimants — the standard `"build": "turbo run build"` still delegates as before.
 
 ### An empty task entry is a config error
 

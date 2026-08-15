@@ -32,7 +32,7 @@ When you run a task declared in `turbo.json` (say `miso build`) with turbo mode:
 3. Miso displays the process output in the TUI with per-workspace tabs
 4. Each workspace gets its own tab with independent scroll, exit code, and cache status
 
-Names turbo doesn't know — folder scripts, workspace scripts, `repo.tasks` overrides — run under miso's own orchestration with the usual chrome, following the [resolution ladder](/scripting/script-resolution). A name claimed by both `turbo.json` and a miso script is an error, not a silent pick: declare it under `repo.tasks` to hand it to miso, or rename the script so turbo owns it.
+Names turbo doesn't know — folder scripts, workspace scripts, `repo.tasks` overrides — run under miso's own orchestration with the usual chrome, following the [resolution ladder](/scripting/script-resolution). A name claimed by both `turbo.json` and a scripts-folder file is an error, not a silent pick: declare it under `repo.tasks` to hand it to miso, or rename the script so turbo owns it. Root `package.json` scripts are entry points rather than claimants, so the usual `"build": "turbo run build"` keeps working.
 
 You can still target specific workspaces with an `@scope` — miso passes it through as `turbo --filter` (or `nx --projects`).
 

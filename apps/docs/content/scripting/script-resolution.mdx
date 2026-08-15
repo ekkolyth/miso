@@ -87,11 +87,13 @@ Miso never silently picks a winner:
 
 - Two scripts-folder files resolving to the same command name (e.g. `build.sh` and `build.ts`) — error, rename one.
 - A name in both root `package.json` and the scripts folder — error, rename one.
-- A name in both `turbo.json` and a Miso script, with no task entry to break the tie — error:
+- A name in both `turbo.json` and a **scripts-folder** file, with no task entry to break the tie — error:
 
     ```
-    "<name>" is both a turbo task and a miso script — declare repo.tasks.<name> to have miso own it, or rename the script so turbo owns it
+    "<name>" is both a turbo task and a folder script — declare repo.tasks.<name> to have miso own it, or rename the script so turbo owns it
     ```
+
+    A root `package.json` script sharing a turbo task's name is not a conflict — `"build": "turbo run build"` is the standard entry point, so turbo keeps the name.
 
 - A `concurrent` entry that resolves nowhere — the launch fails, naming the entry and where Miso looked:
 

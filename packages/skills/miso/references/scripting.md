@@ -66,10 +66,11 @@ In a monorepo, "scope" means the root first, then each workspace member — the 
 
 In `turbo`/`nx` mode this distinction matters:
 
-- A **`package.json` script** whose name is a turbo/nx task gets **delegated** — miso runs `turbo run <name>` itself and wraps the output in the miso TUI chrome (tabs). This works because miso controls the invocation (it adds `--log-order=stream`, withholds a pty, and parses turbo's streamed output). This is the way to get the chrome.
-- A **folder script** runs **literally** — exactly the command you wrote. miso does **not** wrap it in the turbo chrome, because it can't reliably parse an arbitrary script's output into tabs (the script controls turbo's flags, not miso). You get turbo's own output.
+- A name declared in `turbo.json` gets **delegated** — miso runs `turbo run <name>` itself and wraps the output in the miso TUI chrome (tabs). This works because miso controls the invocation (it adds `--log-order=stream`, withholds a pty, and parses turbo's streamed output). A root `package.json` script of the same name is an entry point, not a competitor: `"build": "turbo run build"` is the standard shape and still delegates.
+- A **folder script** whose name turbo doesn't own runs under miso's own **single-pane chrome** — miso spawns it directly rather than handing it to the delegate. `"tui": "off"` streams it plain instead.
+- A folder script sharing a name with a `turbo.json` task is an **error**, because the delegate owns that name and the script would never run. Declare `repo.tasks.<name>` to hand the name to miso, or rename the script.
 
-So: want the tabbed chrome → put `"dev": "turbo run dev"` in `package.json`. Want an exact custom command (extra turbo tasks, flags) → use a folder `dev.sh` and accept turbo's own UI. Defining `dev` in both is the conflict above — pick one.
+So: a turbo pipeline task stays in `turbo.json` and gets the tabbed chrome for free. Work that isn't a pipeline task goes in the `scripts/` folder under its own name. To take a pipeline name away from turbo entirely, declare it under `repo.tasks` — that opts it out of delegation, caching and graph included.
 
 ---
 

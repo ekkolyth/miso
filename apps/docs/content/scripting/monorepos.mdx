@@ -179,6 +179,6 @@ scope "@typo" matched no workspace (available: @myorg/api, @myorg/web, @myorg/ui
 
 - Root scripts no longer preempt member fan-out. If a root script was deliberately shadowing a member fan-out, declare `repo.tasks.<name>` or address it with `#name` instead.
 - `concurrent` entries that resolve nowhere now fail the launch instead of being silently skipped.
-- A name claimed by both `turbo.json` and a Miso script now errors instead of the script silently winning.
+- A name claimed by both `turbo.json` and a scripts-folder file now errors instead of the script silently winning. Root `package.json` entry points (`"build": "turbo run build"`) are unaffected.
 - Nx repos: Miso only parses `turbo.json` for delegated pipeline tasks, so in nx mode every non-task name now runs under Miso's own orchestration and chrome rather than falling through to nx directly. Set `"tui": "off"` to get plain output back.
 - Plain scripts in turbo/nx repos now run under Miso's single-pane TUI; `"tui": "off"` restores plain output there too.
