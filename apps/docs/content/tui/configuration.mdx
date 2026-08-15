@@ -112,6 +112,6 @@ Array of task names to run before this one. The `^` prefix (e.g. `"^build"`) mea
 
 <DocProp prop="concurrent" />
 
-Array of additional task names to discover and run in parallel alongside the main task. In turbo/nx mode, tasks listed here use miso's direct orchestration instead of delegation.
+Companion scripts run alongside the main task in the shared TUI. Three forms: a bare `name` resolves in the scope declaring it (root list → root, a member's list → that member), `#name` resolves at the repo root explicitly, and `@member/script` resolves inside the named workspace member. The root list spawns once per run — including during member fan-out — and an entry that resolves nowhere fails the launch. In turbo/nx mode, declaring a task here opts it into miso's direct orchestration instead of delegation. Full grammar in [Monorepos](/scripting/monorepos).
 
 Commands not listed in `tasks`, or listed without `dependsOn`, run all workspaces in parallel.
