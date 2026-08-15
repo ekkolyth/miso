@@ -258,6 +258,8 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 	if err != nil {
 		return nil, err
 	}
+	// args attach only to a single unambiguous main entry — fan-out is
+	// inherently one-or-more, so scriptArgs never reaches it
 	if len(fanOut) > 0 {
 		return appendRootCompanions(cfg, scriptName, root, fanOut, members)
 	}
@@ -267,13 +269,19 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 	if err != nil {
 		return nil, err
 	}
-	if len(rootResolved) == 0 && len(cfg.TaskConcurrent(scriptName)) == 0 {
+	if rootScopeEmpty(cfg, scriptName, rootResolved) {
 		return nil, nil // nothing anywhere — fall through to passthrough
 	}
 	return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
 }
 
-// zero-member path: previous behaviour, root resolves and root companions attach
+// true when neither a direct script nor a concurrent companion resolves at
+// root scope for scriptName
+func rootScopeEmpty(cfg config.Config, scriptName string, rootResolved []TuiScriptEntry) bool {
+	return len(rootResolved) == 0 && len(cfg.TaskConcurrent(scriptName)) == 0
+}
+
+// zero-member path: root resolves directly and root companions attach
 func discoverSingleRepo(cfg config.Config, scriptName, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
 	var rootResolved []TuiScriptEntry
 	var err error
@@ -285,7 +293,7 @@ func discoverSingleRepo(cfg config.Config, scriptName, root string, scriptArgs [
 	if err != nil {
 		return nil, err
 	}
-	if len(rootResolved) == 0 && len(cfg.TaskConcurrent(scriptName)) == 0 {
+	if rootScopeEmpty(cfg, scriptName, rootResolved) {
 		return nil, nil
 	}
 	return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
@@ -380,8 +388,9 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 
 	concurrent := cfg.TaskConcurrent(scriptName)
 
-	// a broken workspace file must not block a script with no @-ref — only
-	// fetch members when one is actually present (bare names resolve at root)
+	// members may already be cached from discoverEntries's own fan-out fetch;
+	// this guard only spares the zero-member / simple-mode path a fetch when
+	// no @-ref is present (bare names resolve at root)
 	var members []workspace.Member
 	if concurrentNeedsMembers(concurrent) {
 		var err error
@@ -433,7 +442,9 @@ func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []
 			entries = append(entries, concEntries...)
 		}
 	}
-	return DeduplicateLabels(entries), nil
+	// dedup happens once, in appendRootCompanions, over the final merged
+	// list whenever this fan-out is non-empty; an empty result needs no dedup
+	return entries, nil
 }
 
 func buildWSInfos(entries []TuiScriptEntry) []WorkspaceInfo {

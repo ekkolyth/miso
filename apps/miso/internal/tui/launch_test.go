@@ -358,6 +358,49 @@ func TestDiscoverEntriesRootBodyWhenNoMemberDefinesName(t *testing.T) {
 	}
 }
 
+// no member defines the name, no root script exists either — only a root
+// task concurrent. The companion must still launch alone rather than the
+// run silently resolving to nothing.
+func TestDiscoverEntriesConcurrentOnlyLaunchesAlone(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "apps", "web"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "apps", "web", "package.json"),
+		[]byte(`{"name":"web"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rootDb := filepath.Join(root, "scripts", "db")
+	if err := os.MkdirAll(rootDb, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootDb, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"db/up"}}},
+	}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %v, want a single companion entry", labelsOf(entries))
+	}
+	if !entries[0].IsConcurrent {
+		t.Errorf("entry = %+v, want IsConcurrent", entries[0])
+	}
+	if entries[0].WorkspaceDir != root {
+		t.Errorf("WorkspaceDir = %q, want root %q", entries[0].WorkspaceDir, root)
+	}
+}
+
 // TestMarkPlain verifies LaunchPlain's pre-run marking: every process flips to
 // pipe-mode and gains FORCE_COLOR (unless NO_COLOR), and a nil Environ is seeded
 // from os.Environ rather than clobbered down to FORCE_COLOR alone.

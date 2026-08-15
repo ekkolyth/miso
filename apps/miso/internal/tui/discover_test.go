@@ -496,7 +496,7 @@ func TestDiscoverEntriesRootConcurrentTargetsMemberScope(t *testing.T) {
 	if err := os.MkdirAll(rootScripts, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeScript(t, rootScripts, "dev") // root scripts/dev.sh → root-first single process
+	writeScript(t, rootScripts, "dev") // root scripts/dev.sh — no member defines "dev", so it resolves at root scope
 	if err := os.WriteFile(filepath.Join(root, "package.json"),
 		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -595,7 +595,7 @@ func TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename(t *testing.T) {
 	if err := os.MkdirAll(rootScripts, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeScript(t, rootScripts, "dev") // root scripts/dev.sh → root-first single process
+	writeScript(t, rootScripts, "dev") // root scripts/dev.sh — neither member below defines "dev", so it resolves at root scope
 
 	if err := os.WriteFile(filepath.Join(root, "package.json"),
 		[]byte(`{"workspaces":["projects/legacy/web","apps/web"]}`), 0o644); err != nil {
