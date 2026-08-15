@@ -418,9 +418,10 @@ func TestDiscoverTuiScriptsErrorsWhenScriptInBothSources(t *testing.T) {
 	}
 }
 
-// TestDiscoverEntriesRootScriptWinsOverFanOut verifies a script resolving at
-// the root wins over fan-out, even when a member also defines it.
-func TestDiscoverEntriesRootScriptWinsOverFanOut(t *testing.T) {
+// TestDiscoverEntriesMemberFanOutWinsOverRootScript verifies a member's script
+// wins fan-out even when the root also defines the same name — root is never
+// a fan-out member.
+func TestDiscoverEntriesMemberFanOutWinsOverRootScript(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "package.json"),
 		[]byte(`{"workspaces":["apps/web"],"scripts":{"dev":"echo root"}}`), 0o644); err != nil {
@@ -438,10 +439,10 @@ func TestDiscoverEntriesRootScriptWinsOverFanOut(t *testing.T) {
 		t.Fatalf("discoverEntries: %v", err)
 	}
 	if len(entries) != 1 {
-		t.Fatalf("expected 1 root entry (no fan-out), got %d: %v", len(entries), labelsOf(entries))
+		t.Fatalf("expected 1 fan-out entry, got %d: %v", len(entries), labelsOf(entries))
 	}
-	if entries[0].WorkspaceDir != root {
-		t.Errorf("entry dir = %q, want root %q", entries[0].WorkspaceDir, root)
+	if entries[0].WorkspaceDir != webDir {
+		t.Errorf("entry dir = %q, want member dir %q", entries[0].WorkspaceDir, webDir)
 	}
 }
 

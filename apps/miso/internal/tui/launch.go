@@ -236,11 +236,45 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	return pm, levels, concurrentProcs, true, nil
 }
 
-// root wins over members — fan out only when the root doesn't have the script.
-// scriptArgs reaches the spawned process only along the root path, and only
-// when it resolves to the single main entry (see discoverRootScope) — a
-// member fan-out never receives them, since which member would be ambiguous.
+// members ≥ 1: fan out over members (root is the orchestrator, never a
+// fan-out member); root script is the body only when no member defines the
+// name. Root task companions attach exactly once either way. Zero members /
+// simple mode: root script is the body, as always.
 func discoverEntries(cfg config.Config, scriptName string, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
+	var members []workspace.Member
+	if !cfg.SimpleMode() {
+		var err error
+		members, err = workspace.DiscoverMembersCached(root, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("discover members: %w", err)
+		}
+	}
+
+	if len(members) == 0 {
+		return discoverSingleRepo(cfg, scriptName, root, scriptArgs)
+	}
+
+	fanOut, err := discoverMemberFanOut(cfg, scriptName, root, members)
+	if err != nil {
+		return nil, err
+	}
+	if len(fanOut) > 0 {
+		return appendRootCompanions(cfg, scriptName, root, fanOut, members)
+	}
+
+	// no member defines the name — root script as the body (single pane)
+	rootResolved, err := ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if len(rootResolved) == 0 && len(cfg.TaskConcurrent(scriptName)) == 0 {
+		return nil, nil // nothing anywhere — fall through to passthrough
+	}
+	return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
+}
+
+// zero-member path: previous behaviour, root resolves and root companions attach
+func discoverSingleRepo(cfg config.Config, scriptName, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
 	var rootResolved []TuiScriptEntry
 	var err error
 	if cfg.SimpleMode() {
@@ -251,19 +285,23 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 	if err != nil {
 		return nil, err
 	}
-	if len(rootResolved) > 0 {
-		return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
-	}
-
-	members, err := workspace.DiscoverMembersCached(root, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("discover members: %w", err)
-	}
-	// simple mode does not support monorepo workspace discovery
-	if len(members) == 0 || cfg.SimpleMode() {
+	if len(rootResolved) == 0 && len(cfg.TaskConcurrent(scriptName)) == 0 {
 		return nil, nil
 	}
-	return discoverMemberFanOut(cfg, scriptName, root, members)
+	return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
+}
+
+// root task companions, resolved at root scope, appended exactly once per run
+func appendRootCompanions(cfg config.Config, scriptName, root string, entries []TuiScriptEntry, members []workspace.Member) ([]TuiScriptEntry, error) {
+	for _, concName := range cfg.TaskConcurrent(scriptName) {
+		concEntries, err := resolveConcurrent(cfg, concName, root, nil, members)
+		if err != nil {
+			return nil, err
+		}
+		markConcurrent(concEntries)
+		entries = append(entries, concEntries...)
+	}
+	return DeduplicateLabels(entries), nil
 }
 
 // resolves one concurrent entry and errors if it resolves to zero entries.
