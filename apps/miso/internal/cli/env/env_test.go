@@ -402,3 +402,101 @@ func envSliceToMap(environ []string) map[string]string {
 	}
 	return m
 }
+
+func TestRun_Delegated_ValidatesMemberSchemas(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env.local"), []byte("SHARED_VALUE=ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	memberDir := filepath.Join(dir, "apps", "service")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	memberConfig := `{"scripts":"./scripts","env":[{"path":".env.local","required":"all","variables":{"SERVICE_TOKEN":"string"}}]}`
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"), []byte(memberConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, ".env.local"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Repo: "turbo",
+		Env: []*config.EnvEntry{
+			{Scope: "global", Path: ".env.local", Variables: config.EnvVariables{Array: []string{"SHARED_VALUE"}}},
+		},
+	}
+	logger := log.New(io.Discard)
+
+	if err := Run(dir, cfg, logger); err == nil {
+		t.Fatal("delegated mode must still validate member-local schemas")
+	}
+}
+
+func TestRun_Delegated_MemberNamedGlobal_NotAnError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberDir := filepath.Join(dir, "apps", "global")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "package.json"), []byte(`{"name":"global"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Repo: "turbo", Env: []*config.EnvEntry{{Label: "root", Path: ".env"}}}
+	logger := log.New(io.Discard)
+
+	if err := Run(dir, cfg, logger); err != nil {
+		t.Fatalf(`"global" is only reserved where scope has meaning: %v`, err)
+	}
+}
+
+func TestRun_ScopeDeclaredInRootAndMember_IsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberDir := filepath.Join(dir, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "package.json"), []byte(`{"name":"web"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberConfig := `{"scripts":"./scripts","env":[{"path":".env.local","variables":["WEB_TOKEN"]}]}`
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"), []byte(memberConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, ".env.local"), []byte("WEB_TOKEN=t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{Scope: "global", Path: ".env"},
+			{Scope: "web", Path: ".env"},
+		},
+	}
+	logger := log.New(io.Discard)
+
+	err := Run(dir, cfg, logger)
+	if err == nil {
+		t.Fatal("a scope declared in both the root and the member config must fail")
+	}
+	if !strings.Contains(err.Error(), "two places") {
+		t.Errorf("expected two-places error, got: %s", err.Error())
+	}
+}

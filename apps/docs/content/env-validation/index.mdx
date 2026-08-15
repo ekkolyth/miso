@@ -87,9 +87,9 @@ In a monorepo, auto-discovery searches that member's own directory rather than t
 
 ## Scope & Resolution
 
-Once you add an `env` block, each root entry needs a `scope` — a target name or `"global"` — so miso knows which command it applies to. Resolving the env for a run target layers global entries, then entries scoped to that target, then (for a member target) the member's own `<member>/miso.json` entries, later winning on key conflict. The result still yields to anything already set in your shell.
+Once you add an `env` block, each root entry needs a `scope` — a target name or `"global"` — so miso knows which command it applies to. Resolving the env for a run target layers global entries, then either the entries scoped to that target or (for a member declaring its own env) the member's `<member>/miso.json` entries, later winning on key conflict. The result still yields to anything already set in your shell. A given scope lives in the root config or the member's, never both — declaring it twice is an error.
 
-`miso env` enforces `scope` strictly and fails on a missing one; loading env into a running script is permissive and just skips entries that don't match. Both are miso-mode behaviors — in a delegated repo (`repo: "turbo"`/`"nx"`) the delegate owns env, so `miso env` only type-checks the declared root entries. See [Configure](/env-validation/config#scope) for the full breakdown.
+`miso env` enforces `scope` strictly and fails on a missing one; loading env into a running script is permissive and just skips entries that don't match. In a delegated repo (`repo: "turbo"`/`"nx"`) the delegate resolves targets, so root entries don't need a `scope` there — but validation still traverses every workspace member's schema, and miso injects env for any task a `repo.tasks` override hands it to run. See [Configure](/env-validation/config#scope) for the full breakdown.
 
 ## Next Steps
 

@@ -197,15 +197,22 @@ func TestBuildTargetEnv_NoFilesNoBinsReturnsNil(t *testing.T) {
 	}
 }
 
-func TestBuildTargetEnv_DelegatedSkipsScopedInjection(t *testing.T) {
+// A delegated repo only reaches BuildTargetEnv when miso is orchestrating the
+// run itself (a repo.tasks override). Turbo-owned runs go through DelegateLaunch,
+// which builds its own environ — so injection follows orchestration, not mode.
+func TestBuildTargetEnv_DelegatedInjectsWhenMisoOrchestrates(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".env"), "X=delegated\n")
-	cfg := config.Config{Repo: "turbo", Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
+	cfg := config.Config{
+		Repo:  "turbo",
+		Tasks: map[string]config.TaskConfig{"dev": {}},
+		Env:   []*config.EnvEntry{{Scope: "global", Path: ".env"}},
+	}
 	got, err := BuildTargetEnv(root, cfg, workspace.Target{Kind: workspace.TargetScript, Name: "dev"})
 	if err != nil {
 		t.Fatalf("BuildTargetEnv() error: %v", err)
 	}
-	if envSliceToMap(got)["X"] == "delegated" {
-		t.Error("delegated mode injected a scoped env value; turbo/nx own env")
+	if envSliceToMap(got)["X"] != "delegated" {
+		t.Error("miso-orchestrated task in a delegated repo got no injected env")
 	}
 }
