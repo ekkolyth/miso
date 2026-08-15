@@ -13,6 +13,7 @@ import (
 	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
+	"github.com/ekkolyth/miso/internal/ui"
 	"github.com/ekkolyth/miso/internal/workspace"
 )
 
@@ -160,6 +161,7 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	}
 
 	pm := NewProcessManager()
+	styles := ui.Default()
 
 	managerName := ""
 	if mgr != nil {
@@ -208,7 +210,7 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		proc := pm.Add(entry, cmd, args, dir, processEnv)
 		if envValidated {
 			if line := env.ValidatedLine(root, cfg, target); line != "" {
-				proc.Preamble = append(proc.Preamble, line)
+				proc.Preamble = append(proc.Preamble, styles.MisoLine(line))
 			}
 		}
 	}

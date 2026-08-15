@@ -32,6 +32,12 @@ var LabelColors = []color.Color{
 // warning-level highlights (e.g. var names in validation errors)
 var WarningColor = lipgloss.Color("#f59e0b") // amber
 
+// MisoLine badges a line miso authored itself, so a pane reads at a glance as
+// miso's own rather than the child process's output.
+func (s Styles) MisoLine(text string) string {
+	return s.Heading.Render("[miso]") + " " + s.Muted.Render(text)
+}
+
 func Default() Styles {
 	accent := lipgloss.Color("#a855f7")  // purple
 	heading := lipgloss.Color("#ec4899") // pink
