@@ -76,7 +76,12 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 	// Member-local entries scope by location, not by a declared scope field.
 	// Validation traverses them in every repo mode — a delegated runner owns
 	// injection, not the gate that says the values are there.
-	memberEntries := collectMemberEntries(members)
+	memberEntries, err := collectMemberEntries(projectRoot, members)
+	if err != nil {
+		fmt.Fprintln(os.Stderr)
+		logger.Error("failed to read a workspace config", "error", err)
+		return err
+	}
 
 	if len(cfg.Env) == 0 && len(memberEntries) == 0 {
 		// No config: discovery mode
@@ -158,9 +163,10 @@ type memberEntry struct {
 	entry  *config.EnvEntry
 }
 
-// collectMemberEntries flattens every member miso.json's env entries. A member
-// whose config fails to load contributes nothing.
-func collectMemberEntries(members []workspace.Member) []memberEntry {
+// collectMemberEntries flattens every member miso.json's env entries. A config
+// that won't load is a failure, not an empty contribution — skipping it would
+// report a clean run over requirements nothing checked.
+func collectMemberEntries(projectRoot string, members []workspace.Member) ([]memberEntry, error) {
 	var entries []memberEntry
 	for _, member := range members {
 		if member.ConfigPath == "" {
@@ -168,13 +174,21 @@ func collectMemberEntries(members []workspace.Member) []memberEntry {
 		}
 		memberCfg, err := config.Load(member.Dir)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("load %s: %w", relativeTo(projectRoot, member.ConfigPath), err)
 		}
 		for _, entry := range memberCfg.Env {
 			entries = append(entries, memberEntry{member: member, entry: entry})
 		}
 	}
-	return entries
+	return entries, nil
+}
+
+// relativeTo trims projectRoot off path for display, falling back to path itself.
+func relativeTo(projectRoot, path string) string {
+	if rel, err := filepath.Rel(projectRoot, path); err == nil {
+		return rel
+	}
+	return path
 }
 
 // checkScopeExclusivity fails when a root entry scopes to a member that declares
@@ -195,11 +209,7 @@ func checkScopeExclusivity(projectRoot string, cfg config.Config, memberEntries 
 		if !ok {
 			continue
 		}
-		memberConfig := member.ConfigPath
-		if rel, err := filepath.Rel(projectRoot, memberConfig); err == nil {
-			memberConfig = rel
-		}
-		conflicts = append(conflicts, fmt.Sprintf("%s — root %s and %s", entry.Scope, config.FileName, memberConfig))
+		conflicts = append(conflicts, fmt.Sprintf("%s — root %s and %s", entry.Scope, config.FileName, relativeTo(projectRoot, member.ConfigPath)))
 	}
 	if len(conflicts) == 0 {
 		return nil

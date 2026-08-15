@@ -500,3 +500,31 @@ func TestRun_ScopeDeclaredInRootAndMember_IsError(t *testing.T) {
 		t.Errorf("expected two-places error, got: %s", err.Error())
 	}
 }
+
+func TestRun_MalformedMemberConfig_IsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"workspaces":["apps/*"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	memberDir := filepath.Join(dir, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memberDir, "miso.json"), []byte("{not valid json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
+	logger := log.New(io.Discard)
+
+	err := Run(dir, cfg, logger)
+	if err == nil {
+		t.Fatal("a member config that won't load must fail, not be skipped")
+	}
+	if !strings.Contains(err.Error(), filepath.Join("apps", "web", "miso.json")) {
+		t.Errorf("expected the offending config path in the error, got: %s", err.Error())
+	}
+}
