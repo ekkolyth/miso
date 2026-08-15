@@ -85,6 +85,7 @@ This lets you use Miso as a unified interface for all package-manager commands w
 
 Miso never silently picks a winner:
 
+- Two scripts-folder files resolving to the same command name (e.g. `build.sh` and `build.ts`) — error, rename one.
 - A name in both root `package.json` and the scripts folder — error, rename one.
 - A name in both `turbo.json` and a Miso script, with no task entry to break the tie — error:
 

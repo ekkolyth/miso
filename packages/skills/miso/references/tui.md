@@ -214,7 +214,7 @@ An empty task entry is enough to make miso take over `dev`.
 - **`repo: "turbo"` without Turbo installed** — Turbo must be in PATH; miso shells out to `turbo` directly
 - **`dependsOn` without `^`** — `"dependsOn": ["build"]` means same-workspace dependency; use `"dependsOn": ["^build"]` for cross-workspace topological ordering
 - **Assuming no TTY means no orchestration** — an agent or CI run still fans out, runs `concurrent`, and orders `dependsOn`; it just renders plain `[label] line` instead of chrome
-- **Assuming a root `dev` blocks fan-out** — the root is the orchestrator, not a fan-out member: a root `scripts/dev.sh` or `package.json` `"dev"` only runs as the body when no member defines `dev`; it never preempts fan-out. Address the root explicitly with `#dev` if you need it alongside member fan-out
+- **Assuming a root `dev` blocks fan-out** — the root is the orchestrator, not a fan-out member: a root `scripts/dev.sh` or `package.json` `"dev"` only runs as the body when no member defines `dev`; it never preempts fan-out. To run the root's `dev` alongside member fan-out, declare it as a task companion: `"repo": { "tasks": { "dev": { "concurrent": ["#dev"] } } }`
 - **Expecting chrome to need 2+ processes** — `tabbed`/`merged` render for a single process too; there's no minimum. Use `tui: "off"` for plain output on a lone script
 - **`tui` nested inside `repo`** — `tui` is a top-level field, not under `repo`
 - **`"repo": "turbo"` when you want miso to run dev** — string shorthand `"turbo"` fully delegates all tasks to turbo; to make miso handle specific tasks, use the object form with `tasks`: `{ "mode": "turbo", "tasks": { "dev": {} } }`
