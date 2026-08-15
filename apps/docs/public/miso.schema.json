@@ -165,7 +165,7 @@
 			"properties": {
 				"scope": {
 					"type": "string",
-					"description": "Target name this entry applies to, or \"global\". Required on root config entries; member configs scope by file location."
+					"description": "Target name this entry applies to, or \"global\". Required on root config entries; member configs scope by file location. A scope belongs to the root config or the member's own miso.json, never both — declaring it in each is a config error."
 				},
 				"label": {
 					"type": "string",

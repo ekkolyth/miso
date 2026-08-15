@@ -11,13 +11,15 @@
 		"install": ["--frozen-lockfile"],
 		"dev": ["--env"]
 	},
-	"env": {
-		"scope": "global",
-		"path": ".env.local",
-		"variables": {
-			"PORT": "port",
-			"DATABASE_URL": "url",
-			"API_KEY": "string"
+	"env": [
+		{
+			"scope": "global",
+			"path": ".env.local",
+			"variables": {
+				"PORT": "port",
+				"DATABASE_URL": "url",
+				"API_KEY": "string"
+			}
 		}
-	}
+	]
 }
