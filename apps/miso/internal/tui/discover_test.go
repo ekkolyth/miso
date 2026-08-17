@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/cli/scripting"
@@ -417,9 +418,9 @@ func TestDiscoverTuiScriptsErrorsWhenScriptInBothSources(t *testing.T) {
 	}
 }
 
-// TestDiscoverEntriesRootScriptWinsOverFanOut verifies a script resolving at
-// the root wins over fan-out, even when a member also defines it.
-func TestDiscoverEntriesRootScriptWinsOverFanOut(t *testing.T) {
+// a member's script wins fan-out even when the root also defines the same
+// name — root is never a fan-out member.
+func TestDiscoverEntriesMemberFanOutWinsOverRootScript(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "package.json"),
 		[]byte(`{"workspaces":["apps/web"],"scripts":{"dev":"echo root"}}`), 0o644); err != nil {
@@ -437,10 +438,10 @@ func TestDiscoverEntriesRootScriptWinsOverFanOut(t *testing.T) {
 		t.Fatalf("discoverEntries: %v", err)
 	}
 	if len(entries) != 1 {
-		t.Fatalf("expected 1 root entry (no fan-out), got %d: %v", len(entries), labelsOf(entries))
+		t.Fatalf("expected 1 fan-out entry, got %d: %v", len(entries), labelsOf(entries))
 	}
-	if entries[0].WorkspaceDir != root {
-		t.Errorf("entry dir = %q, want root %q", entries[0].WorkspaceDir, root)
+	if entries[0].WorkspaceDir != webDir {
+		t.Errorf("entry dir = %q, want member dir %q", entries[0].WorkspaceDir, webDir)
 	}
 }
 
@@ -494,7 +495,7 @@ func TestDiscoverEntriesRootConcurrentTargetsMemberScope(t *testing.T) {
 	if err := os.MkdirAll(rootScripts, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeScript(t, rootScripts, "dev") // root scripts/dev.sh → root-first single process
+	writeScript(t, rootScripts, "dev") // root scripts/dev.sh — no member defines "dev", so it resolves at root scope
 	if err := os.WriteFile(filepath.Join(root, "package.json"),
 		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -593,7 +594,7 @@ func TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename(t *testing.T) {
 	if err := os.MkdirAll(rootScripts, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeScript(t, rootScripts, "dev") // root scripts/dev.sh → root-first single process
+	writeScript(t, rootScripts, "dev") // root scripts/dev.sh — neither member below defines "dev", so it resolves at root scope
 
 	if err := os.WriteFile(filepath.Join(root, "package.json"),
 		[]byte(`{"workspaces":["projects/legacy/web","apps/web"]}`), 0o644); err != nil {
@@ -632,5 +633,73 @@ func TestDiscoverEntriesConcurrentMemberRefNameBeatsBasename(t *testing.T) {
 	}
 	if slices.Contains(labels, "legacy-web") {
 		t.Fatalf("resolved the dir-basename collision instead of the member named web: %v", labels)
+	}
+}
+
+// verifies "#name" resolves at root scope even when declared in a member's
+// own task list.
+func TestResolveConcurrentHashPrefixResolvesAtRoot(t *testing.T) {
+	root := t.TempDir()
+	rootScripts := filepath.Join(root, "scripts", "db")
+	if err := os.MkdirAll(rootScripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootScripts, "up.sh"), []byte("exit 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	memberDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(memberDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Scripts: "./scripts"}
+	local := WorkspaceInfo{Name: "web", Dir: memberDir, ScriptsFolder: "./scripts"}
+
+	entries, err := resolveConcurrent(cfg, "#db/up", root, &local, nil)
+	if err != nil {
+		t.Fatalf("resolveConcurrent: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(entries))
+	}
+	if entries[0].WorkspaceDir != root {
+		t.Errorf("WorkspaceDir = %q, want root %q", entries[0].WorkspaceDir, root)
+	}
+	if entries[0].ScriptName != "db/up" {
+		t.Errorf("ScriptName = %q, want db/up", entries[0].ScriptName)
+	}
+}
+
+// an unresolvable concurrent entry fails the run instead of vanishing
+func TestResolveConcurrentUnresolvableEntryErrors(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Config{Scripts: "./scripts"}
+
+	testCases := []struct {
+		name       string
+		concName   string
+		local      *WorkspaceInfo
+		wantSearch string
+	}{
+		{name: "bare name at root", concName: "ghost", local: nil, wantSearch: "scripts folder"},
+		{name: "hash name", concName: "#ghost", local: nil, wantSearch: "scripts folder"},
+		{name: "bare name in member", concName: "ghost",
+			local:      &WorkspaceInfo{Name: "web", Dir: filepath.Join(root, "apps", "web"), ScriptsFolder: "./scripts"},
+			wantSearch: `member "web"`},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := resolveConcurrent(cfg, testCase.concName, root, testCase.local, nil)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), "ghost") {
+				t.Errorf("error %q does not name the entry", err.Error())
+			}
+			if !strings.Contains(err.Error(), testCase.wantSearch) {
+				t.Errorf("error %q does not name a searched location (%s)", err.Error(), testCase.wantSearch)
+			}
+		})
 	}
 }

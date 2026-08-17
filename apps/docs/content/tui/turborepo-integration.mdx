@@ -25,12 +25,14 @@ Set `repo` to `"turbo"` in your `miso.json`:
 
 ## How It Works
 
-When you run `miso dev` or `miso build` with turbo mode:
+When you run a task declared in `turbo.json` (say `miso build`) with turbo mode:
 
 1. Miso spawns `turbo run <task>` as a single process
 2. Turbo handles dependency ordering, caching, and parallelism
 3. Miso displays the process output in the TUI with per-workspace tabs
 4. Each workspace gets its own tab with independent scroll, exit code, and cache status
+
+Names turbo doesn't know — folder scripts, workspace scripts, `repo.tasks` overrides — run under miso's own orchestration with the usual chrome, following the [resolution ladder](/scripting/script-resolution). A name claimed by both `turbo.json` and a scripts-folder file is an error, not a silent pick: declare it under `repo.tasks` to hand it to miso, or rename the script so turbo owns it. Root `package.json` scripts are entry points rather than claimants, so the usual `"build": "turbo run build"` keeps working.
 
 You can still target specific workspaces with an `@scope` — miso passes it through as `turbo --filter` (or `nx --projects`).
 
@@ -40,7 +42,7 @@ Miso wraps turbo's output in the tabbed or merged view. Workspaces are discovere
 
 ### With TUI disabled
 
-Miso stays invisible. Your command falls through to the package manager, which runs the root `package.json` script (e.g., `"dev": "turbo dev"`). There is no difference from running without miso.
+Same routing, plain output. Turbo-declared tasks still delegate to `turbo run`; miso-orchestrated names stream as prefixed `[label] line` output instead of chrome.
 
 ## What Miso Delegates vs Handles
 
@@ -56,7 +58,7 @@ Because turbo owns the child processes in delegated mode, miso's per-process fea
 
 ## Overriding Tasks with Miso Orchestration
 
-By default, all tasks are delegated to Turbo. If you want Miso to orchestrate specific tasks directly — while Turbo handles everything else — add a `tasks` block to the `repo` config.
+Tasks declared in `turbo.json` are delegated to Turbo by default. If you want Miso to orchestrate one of those directly — while Turbo handles everything else — add a `tasks` block to the `repo` config. Declaring a task there opts that one name out of delegation entirely (including turbo's caching and graph — that's the point).
 
 A common use case: let Miso manage your dev servers (so you get per-process restart, status indicators, and the full TUI experience) while Turbo handles builds, linting, and other pipeline tasks.
 

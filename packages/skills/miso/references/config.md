@@ -58,7 +58,7 @@ off doesn't turn orchestration off. Workspace *membership* is detected
 separately and automatically (see Workspace discovery below), so this field
 never gates whether workspaces are found.
 
-- `"miso"` (default) — miso orchestrates natively. Resolves the script at the root first (its `scripts/` folder + `package.json`); found there → one root process, no fan-out. Not found at root → fans out one process per workspace member that defines it. Full tooling, including per-process restart.
+- `"miso"` (default) — miso orchestrates natively. The root is the orchestrator, not a fan-out member: any member defining the script fans out, one process per member. Only when no member defines it does the root's own `scripts/` folder + `package.json` become the body, run as a single process. Full tooling, including per-process restart.
 - `"turbo"` — delegates to Turborepo; miso wraps the TUI + tooling. Turbo owns process lifecycle, so no per-process restart.
 - `"nx"` — delegates to Nx (`nx run-many --target=<script>`); same wrap as turbo.
 - Object form: `{ "mode": "turbo", "tasks": { ... } }` — use when you need `tasks` config. `mode` is optional (defaults to `"miso"`). Write `{ "tasks": { ... } }` for task config in a non-delegated project.
@@ -166,7 +166,7 @@ Persistent flags injected into specific commands. Useful for CI or project-wide 
 
 Env file paths and validation rules. When not set, miso auto-discovers `.env.local` → `.env.production` → `.env.development` → `.env` (first found per variable).
 
-Each **root** `env` entry requires a `scope` — the target it applies to, or the reserved `"global"`. Scoping keeps one workspace's variables out of another's. See `miso-env` for scopes, variable types, and validation.
+Each **root** `env` entry requires a `scope` — the target it applies to, or the reserved `"global"`. Scoping keeps one workspace's variables out of another's. A scope lives in the root config or the member's own `miso.json`, never both. See `miso-env` for scopes, variable types, and validation.
 
 ---
 

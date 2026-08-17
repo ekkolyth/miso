@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ekkolyth/miso/internal/ui"
 )
@@ -353,20 +354,18 @@ func (m MergedModel) renderFilterBar() string {
 			color = exitedColor
 		}
 
-		style := lipgloss.NewStyle().Padding(0, 1).Bold(true)
-
-		if !m.visible[i] {
-			style = style.
+		var rendered string
+		if m.visible[i] {
+			rendered = ui.Label(color, label)
+		} else {
+			rendered = lipgloss.NewStyle().
+				Padding(0, 1).
+				Bold(true).
 				Background(lipgloss.Color("#444444")).
 				Foreground(lipgloss.Color("#888888")).
-				Strikethrough(true)
-		} else {
-			style = style.
-				Background(color).
-				Foreground(lipgloss.Color("#ffffff"))
+				Strikethrough(true).
+				Render(label)
 		}
-
-		rendered := style.Render(label)
 		items = append(items, rendered)
 
 		// Build selector line: ▔▔▔ under selected tab, spaces under others
@@ -507,7 +506,7 @@ func (m MergedModel) copyAllText() string {
 			lines = append(lines, line.text)
 		}
 	}
-	return strings.Join(lines, "\n")
+	return ansi.Strip(strings.Join(lines, "\n"))
 }
 
 // mouseToLogRow converts absolute terminal coordinates to a 0-based visual
@@ -534,7 +533,7 @@ func (m MergedModel) selectedText() string {
 			out = append(out, line.text)
 		}
 	}
-	return strings.Join(out, "\n")
+	return ansi.Strip(strings.Join(out, "\n"))
 }
 
 // buildLogVisualRows re-derives the visual rows for the merged log panel,

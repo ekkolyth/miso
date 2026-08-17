@@ -1,5 +1,6 @@
 import Image from 'next/image'
-import { Head, Search } from 'nextra/components'
+import { Anchor, Head, Search } from 'nextra/components'
+import { GitHubIcon } from 'nextra/icons'
 import { getPageMap } from 'nextra/page-map'
 import { Footer, Layout, Navbar } from 'nextra-theme-docs'
 import 'nextra-theme-docs/style-prefixed.css'
@@ -16,6 +17,14 @@ export const metadata = {
 //   <Banner storageKey="miso-banner">🎉 Miso documentation is now live!</Banner>
 // );
 
+// simple-icons npm mark
+const NpmIcon = (props: React.ComponentProps<'svg'>) => (
+    <svg viewBox='0 0 24 24' fill='currentColor' {...props}>
+        <title>npm</title>
+        <path d='M1.763 0C.786 0 0 .786 0 1.763v20.474C0 23.214.786 24 1.763 24h20.474c.977 0 1.763-.786 1.763-1.763V1.763C24 .786 23.214 0 22.237 0zM5.13 5.323l13.837.019-.009 13.836h-3.464l.01-10.382h-3.456L12.04 19.17H5.113z' />
+    </svg>
+)
+
 const navbar = (
     <Navbar
         logo={
@@ -30,8 +39,20 @@ const navbar = (
                 </Badge>
             </div>
         }
-        projectLink='https://github.com/ekkolyth/miso'
-    />
+    >
+        <Anchor
+            href='https://www.npmjs.com/package/@ekkolyth/miso'
+            aria-label='Package on npm'
+        >
+            <NpmIcon height='22' />
+        </Anchor>
+        <Anchor
+            href='https://github.com/ekkolyth/miso'
+            aria-label='Project repository'
+        >
+            <GitHubIcon height='24' />
+        </Anchor>
+    </Navbar>
 )
 
 const footer = (

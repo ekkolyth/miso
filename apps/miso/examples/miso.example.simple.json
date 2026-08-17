@@ -9,12 +9,14 @@
 			"dev": { "concurrent": ["services"] }
 		}
 	},
-	"env": {
-		"scope": "global",
-		"path": ".env.local",
-		"variables": {
-			"PORT": "port",
-			"DATABASE_URL": "url"
+	"env": [
+		{
+			"scope": "global",
+			"path": ".env.local",
+			"variables": {
+				"PORT": "port",
+				"DATABASE_URL": "url"
+			}
 		}
-	}
+	]
 }

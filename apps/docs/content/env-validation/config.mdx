@@ -58,13 +58,23 @@ env config invalid — every root entry needs a scope (a target name or "global"
 
 Member `miso.json` files (nested at `<member>/miso.json`) don't set `scope` at all — they scope by file location. Every entry inside a member's own config applies only to that member.
 
+#### One scope, one file
+
+A scope belongs to the root config or to the member's own config, never both. Declaring a root entry scoped to a member that also declares its own `env` fails:
+
+```
+env scope declared in two places — keep it in the root config or the member's, not both
+    web — root miso.json and apps/web/miso.json
+```
+
+Pick whichever fits: root when you want every schema in one place, the member's config when the app owns its own. Splitting one scope across both is how the two copies drift apart — a variable added to one and not the other goes unvalidated.
+
 #### Resolution order
 
 When miso resolves the env for a run target `T`, it layers, later winning on key conflict:
 
 1. Root entries scoped to `"global"`
-2. Root entries scoped to `T` (or, for a member target, to the member's directory basename)
-3. The member's own `<member>/miso.json` entries, if `T` is a member
+2. Either root entries scoped to `T` (or, for a member target, to the member's directory basename), or — when `T` is a member declaring its own env — that member's `<member>/miso.json` entries
 
 The merged result is gap-filled under the ambient shell environment — a variable already set in your shell is never overridden, at any layer.
 
@@ -77,7 +87,14 @@ The merged result is gap-filled under the ambient shell environment — a variab
 - **Validation** (`miso env`, `--env`) is strict — every root entry must declare a `scope`, or the command fails.
 - **Injection** (loading `.env` values into a running script) is permissive — an entry whose `scope` doesn't match the current target is silently skipped, no error. This lets a root `miso.json` carry entries for members that aren't relevant to the command you're currently running.
 
-Both behaviors are miso-mode only. In a delegated repo (`repo: "turbo"` or `"nx"`) the delegate owns env, so `miso env` just type-checks the declared root entries — `scope` isn't required and nothing is injected.
+`scope` itself is a miso-mode requirement: a delegated repo (`repo: "turbo"` or `"nx"`) resolves targets through the delegate, so root entries there don't need one and `"global"` carries no reserved meaning. Validation still covers the whole repo in every mode — see [Delegated repos](#delegated-repos).
+
+#### Delegated repos
+
+In a delegated repo, ownership splits by job:
+
+- **Validation always traverses the whole repo.** `miso env` and `--env` check every workspace member's `miso.json` schema alongside the root's, in every repo mode. A clean exit means the whole repo's declared variables are present — that's the point of a preflight gate.
+- **Injection follows orchestration, not repo mode.** When turbo runs the task, turbo owns its env and miso injects nothing. When a `repo.tasks.<name>` override hands the task to miso, miso spawns the processes and injects the resolved env for each one — the same as miso mode.
 
 ### `label`
 

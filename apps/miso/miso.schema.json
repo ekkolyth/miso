@@ -77,19 +77,19 @@
 										"items": {
 											"type": "string"
 										},
-										"description": "Task dependencies. Use '^taskName' prefix to run upstream workspace dependencies first."
+										"description": "Task dependencies. Use '^taskName' prefix to run upstream workspace dependencies first. Only main entries participate in ordering; concurrent companions always start immediately."
 									},
 									"concurrent": {
 										"type": "array",
 										"items": {
 											"type": "string"
 										},
-										"description": "Additional tasks to discover and run in parallel alongside the main task."
+										"description": "Companion scripts run alongside the main task in the shared TUI. Three forms: 'name' resolves in the declaring scope (root list → root, member list → that member); '#name' resolves at the repo root explicitly; '@member/script' resolves inside the named workspace member. The root list spawns once per run, including during member fan-out. An entry that resolves nowhere fails the launch."
 									}
 								},
 								"additionalProperties": false
 							},
-							"description": "Per-task configuration. Available in all repo modes. Defines dependency ordering (dependsOn) and companion tasks (concurrent). In turbo/nx mode, tasks listed here use miso's direct orchestration instead of delegation."
+							"description": "Per-task orchestration metadata. A task entry never defines a command body — the body resolves by name (workspace member scripts, then root package.json / scripts folder). Declaring a task in turbo/nx mode opts that one name out of delegation and into miso's orchestration. An entry with no resolvable body and no concurrent/dependsOn is a config error."
 						}
 					},
 					"additionalProperties": false
@@ -165,7 +165,7 @@
 			"properties": {
 				"scope": {
 					"type": "string",
-					"description": "Target name this entry applies to, or \"global\". Required on root config entries; member configs scope by file location."
+					"description": "Target name this entry applies to, or \"global\". Required on root config entries; member configs scope by file location. A scope belongs to the root config or the member's own miso.json, never both — declaring it in each is a config error."
 				},
 				"label": {
 					"type": "string",

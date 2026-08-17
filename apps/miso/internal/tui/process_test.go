@@ -26,6 +26,11 @@ func TestLiveWriterFeedEmitsOps(t *testing.T) {
 			want:    []LineOp{OpAppend{Text: "Progress: 100%"}},
 		},
 		{
+			name:    "erase and home collapses spinner frames",
+			segment: "⠋ Installing CocoaPods...\x1b[2K\x1b[1G⠙ Installing CocoaPods...\x1b[2K\x1b[1G✓ Installed CocoaPods",
+			want:    []LineOp{OpAppend{Text: "✓ Installed CocoaPods"}},
+		},
+		{
 			name:    "bare screen clear",
 			segment: "\x1b[2J",
 			want:    []LineOp{OpClear{}},
@@ -144,10 +149,7 @@ func TestProcessManager_SpawnAndCapture(t *testing.T) {
 		ScriptName: "echo",
 	}
 
-	// The child lingers after writing so the reader drains the pty before the
-	// slave closes. macOS drops in-flight pty data when a fast-exiting child
-	// closes the last slave fd while the master read is racing it (#38).
-	p := pm.Add(entry, "sh", []string{"-c", `printf 'hello world\n'; sleep 0.2`}, "", nil)
+	p := pm.Add(entry, "sh", []string{"-c", `printf 'hello world\n'`}, "", nil)
 	if p == nil {
 		t.Fatal("expected non-nil process")
 	}
@@ -189,10 +191,8 @@ func TestProcessManager_SpawnAndCapture(t *testing.T) {
 func TestStartNoPTYSpawnsPipes(t *testing.T) {
 	run := func(noPTY bool) string {
 		pm := NewProcessManager()
-		// Linger after printing so the pty child's output drains before its slave
-		// closes (macOS pty race #38); harmless for the pipe child.
 		p := pm.Add(TuiScriptEntry{Label: "tty"}, "sh",
-			[]string{"-c", `[ -t 1 ]; echo notty=$?; sleep 0.2`}, "", nil)
+			[]string{"-c", `[ -t 1 ]; echo notty=$?`}, "", nil)
 		p.NoPTY = noPTY
 		if err := pm.Start(p); err != nil {
 			t.Fatalf("Start: %v", err)
@@ -734,5 +734,30 @@ func TestStripNonColorANSI(t *testing.T) {
 				t.Errorf("stripNonColorANSI(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+// The preamble must land in the ring buffer (what the tabbed and merged
+// renderers draw from) ahead of the child's own first line.
+func TestStartEmitsPreambleBeforeChildOutput(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "web"}, "sh",
+		[]string{"-c", `printf 'next dev booting\n'`}, "", nil)
+	p.Preamble = []string{"env validated — 2 scopes, 3 variables"}
+
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+	pm.WaitAllExited([]*Process{p})
+
+	lines := p.Buffer.Lines()
+	if len(lines) < 2 {
+		t.Fatalf("got %d lines, want preamble + child output: %v", len(lines), lines)
+	}
+	if lines[0] != "env validated — 2 scopes, 3 variables" {
+		t.Errorf("first line = %q, want the preamble", lines[0])
+	}
+	if !strings.Contains(lines[1], "next dev booting") {
+		t.Errorf("second line = %q, want the child's output", lines[1])
 	}
 }

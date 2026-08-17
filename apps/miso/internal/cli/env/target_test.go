@@ -197,15 +197,63 @@ func TestBuildTargetEnv_NoFilesNoBinsReturnsNil(t *testing.T) {
 	}
 }
 
-func TestBuildTargetEnv_DelegatedSkipsScopedInjection(t *testing.T) {
+// A delegated repo only reaches BuildTargetEnv when miso is orchestrating the
+// run itself (a repo.tasks override). Turbo-owned runs go through DelegateLaunch,
+// which builds its own environ — so injection follows orchestration, not mode.
+func TestBuildTargetEnv_DelegatedInjectsWhenMisoOrchestrates(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".env"), "X=delegated\n")
-	cfg := config.Config{Repo: "turbo", Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
+	cfg := config.Config{
+		Repo:  "turbo",
+		Tasks: map[string]config.TaskConfig{"dev": {}},
+		Env:   []*config.EnvEntry{{Scope: "global", Path: ".env"}},
+	}
 	got, err := BuildTargetEnv(root, cfg, workspace.Target{Kind: workspace.TargetScript, Name: "dev"})
 	if err != nil {
 		t.Fatalf("BuildTargetEnv() error: %v", err)
 	}
-	if envSliceToMap(got)["X"] == "delegated" {
-		t.Error("delegated mode injected a scoped env value; turbo/nx own env")
+	if envSliceToMap(got)["X"] != "delegated" {
+		t.Error("miso-orchestrated task in a delegated repo got no injected env")
+	}
+}
+
+func TestValidatedLine_CountsGlobalAndTargetScopes(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".env"), "LOG_COLORS=true\n")
+	write(t, filepath.Join(root, "apps", "web", ".env.local"), "PORT=3000\n")
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{Scope: "global", Path: ".env", Variables: config.EnvVariables{Array: []string{"LOG_COLORS"}}},
+			{Scope: "web", Path: "apps/web/.env.local", Variables: config.EnvVariables{Array: []string{"PORT", "HOST"}}},
+			{Scope: "api", Path: "apps/api/.env.local", Variables: config.EnvVariables{Array: []string{"NOPE"}}},
+		},
+	}
+	target := workspace.Target{Kind: workspace.TargetMember, Name: "web", Dir: filepath.Join(root, "apps", "web")}
+
+	got := ValidatedLine(root, cfg, target)
+	want := "env validated — 2 scopes, 3 variables"
+	if got != want {
+		t.Errorf("ValidatedLine() = %q, want %q", got, want)
+	}
+}
+
+func TestValidatedLine_SingularAndEmpty(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".env"), "LOG_COLORS=true\n")
+
+	cfg := config.Config{
+		Env: []*config.EnvEntry{
+			{Scope: "global", Path: ".env", Variables: config.EnvVariables{Array: []string{"LOG_COLORS"}}},
+		},
+	}
+	got := ValidatedLine(root, cfg, workspace.Target{Kind: workspace.TargetScript, Name: "dev"})
+	if got != "env validated — 1 scope, 1 variable" {
+		t.Errorf("ValidatedLine() = %q, want singular form", got)
+	}
+
+	// nothing declared anywhere — no result to report
+	if line := ValidatedLine(root, config.Config{}, workspace.Target{Kind: workspace.TargetScript, Name: "dev"}); line != "" {
+		t.Errorf("ValidatedLine() = %q, want empty", line)
 	}
 }

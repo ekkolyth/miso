@@ -13,6 +13,7 @@ import (
 	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
+	"github.com/ekkolyth/miso/internal/ui"
 	"github.com/ekkolyth/miso/internal/workspace"
 )
 
@@ -50,8 +51,8 @@ func filterEntriesByWorkspace(entries []TuiScriptEntry, names []string) []TuiScr
 // there. Returns (true, nil) on a clean run, (true, err) when the program
 // errored or a child exited non-zero, (false, nil) when nothing resolved so
 // the caller falls through to normal execution
-func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (bool, error) {
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs)
+func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (bool, error) {
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated)
 	if err != nil {
 		return false, err
 	}
@@ -110,8 +111,8 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 // the plain sibling of Launch: shares buildRun's discovery + process setup,
 // then streams "[label] line" to stdout instead of rendering bubbletea chrome.
 // Same (ran, err) contract as Launch
-func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (bool, error) {
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs)
+func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (bool, error) {
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated)
 	if err != nil {
 		return false, err
 	}
@@ -142,7 +143,7 @@ func markPlain(procs []*Process) {
 // (LaunchPlain) paths: resolves entries, applies workspace filters, adds a
 // process per entry with scoped env, and pre-computes dependency levels. ran is
 // false when no entries resolve — the caller falls through to normal execution
-func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string) (*ProcessManager, [][]TuiScriptEntry, []*Process, bool, error) {
+func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (*ProcessManager, [][]TuiScriptEntry, []*Process, bool, error) {
 	entries, err := discoverEntries(cfg, scriptName, root, scriptArgs)
 	if err != nil {
 		return nil, nil, nil, false, err
@@ -160,6 +161,7 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	}
 
 	pm := NewProcessManager()
+	styles := ui.Default()
 
 	managerName := ""
 	if mgr != nil {
@@ -205,7 +207,12 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 			return nil, nil, nil, false, fmt.Errorf("build env for %s: %w", entry.Label, envErr)
 		}
 
-		pm.Add(entry, cmd, args, dir, processEnv)
+		proc := pm.Add(entry, cmd, args, dir, processEnv)
+		if envValidated {
+			if line := env.ValidatedLine(root, cfg, target); line != "" {
+				proc.Preamble = append(proc.Preamble, styles.MisoLine(line))
+			}
+		}
 	}
 
 	// Pre-compute dependency levels when the command declares dependsOn. Only
@@ -236,11 +243,69 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	return pm, levels, concurrentProcs, true, nil
 }
 
-// root wins over members — fan out only when the root doesn't have the script.
-// scriptArgs reaches the spawned process only along the root path, and only
-// when it resolves to the single main entry (see discoverRootScope) — a
-// member fan-out never receives them, since which member would be ambiguous.
+// members ≥ 1: fan out over members (root is the orchestrator, never a
+// fan-out member); root script is the body only when no member defines the
+// name. Root task companions attach exactly once either way. Zero members /
+// simple mode: root script is the body, as always.
 func discoverEntries(cfg config.Config, scriptName string, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
+	var members []workspace.Member
+	if !cfg.SimpleMode() {
+		var err error
+		members, err = workspace.DiscoverMembersCached(root, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("discover members: %w", err)
+		}
+	}
+
+	if len(members) == 0 {
+		return discoverSingleRepo(cfg, scriptName, root, scriptArgs)
+	}
+
+	fanOut, err := discoverMemberFanOut(cfg, scriptName, root, members)
+	if err != nil {
+		return nil, err
+	}
+	// args attach only to a single unambiguous main entry — fan-out is
+	// inherently one-or-more, so scriptArgs never reaches it
+	if len(fanOut) > 0 {
+		return appendRootCompanions(cfg, scriptName, root, fanOut, members)
+	}
+
+	// no member defines the name — root script as the body (single pane)
+	rootResolved, err := ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if isRootScopeEmpty(cfg, scriptName, rootResolved) {
+		if taskErr := emptyTaskEntryError(cfg, scriptName); taskErr != nil {
+			return nil, taskErr
+		}
+		return nil, nil // nothing anywhere — fall through to passthrough
+	}
+	return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
+}
+
+// true when neither a direct script nor a concurrent companion resolves at
+// root scope for scriptName
+func isRootScopeEmpty(cfg config.Config, scriptName string, rootResolved []TuiScriptEntry) bool {
+	return len(rootResolved) == 0 && len(cfg.TaskConcurrent(scriptName)) == 0
+}
+
+// nothing resolved and the task declares no orchestration — if a task entry
+// exists it is dead config; otherwise fall through to passthrough
+func emptyTaskEntryError(cfg config.Config, scriptName string) error {
+	task, exists := cfg.Tasks[scriptName]
+	if !exists {
+		return nil
+	}
+	if len(task.Concurrent) == 0 && len(task.DependsOn) == 0 {
+		return fmt.Errorf("repo.tasks.%s declares nothing: no script named %q found and no concurrent entries", scriptName, scriptName)
+	}
+	return nil
+}
+
+// zero-member path: root resolves directly and root companions attach
+func discoverSingleRepo(cfg config.Config, scriptName, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
 	var rootResolved []TuiScriptEntry
 	var err error
 	if cfg.SimpleMode() {
@@ -251,48 +316,94 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 	if err != nil {
 		return nil, err
 	}
-	if len(rootResolved) > 0 {
-		return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
-	}
-
-	members, err := workspace.DiscoverMembersCached(root, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("discover members: %w", err)
-	}
-	// simple mode does not support monorepo workspace discovery
-	if len(members) == 0 || cfg.SimpleMode() {
+	if isRootScopeEmpty(cfg, scriptName, rootResolved) {
+		if taskErr := emptyTaskEntryError(cfg, scriptName); taskErr != nil {
+			return nil, taskErr
+		}
 		return nil, nil
 	}
-	return discoverMemberFanOut(cfg, scriptName, root, members)
+	return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
 }
 
-// resolves one concurrent entry. A bare name is local scope: the root when
-// local is nil, otherwise that member. "@member/script" resolves script inside
-// the named member regardless of local scope, via the same name-first tiered
-// matching as an explicit CLI @scope (workspace.ResolveScopes)
+// root task companions, resolved at root scope, appended exactly once per run
+func appendRootCompanions(cfg config.Config, scriptName, root string, entries []TuiScriptEntry, members []workspace.Member) ([]TuiScriptEntry, error) {
+	for _, concName := range cfg.TaskConcurrent(scriptName) {
+		concEntries, err := resolveConcurrent(cfg, concName, root, nil, members)
+		if err != nil {
+			return nil, err
+		}
+		markConcurrent(concEntries)
+		entries = append(entries, concEntries...)
+	}
+	return DeduplicateLabels(entries), nil
+}
+
+// A bare name is local scope: the root when local is nil, otherwise that
+// member. "#name" pins resolution to the root regardless of declaring scope.
+// "@member/script" resolves script inside the named member regardless of
+// local scope, via the same name-first tiered matching as an explicit CLI
+// @scope (workspace.ResolveScopes).
 func resolveConcurrent(cfg config.Config, concName, root string, local *WorkspaceInfo, members []workspace.Member) ([]TuiScriptEntry, error) {
-	if strings.HasPrefix(concName, "@") {
+	var entries []TuiScriptEntry
+	var err error
+	var scopeDesc string
+
+	switch {
+	case strings.HasPrefix(concName, "#"):
+		rootName := strings.TrimPrefix(concName, "#")
+		scopeDesc = rootScopeDesc(cfg)
+		if cfg.SimpleMode() {
+			entries, err = ResolveSingleRepoScriptsFolderOnly([]string{rootName}, root, cfg)
+		} else {
+			entries, err = ResolveSingleRepoScripts([]string{rootName}, root, cfg)
+		}
+	case strings.HasPrefix(concName, "@"):
 		parts := strings.SplitN(strings.TrimPrefix(concName, "@"), "/", 2)
 		if len(parts) != 2 {
 			return nil, fmt.Errorf("concurrent %q: expected @member/script", concName)
 		}
 		memberName, script := parts[0], parts[1]
-		resolved, err := workspace.ResolveScopes([]string{"@" + memberName}, members, root)
-		if err != nil {
-			return nil, err
+		resolved, scopeErr := workspace.ResolveScopes([]string{"@" + memberName}, members, root)
+		if scopeErr != nil {
+			return nil, scopeErr
 		}
 		member := resolved[0]
 		effective := workspace.EffectiveConfig(cfg, member)
-		ws := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
-		return DiscoverTuiScripts(script, []WorkspaceInfo{ws}, cfg.Scripts)
-	}
-	if local == nil {
+		memberInfo := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
+		scopeDesc = memberScopeDesc(member.Name, effective.Scripts)
+		entries, err = DiscoverTuiScripts(script, []WorkspaceInfo{memberInfo}, cfg.Scripts)
+	case local == nil:
+		scopeDesc = rootScopeDesc(cfg)
 		if cfg.SimpleMode() {
-			return ResolveSingleRepoScriptsFolderOnly([]string{concName}, root, cfg)
+			entries, err = ResolveSingleRepoScriptsFolderOnly([]string{concName}, root, cfg)
+		} else {
+			entries, err = ResolveSingleRepoScripts([]string{concName}, root, cfg)
 		}
-		return ResolveSingleRepoScripts([]string{concName}, root, cfg)
+	default:
+		scopeDesc = memberScopeDesc(local.Name, local.ScriptsFolder)
+		entries, err = DiscoverTuiScripts(concName, []WorkspaceInfo{*local}, cfg.Scripts)
 	}
-	return DiscoverTuiScripts(concName, []WorkspaceInfo{*local}, cfg.Scripts)
+
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("concurrent %q: no script found; searched %s", concName, scopeDesc)
+	}
+	return entries, nil
+}
+
+// root-scope search-location description for an unresolvable concurrent entry
+func rootScopeDesc(cfg config.Config) string {
+	if cfg.SimpleMode() {
+		return fmt.Sprintf("root scope (scripts folder %q)", cfg.Scripts)
+	}
+	return fmt.Sprintf("root scope (scripts folder %q and root package.json)", cfg.Scripts)
+}
+
+// member-scope search-location description for an unresolvable concurrent entry
+func memberScopeDesc(name, scriptsFolder string) string {
+	return fmt.Sprintf("member %q (scripts folder %q and its package.json)", name, scriptsFolder)
 }
 
 // only "@"-prefixed entries need the member list
@@ -315,8 +426,9 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 
 	concurrent := cfg.TaskConcurrent(scriptName)
 
-	// a broken workspace file must not block a script with no @-ref — only
-	// fetch members when one is actually present (bare names resolve at root)
+	// members may already be cached from discoverEntries's own fan-out fetch;
+	// this guard only spares the zero-member / simple-mode path a fetch when
+	// no @-ref is present (bare names resolve at root)
 	var members []workspace.Member
 	if concurrentNeedsMembers(concurrent) {
 		var err error
@@ -368,7 +480,9 @@ func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []
 			entries = append(entries, concEntries...)
 		}
 	}
-	return DeduplicateLabels(entries), nil
+	// dedup happens once, in appendRootCompanions, over the final merged
+	// list whenever this fan-out is non-empty; an empty result needs no dedup
+	return entries, nil
 }
 
 func buildWSInfos(entries []TuiScriptEntry) []WorkspaceInfo {

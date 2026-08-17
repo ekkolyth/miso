@@ -57,10 +57,11 @@ type ProcessStateMsg struct {
 // streams wired to a spawned process — unix: pty master is both reader and
 // stdin writer; windows: separate stdout/stderr pipes + stdin pipe
 type spawnResult struct {
-	readers []io.Reader
-	stdin   io.Writer
-	resize  func(rows, cols int)
-	closer  func()
+	readers          []io.Reader
+	stdin            io.Writer
+	resize           func(rows, cols int)
+	releaseAfterWait func()
+	closer           func()
 }
 
 type Process struct {
@@ -70,6 +71,7 @@ type Process struct {
 	Dir       string   // working directory for the process
 	Environ   []string // environment variables for the process (nil = inherit)
 	NoPTY     bool     // plain mode: pipe stdio (no pty) so a tool self-formats for a non-tty
+	Preamble  []string // miso's own lines, emitted into the pane before the child starts
 	State     ProcessState
 	ExitCode  int
 	StartedAt time.Time
@@ -157,7 +159,16 @@ func (pm *ProcessManager) Start(p *Process) error {
 	cmd := p.cmd
 	done := p.done
 	noPTY := p.NoPTY
+	preamble := append([]string(nil), p.Preamble...)
 	p.mu.Unlock()
+
+	// Emitted before the child's first byte so a pane opens with what miso did
+	// on its behalf. Buffer write mirrors captureOutput so every renderer — the
+	// buffer-rendering ones and the op-streaming plain sink — sees it the same.
+	for _, line := range preamble {
+		p.Buffer.Write(line)
+		pm.sendLine(p, OpAppend{Text: line})
+	}
 
 	// pipes when noPTY (plain mode — the tool sees a non-tty and self-formats to
 	// line output), else a pty so chrome children stay interactive and colored.
@@ -193,8 +204,15 @@ func (pm *ProcessManager) Start(p *Process) error {
 	}
 
 	go func() {
-		wg.Wait()
-		exitErr := cmd.Wait()
+		var exitErr error
+		if res.releaseAfterWait != nil {
+			exitErr = cmd.Wait()
+			res.releaseAfterWait()
+			wg.Wait()
+		} else {
+			wg.Wait()
+			exitErr = cmd.Wait()
+		}
 		if res.closer != nil {
 			res.closer()
 		}
@@ -356,7 +374,7 @@ func (lw *liveWriter) feed(raw string) []LineOp {
 	raw = strings.TrimSuffix(raw, "\r")
 	cleared := strings.IndexByte(raw, '\x1b') >= 0 && screenResetRe.MatchString(raw)
 	moveUp, raw := extractCursorUp(raw)
-	raw = collapseCarriageReturns(raw)
+	raw = collapseLineRewrites(raw)
 	raw = stripNonColorANSI(raw)
 
 	var ops []LineOp
@@ -420,14 +438,18 @@ func extractCursorUp(s string) (int, string) {
 	return total, rest
 }
 
-// collapseCarriageReturns applies in-line carriage returns as full-line
-// rewrites: the text after the final CR wins, matching a redraw that reprints
-// the whole line from column 0.
-func collapseCarriageReturns(s string) string {
-	if i := strings.LastIndexByte(s, '\r'); i >= 0 {
-		return s[i+1:]
+var eraseAndHomeRe = regexp.MustCompile(`\x1b\[2K\x1b\[[01]?G`)
+
+// text after the final carriage return or erase-line/cursor-home pair wins
+func collapseLineRewrites(s string) string {
+	start := strings.LastIndexByte(s, '\r') + 1
+	matches := eraseAndHomeRe.FindAllStringIndex(s, -1)
+	if len(matches) > 0 {
+		if end := matches[len(matches)-1][1]; end > start {
+			start = end
+		}
 	}
-	return s
+	return s[start:]
 }
 
 // readLines calls emit once per '\n'-terminated line (newline excluded), plus

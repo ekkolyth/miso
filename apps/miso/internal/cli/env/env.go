@@ -66,7 +66,24 @@ type entryErrors struct {
 // validate variables, and report results. When no env config is present, falls back to
 // discovery mode and reports which file was found.
 func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
-	if len(cfg.Env) == 0 {
+	members, err := workspace.DiscoverMembers(projectRoot, cfg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr)
+		logger.Error("failed to discover workspaces", "error", err)
+		return fmt.Errorf("discover members: %w", err)
+	}
+
+	// Member-local entries scope by location, not by a declared scope field.
+	// Validation traverses them in every repo mode — a delegated runner owns
+	// injection, not the gate that says the values are there.
+	memberEntries, err := collectMemberEntries(projectRoot, members)
+	if err != nil {
+		fmt.Fprintln(os.Stderr)
+		logger.Error("failed to read a workspace config", "error", err)
+		return err
+	}
+
+	if len(cfg.Env) == 0 && len(memberEntries) == 0 {
 		// No config: discovery mode
 		path, err := discoverEnvFile(projectRoot)
 		if err != nil {
@@ -76,19 +93,9 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 		return nil
 	}
 
-	var failures []entryErrors
-
-	// Scope-based injection and member-local env are miso-mode concerns. In
-	// delegated (turbo/nx) mode the delegate owns env, so scope isn't required
-	// and member configs aren't miso's to inject — env then validates only the
-	// declared root entries.
+	// Scope carries meaning only where miso resolves targets. A delegated repo
+	// has no scope requirement, and "global" isn't reserved there.
 	if !cfg.IsDelegated() {
-		members, err := workspace.DiscoverMembers(projectRoot, cfg)
-		if err != nil {
-			fmt.Fprintln(os.Stderr)
-			logger.Error("failed to discover workspaces", "error", err)
-			return fmt.Errorf("discover members: %w", err)
-		}
 		for _, member := range members {
 			if member.Name == "global" {
 				fmt.Fprintln(os.Stderr)
@@ -110,25 +117,21 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 			}
 			return errors.New("env config invalid: missing scope")
 		}
+	}
 
-		// Member-local entries scope by location, not by declared scope field.
-		for _, member := range members {
-			if member.ConfigPath == "" {
-				continue
-			}
-			memberCfg, err := config.Load(member.Dir)
-			if err != nil {
-				continue
-			}
-			for _, entry := range memberCfg.Env {
-				errs := runEntry(member.Dir, entry, logger)
-				if len(errs) > 0 {
-					failures = append(failures, entryErrors{
-						label: member.Name + ": " + entryLabel(entry),
-						errs:  errs,
-					})
-				}
-			}
+	if err := checkScopeExclusivity(projectRoot, cfg, memberEntries, logger); err != nil {
+		return err
+	}
+
+	var failures []entryErrors
+
+	for _, owned := range memberEntries {
+		errs := runEntry(owned.member.Dir, owned.entry, logger)
+		if len(errs) > 0 {
+			failures = append(failures, entryErrors{
+				label: owned.member.Name + ": " + entryLabel(owned.entry),
+				errs:  errs,
+			})
 		}
 	}
 
@@ -152,6 +155,96 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 	printGroupedErrors(os.Stderr, failures)
 
 	return errors.New("env validation failed")
+}
+
+// memberEntry pairs a member-local entry with the member that declared it.
+type memberEntry struct {
+	member workspace.Member
+	entry  *config.EnvEntry
+}
+
+// collectMemberEntries flattens every member miso.json's env entries. A config
+// that won't load is a failure, not an empty contribution — skipping it would
+// report a clean run over requirements nothing checked.
+func collectMemberEntries(projectRoot string, members []workspace.Member) ([]memberEntry, error) {
+	var entries []memberEntry
+	for _, member := range members {
+		if member.ConfigPath == "" {
+			continue
+		}
+		memberCfg, err := config.Load(member.Dir)
+		if err != nil {
+			return nil, fmt.Errorf("load %s: %w", relativeTo(projectRoot, member.ConfigPath), err)
+		}
+		for _, entry := range memberCfg.Env {
+			entries = append(entries, memberEntry{member: member, entry: entry})
+		}
+	}
+	return entries, nil
+}
+
+// resolveAgainst joins path onto baseDir unless it's already absolute.
+func resolveAgainst(baseDir, path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(filepath.Join(baseDir, path))
+}
+
+// relativeTo trims projectRoot off path for display, falling back to path itself.
+func relativeTo(projectRoot, path string) string {
+	if rel, err := filepath.Rel(projectRoot, path); err == nil {
+		return rel
+	}
+	return path
+}
+
+// checkScopeExclusivity fails when a root entry and a member's own config both
+// describe the same env. A scope lives in one config or the other, never split
+// across both. Two axes catch that: the scope name, and the file it resolves to
+// — a root scope renamed away from its member ("ekko-api" over member "api")
+// stops matching by name while still describing the same file.
+func checkScopeExclusivity(projectRoot string, cfg config.Config, memberEntries []memberEntry, logger *log.Logger) error {
+	byName := make(map[string]workspace.Member)
+	byPath := make(map[string]memberEntry)
+	for _, owned := range memberEntries {
+		byName[owned.member.Name] = owned.member
+		byName[filepath.Base(owned.member.Dir)] = owned.member
+		if owned.entry.Path != "" {
+			byPath[resolveAgainst(owned.member.Dir, owned.entry.Path)] = owned
+		}
+	}
+
+	var conflicts []string
+	for _, entry := range cfg.Env {
+		if entry.Scope != "" && entry.Scope != "global" {
+			if member, ok := byName[entry.Scope]; ok {
+				conflicts = append(conflicts, fmt.Sprintf("%s — root %s and %s",
+					entry.Scope, config.FileName, relativeTo(projectRoot, member.ConfigPath)))
+				continue
+			}
+		}
+		if entry.Path == "" {
+			continue
+		}
+		owned, ok := byPath[resolveAgainst(projectRoot, entry.Path)]
+		if !ok {
+			continue
+		}
+		conflicts = append(conflicts, fmt.Sprintf("%s — root %s (scope %q) and %s describe the same file",
+			relativeTo(projectRoot, resolveAgainst(projectRoot, entry.Path)),
+			config.FileName, entry.Scope, relativeTo(projectRoot, owned.member.ConfigPath)))
+	}
+	if len(conflicts) == 0 {
+		return nil
+	}
+
+	fmt.Fprintln(os.Stderr)
+	logger.Error("env scope declared in two places — keep it in the root config or the member's, not both")
+	for _, conflict := range conflicts {
+		fmt.Fprintf(os.Stderr, "    %s\n", conflict)
+	}
+	return errors.New("env config invalid: scope declared in two places")
 }
 
 // printGroupedErrors writes styled, grouped errors to the given writer.

@@ -74,7 +74,7 @@ This checks that each named variable is present in the env file but does not val
 
 | Field | Type | Description |
 |---|---|---|
-| `scope` | `string` | **Required on every root entry in miso mode** (see Env Scoping). The target this env applies to — a workspace/member name, or the reserved `"global"`. Omit inside a member's own `<member>/miso.json` (scope implicit by location), and in `turbo`/`nx` mode where miso doesn't inject and scope isn't used. |
+| `scope` | `string` | **Required on every root entry in miso mode** (see Env Scoping). The target this env applies to — a workspace/member name, or the reserved `"global"`. Omit inside a member's own `<member>/miso.json` (scope implicit by location), and in `turbo`/`nx` mode where the delegate resolves targets. A scope belongs to the root config or the member's, never both. |
 | `path` | `string` | Path to the `.env` file, relative to `miso.json` |
 | `override` | `string` | Optional. Path to this scope's override file. Layered on top of the baseline values (populated by `-p` when given) by `-o`/`--override` (override wins). |
 | `label` | `string` | Optional. Display name used in validation output |
@@ -85,7 +85,9 @@ This checks that each named variable is present in the env file but does not val
 
 ## Env Scoping
 
-Scoping and env **injection are a miso-mode feature.** In `miso` mode (the default — miso runs the processes) miso injects each target's env and **requires** a `scope` on every root entry. In `turbo`/`nx` mode the delegate owns env for the processes it orchestrates, so miso injects nothing and `scope` is **not required** — `env` is then a pure validation surface. (miso still prepends each `node_modules/.bin` to `PATH` in every mode so scripts resolve local binaries.)
+**`scope` is a miso-mode requirement.** In `miso` mode (the default — miso runs the processes) every root entry **requires** a `scope`. In `turbo`/`nx` mode the delegate resolves targets, so `scope` is **not required** and `"global"` carries no reserved meaning. (miso prepends each `node_modules/.bin` to `PATH` in every mode so scripts resolve local binaries.)
+
+Validation is not mode-dependent: `miso env` and `--env` traverse every workspace member's `miso.json` in every repo mode. Injection follows orchestration — see Validation vs injection below.
 
 In miso mode, every **root** `env` entry declares a `scope` — the target it applies to, or the reserved `"global"`. Scoping keeps one workspace's variables out of another's.
 
@@ -94,11 +96,20 @@ In miso mode, every **root** `env` entry declares a `scope` — the target it ap
 
 Member workspaces can carry their own env in `<member>/miso.json`. Those entries need **no** `scope` key — their scope is implicit by location (the member they live in).
 
+A scope lives in exactly one config. A root entry scoped to a member that also declares its own `env` is a config error:
+
+```
+env scope declared in two places — keep it in the root config or the member's, not both
+    web — root miso.json and apps/web/miso.json
+```
+
+Declare each app's env in one place or the other — the root config when you want every schema in one file, the member's config when the app owns its own:
+
 ```json
-// root miso.json
+// root miso.json — "api" declared here; "web" left to the member
 "env": [
-  { "scope": "global", "path": ".env",               "variables": { "LOG_COLORS": "bool" } },
-  { "scope": "web",    "path": "apps/web/.env.local", "variables": { "CONVEX_DEPLOYMENT": "string" } }
+  { "scope": "global", "path": ".env",                "variables": { "LOG_COLORS": "bool" } },
+  { "scope": "api",    "path": "apps/api/.env.local", "variables": { "REDIS_URL": "url" } }
 ]
 
 // apps/web/miso.json  (scope implicit by location)
@@ -112,17 +123,24 @@ Member workspaces can carry their own env in `<member>/miso.json`. Those entries
 For a run target `T`, the injected env is:
 
 ```
-global entries  ⊕  root entries scoped to T  ⊕  T's member-local entries (if T is a member)
+global entries  ⊕  ( root entries scoped to T  |  T's member-local entries )
 ```
 
-Later layers win on key conflict: **member-local > target-scoped > global**. Finally the shell environment gap-fills — exported shell variables always win.
+The second layer comes from whichever config declares `T` — never both, since declaring a scope in two places is an error. Later layers win on key conflict: **target layer > global**. Finally the shell environment gap-fills — exported shell variables always win.
 
 Fan-out (`miso dev` across members) resolves each member's env independently, so root variables never bleed between members.
 
 ### Validation vs injection
 
-- `miso env` (and `--env`) **validates** the declared entries in every mode — a pre-build gate that works for `miso`, `turbo`, and `nx` repos alike. In miso mode it also validates every scope (global, target-scoped, and member-local).
-- **Injection** happens only in **miso mode**, using the resolved subset above. In `turbo`/`nx` mode miso injects nothing — the delegate owns env.
+The two follow different rules — this is the part people get wrong:
+
+- **Validation** (`miso env`, `--env`) covers the **whole repo in every mode**. It reads the root config and every workspace member's `miso.json`, for `miso`, `turbo`, and `nx` alike. A clean exit means every declared variable across the repo is present and well-typed — that's what makes it a usable CI gate. A member config that won't parse **fails** the run rather than being skipped.
+- **Injection** follows **orchestration, not repo mode**. Whoever runs the process owns its env:
+    - miso mode → miso runs everything, so miso injects.
+    - `turbo`/`nx` mode, name owned by the delegate → turbo/nx runs it and owns its env; miso injects nothing.
+    - `turbo`/`nx` mode, name claimed by a `repo.tasks.<name>` entry → **miso** spawns those processes, so miso injects the resolved env exactly as in miso mode.
+
+Membership comes from `package.json` workspaces or `pnpm-workspace.yaml`. A `miso.json` in a directory outside that set is not traversed — declare those schemas at the root.
 
 In miso mode a scope names the target its vars inject for — a member, or a root script/task. A scope that matches no known member is not an error (it may name a root script/task); those vars simply inject only when that target runs, and never leak into another target's environment.
 
@@ -201,7 +219,7 @@ miso build --env      # validates env, then runs build
 
 Run `miso env` to validate without executing any script.
 
-**Note:** `--env` triggers validation only. In **miso mode**, env injection happens automatically for every script regardless of whether `--env` is passed; in `turbo`/`nx` mode miso injects nothing (the delegate owns env).
+**Note:** `--env` triggers validation only. Injection happens automatically for every script miso runs, regardless of whether `--env` is passed — including a `repo.tasks` name in a delegated repo. Names the delegate runs get their env from the delegate.
 
 ---
 
@@ -222,10 +240,10 @@ Entry field `override`: path to that scope's override file (root/global override
 
 ## Injection Behavior
 
-- Injection applies in **miso mode** only. In `turbo`/`nx` mode miso injects no env values (the delegate owns env); it still prepends each `node_modules/.bin` to `PATH` so scripts resolve local binaries.
+- Injection applies wherever **miso runs the process** — miso mode always, and in `turbo`/`nx` mode for any name claimed by a `repo.tasks` entry. Names the delegate runs get their env from the delegate. `node_modules/.bin` is prepended to `PATH` in every mode regardless, so scripts resolve local binaries.
 - Shell environment variables take precedence over `.env` file values
 - `.env` files only fill in variables not already set in the shell environment
-- Each target receives only its resolved scopes (global + its target-scoped + its member-local); root variables never bleed across workspaces. See **Env Scoping** above.
+- Each target receives only its resolved scopes (global + whichever config declares that target); root variables never bleed across workspaces. See **Env Scoping** above.
 
 ---
 
@@ -233,8 +251,10 @@ Entry field `override`: path to that scope's override file (root/global override
 
 - **`"required": true`** — invalid; use `"required": "all"` or `"required": ["KEY1", "KEY2"]`
 - **`"type": "enum"` without `values`** — will fail validation; `values` array is required for enum type
-- **Expecting `--env` to inject variables** — `--env` only triggers validation; in miso mode injection is automatic for every script (in `turbo`/`nx` mode the delegate owns env)
+- **Expecting `--env` to inject variables** — `--env` only triggers validation; injection is automatic for every script miso runs
 - **Assuming `.env` wins over shell** — shell-exported variables always win; `.env` only fills gaps
-- **Expecting miso to inject env in turbo/nx mode** — it doesn't; the delegate owns env there, so `scope` isn't used and entries validate only
+- **Assuming turbo/nx mode means miso never injects** — it injects for any name a `repo.tasks` entry hands it, since miso spawns those processes. Only the names the delegate actually runs are the delegate's to fill.
+- **Assuming a clean `miso env` skips member schemas** — validation traverses every workspace member in every mode; a member `miso.json` that won't parse fails the run rather than being skipped
+- **Declaring one scope in both the root and the member config** — a config error; keep each scope in exactly one file
 - **Root `env` entry without `scope` in miso mode** — in miso mode every root entry needs `scope` (a target name or `"global"`); a missing or empty scope is a config error (in `turbo`/`nx` mode scope isn't required)
 - **Naming a workspace `global`** — `global` is reserved for env scope; no member or target may use it

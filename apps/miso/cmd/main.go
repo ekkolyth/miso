@@ -229,7 +229,8 @@ func main() {
 		scriptArgs := args[1:]
 
 		// Handle --env flag: run env validation before script execution
-		if env.HasEnvFlag(scriptArgs) {
+		envValidated := env.HasEnvFlag(scriptArgs)
+		if envValidated {
 			if err := env.Run(projectRoot, cfg, logger); err != nil {
 				os.Exit(1)
 			}
@@ -241,7 +242,7 @@ func main() {
 		// below only when nothing was orchestrated.
 		switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
 		case tui.RendererChrome:
-			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs)
+			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -249,7 +250,7 @@ func main() {
 				return
 			}
 		case tui.RendererPlain:
-			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs)
+			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -310,7 +311,7 @@ func main() {
 	}
 
 	// --env flag: run env validation first, then strip from args before passing to command
-	cfg, parsed = runEnvIfRequested(projectRoot, cfg, parsed, logger)
+	cfg, parsed, envValidated := runEnvIfRequested(projectRoot, cfg, parsed, logger)
 
 	// Resolve explicit @scope filters up front so an unknown or ambiguous scope
 	// fails with a precise message regardless of TUI/root/action routing, and so
@@ -331,10 +332,6 @@ func main() {
 	}
 
 	if isRoot {
-		// ActionScriptFolder orchestrates natively but runs literally under
-		// delegation: miso can't wrap a folder script's output in turbo/nx chrome
-		// (that needs miso to control the turbo invocation — see tui.DelegateLaunch),
-		// so a delegated folder script falls through to the literal-exec path.
 		switch parsed.Action {
 		case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough, cli.ActionScriptFolder:
 			scriptName := parsed.ScriptName
@@ -349,73 +346,54 @@ func main() {
 
 			filters := scopeFilters
 
+			renderer := tui.SelectRenderer(cfg, tui.InteractiveTTY())
+
 			if cfg.IsDelegated() {
-				if parsed.Action != cli.ActionScriptFolder {
-					// Check if this task is overridden by miso's direct orchestration
-					_, taskOverridden := cfg.Tasks[scriptName]
-					if taskOverridden {
-						mgr, ok := manager.GetManager(managerName)
-						if !ok {
-							cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
-						}
-						switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
-						case tui.RendererChrome:
-							ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
+				_, taskOverridden := cfg.Tasks[scriptName]
+				if !taskOverridden {
+					// no task entry — falls to the delegated pipeline's own task names
+					turboCfg, turboErr := turbo.LoadConfig(projectRoot)
+					if turboErr == nil {
+						if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
+							if delegatedFolderClash(scriptName, projectRoot, cfg) {
+								cli.Fail(logger, fmt.Errorf(
+									"%q is both a turbo task and a folder script — declare repo.tasks.%s to have miso own it, or rename the script so turbo owns it",
+									scriptName, scriptName), false)
+							}
+							_, turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
+							ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
 							if err != nil {
 								cli.Fail(logger, err, false)
 							}
 							if ran {
 								return
 							}
-						case tui.RendererPlain:
-							ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
-							if err != nil {
-								cli.Fail(logger, err, false)
-							}
-							if ran {
-								return
-							}
-						}
-					} else {
-						// Only delegate to turbo/nx if the script is actually a pipeline task
-						turboCfg, turboErr := turbo.LoadConfig(projectRoot)
-						if turboErr == nil {
-							if _, isTurboTask := turboCfg.Tasks[scriptName]; isTurboTask {
-								renderer := tui.SelectRenderer(cfg, tui.InteractiveTTY())
-								_, turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
-								ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
-								if err != nil {
-									cli.Fail(logger, err, false)
-								}
-								if ran {
-									return
-								}
-							}
 						}
 					}
 				}
-			} else {
-				mgr, ok := manager.GetManager(managerName)
-				if !ok {
-					cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+				// task override, or a miso-only name in a delegated repo —
+				// miso orchestrates with chrome, same as native mode below
+			}
+			mgr, ok := manager.GetManager(managerName)
+			if !ok {
+				cli.Fail(logger, fmt.Errorf("unknown manager: %s", managerName), false)
+			}
+			switch renderer {
+			case tui.RendererChrome:
+				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated)
+				if err != nil {
+					cli.Fail(logger, err, false)
 				}
-				switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
-				case tui.RendererChrome:
-					ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
-					if err != nil {
-						cli.Fail(logger, err, false)
-					}
-					if ran {
-						return
-					}
-				case tui.RendererPlain:
-					ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs)
-					if err != nil {
-						cli.Fail(logger, err, false)
-					}
-					if ran {
-						return
-					}
+				if ran {
+					return
+				}
+			case tui.RendererPlain:
+				ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated)
+				if err != nil {
+					cli.Fail(logger, err, false)
+				}
+				if ran {
+					return
 				}
 			}
 			// Orchestration/delegation not applicable — fall through. The Task 4
@@ -541,6 +519,15 @@ func main() {
 	}
 }
 
+// a folder script sharing a delegated pipeline task's name would never run —
+// the delegate owns the name — so the two can't coexist. package.json scripts
+// are entry points, not claimants: a root "build": "turbo run build" is the
+// turbo convention, so they never count as a clash.
+func delegatedFolderClash(scriptName, projectRoot string, cfg config.Config) bool {
+	resolved, err := scripting.ResolveScript(scriptName, projectRoot, cfg)
+	return err == nil && resolved.Source == scripting.ScriptSourceFolder
+}
+
 // scopeFilterNames resolves parsed.Scopes to full member package names. An
 // unknown or ambiguous scope token the user typed is fatal — miso refuses to
 // run when it can't honor an explicit scope.
@@ -562,7 +549,7 @@ func scopeFilterNames(scopes []string, projectRoot string, cfg config.Config, lo
 
 // runEnvIfRequested checks for --env in effective args (config flags + CLI args).
 // If present, runs env validation first; on success, strips --env from cfg and parsed.
-func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedCLI, logger *log.Logger) (config.Config, cli.ParsedCLI) {
+func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedCLI, logger *log.Logger) (config.Config, cli.ParsedCLI, bool) {
 	var effective []string
 	switch parsed.Action {
 	case cli.ActionAdd:
@@ -580,11 +567,11 @@ func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedC
 		scriptFlags := cfg.Flags[parsed.ScriptName]
 		effective = append(scriptFlags, parsed.ScriptArgs...)
 	default:
-		return cfg, parsed
+		return cfg, parsed, false
 	}
 
 	if !env.HasEnvFlag(effective) {
-		return cfg, parsed
+		return cfg, parsed, false
 	}
 
 	if err := env.Run(projectRoot, cfg, logger); err != nil {
@@ -602,5 +589,5 @@ func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedC
 		cli.ActionScriptOverride, cli.ActionScriptFolder, cli.ActionScriptPackageJSON:
 		parsed.ScriptArgs = env.StripEnvFlag(parsed.ScriptArgs)
 	}
-	return cfg, parsed
+	return cfg, parsed, true
 }
