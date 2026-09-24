@@ -83,3 +83,21 @@ For build commands that need to run in order, configure `dependsOn` in the `repo
 />
 
 The `^` prefix means "before building this workspace, build everything it depends on first." For example, if `apps/web` lists `packages/ui` as a dependency in its `package.json`, then `^build` ensures `packages/ui` builds before `apps/web` starts. Miso walks the dependency graph automatically — you just declare the rule once.
+
+A bare name runs another task first. It works in single repos and simple mode too:
+
+<Terminal
+    copy={false}
+    className="mt-4"
+    title="miso.json"
+    config={`{
+\t"repo": {
+\t\t"tasks": {
+\t\t\t"migrate": { "dependsOn": ["services"] },
+\t\t\t"dev": { "dependsOn": ["migrate", "build"] }
+\t\t}
+\t}
+}`}
+/>
+
+`miso dev` starts `services` and `build` together, runs `migrate` once both have exited 0, then runs `dev`. If any of them fails, `dev` never starts. See [`dependsOn`](/tui/configuration) for every reference form.

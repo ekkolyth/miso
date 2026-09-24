@@ -108,10 +108,12 @@ You can also use the object form to configure per-task behaviour:
 
 <DocProp prop="dependsOn" />
 
-Array of task names to run before this one. The `^` prefix (e.g. `"^build"`) means run the task in upstream workspace dependencies first, reading the dependency graph from each workspace's `package.json`.
+Tasks to run before this one, using the same forms as `concurrent`: a bare `name` resolves in the scope declaring it (root list → root, a member's list → that member), `#name` resolves at the repo root, and `@member/script` resolves inside the named workspace member. `^name` runs `name` in the workspace members this member depends on, reading the graph from each member's `package.json`; an upstream member without that script is skipped.
+
+Dependencies are followed transitively, and each script runs once per run even when several tasks depend on it. Each dependency must exit 0 before anything depending on it starts; independent ones run in parallel. A failure stops the run — dependents never start, and their tab shows as skipped. An entry that resolves nowhere fails the launch. A task entry with only `dependsOn` and no script of its own runs its dependencies. A dependency's own `concurrent` list does not attach — companions start only for the task you invoked. This all works in simple mode too.
 
 <DocProp prop="concurrent" />
 
 Companion scripts run alongside the main task in the shared TUI. Three forms: a bare `name` resolves in the scope declaring it (root list → root, a member's list → that member), `#name` resolves at the repo root explicitly, and `@member/script` resolves inside the named workspace member. The root list spawns once per run — including during member fan-out — and an entry that resolves nowhere fails the launch. In turbo/nx mode, declaring a task here opts it into miso's direct orchestration instead of delegation. Full grammar in [Monorepos](/scripting/monorepos).
 
-Commands not listed in `tasks`, or listed without `dependsOn`, run all workspaces in parallel.
+Commands not listed in `tasks`, or listed without `dependsOn`, run every matching script in parallel.

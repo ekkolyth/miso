@@ -567,13 +567,13 @@ func TestResolveConcurrentAtRefErrors(t *testing.T) {
 	cfg := config.Config{Scripts: "./scripts"}
 
 	t.Run("missing slash", func(t *testing.T) {
-		if _, err := resolveConcurrent(cfg, "@web", root, nil, members); err == nil {
+		if _, err := resolveConcurrent(cfg, "@web", root, nil, members, "concurrent"); err == nil {
 			t.Fatal("expected error for @member with no /script")
 		}
 	})
 
 	t.Run("unknown member", func(t *testing.T) {
-		if _, err := resolveConcurrent(cfg, "@nope/script", root, nil, members); err == nil {
+		if _, err := resolveConcurrent(cfg, "@nope/script", root, nil, members, "concurrent"); err == nil {
 			t.Fatal("expected error for unknown member @nope")
 		}
 	})
@@ -653,7 +653,7 @@ func TestResolveConcurrentHashPrefixResolvesAtRoot(t *testing.T) {
 	cfg := config.Config{Scripts: "./scripts"}
 	local := WorkspaceInfo{Name: "web", Dir: memberDir, ScriptsFolder: "./scripts"}
 
-	entries, err := resolveConcurrent(cfg, "#db/up", root, &local, nil)
+	entries, err := resolveConcurrent(cfg, "#db/up", root, &local, nil, "concurrent")
 	if err != nil {
 		t.Fatalf("resolveConcurrent: %v", err)
 	}
@@ -687,7 +687,7 @@ func TestResolveConcurrentUnresolvableEntryErrors(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			_, err := resolveConcurrent(cfg, testCase.concName, root, testCase.local, nil)
+			_, err := resolveConcurrent(cfg, testCase.concName, root, testCase.local, nil, "concurrent")
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}

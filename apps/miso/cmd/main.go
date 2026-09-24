@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -200,6 +201,7 @@ func main() {
 	// Only meta-commands are handled; everything else is folder script resolution.
 	if cfg.SimpleMode() {
 		cmd := args[0]
+		scriptArgs := args[1:]
 
 		// Meta-commands that remain in simple mode
 		// (init, version, upgrade, completion already handled above)
@@ -216,17 +218,28 @@ func main() {
 			return
 		}
 
+		// one script only: running several at once needs a package manager
+		if cmd == "run" {
+			scriptNames, runArgs := cli.SplitMultipleScripts(args[1:])
+			if len(scriptNames) != 1 {
+				cli.Fail(logger, errors.New("usage: miso run <script> [-- <args...>]"), false)
+			}
+			cmd = scriptNames[0]
+			scriptArgs = runArgs
+		}
+
 		// Resolve as folder script only (no package.json fallback)
 		resolved, err := scripting.ResolveScriptFolderOnly(cmd, projectRoot, cfg)
 		if err != nil {
 			cli.Fail(logger, err, false)
 		}
 
-		if resolved.Source == scripting.ScriptSourceNone {
+		// a task entry may have no script of its own and still orchestrate
+		// companions or dependencies
+		_, isTask := cfg.Tasks[cmd]
+		if resolved.Source == scripting.ScriptSourceNone && !isTask {
 			cli.Fail(logger, fmt.Errorf("script '%s' not found in %s", cmd, cfg.Scripts), false)
 		}
-
-		scriptArgs := args[1:]
 
 		// Handle --env flag: run env validation before script execution
 		envValidated := env.HasEnvFlag(scriptArgs)
@@ -257,6 +270,10 @@ func main() {
 			if ran {
 				return
 			}
+		}
+
+		if resolved.Source == scripting.ScriptSourceNone {
+			cli.Fail(logger, fmt.Errorf("script '%s' not found in %s", cmd, cfg.Scripts), false)
 		}
 
 		target, _ := workspace.ResolveTarget(cmd, nil, projectRoot, cfg)

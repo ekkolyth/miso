@@ -148,16 +148,23 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
-	if len(entries) == 0 {
-		return nil, nil, nil, false, nil // fall through to normal execution
-	}
-
-	if len(filterNames) > 0 {
+	// a deps-only task has no entries yet but must still honor the scope
+	hasDeps := len(cfg.Tasks[scriptName].DependsOn) > 0
+	if len(filterNames) > 0 && (len(entries) > 0 || hasDeps) {
 		filtered := filterEntriesByWorkspace(entries, filterNames)
 		if len(filtered) == 0 {
 			return nil, nil, nil, false, fmt.Errorf("no %q script in workspace(s) %s", scriptName, strings.Join(filterNames, ", "))
 		}
 		entries = filtered
+	}
+
+	// after the filter, so an @scope run keeps its root-scope dependencies
+	entries, graph, err := expandDependencies(cfg, root, scriptName, entries)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	if len(entries) == 0 {
+		return nil, nil, nil, false, nil // fall through to normal execution
 	}
 
 	pm := NewProcessManager()
@@ -215,12 +222,12 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		}
 	}
 
-	// Pre-compute dependency levels when the command declares dependsOn. Only
+	// Pre-compute dependency levels when the run declares dependsOn. Only
 	// main entries participate in ordering; concurrent companions — marked at
 	// discovery — start immediately.
 	var levels [][]TuiScriptEntry
 	var concurrentProcs []*Process
-	if cfg.HasDependsOn(scriptName) {
+	if graph != nil {
 		mainEntries, concurrentEntries := classifyEntries(entries)
 		for _, e := range concurrentEntries {
 			if proc := pm.findProc(e.Label); proc != nil {
@@ -228,11 +235,6 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 			}
 		}
 
-		wsInfos := buildWSInfos(mainEntries)
-		graph, err := BuildDependencyGraph(wsInfos)
-		if err != nil {
-			return nil, nil, nil, false, fmt.Errorf("build dependency graph: %w", err)
-		}
 		var sortErr error
 		levels, sortErr = TopoSort(mainEntries, graph)
 		if sortErr != nil {
@@ -285,10 +287,10 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 	return discoverRootScope(cfg, scriptName, root, rootResolved, scriptArgs)
 }
 
-// true when neither a direct script nor a concurrent companion resolves at
-// root scope for scriptName
+// true when no direct script resolves at root scope for scriptName and the
+// task declares neither concurrent companions nor dependencies
 func isRootScopeEmpty(cfg config.Config, scriptName string, rootResolved []TuiScriptEntry) bool {
-	return len(rootResolved) == 0 && len(cfg.TaskConcurrent(scriptName)) == 0
+	return len(rootResolved) == 0 && len(cfg.TaskConcurrent(scriptName)) == 0 && len(cfg.Tasks[scriptName].DependsOn) == 0
 }
 
 // nothing resolved and the task declares no orchestration — if a task entry
@@ -299,7 +301,7 @@ func emptyTaskEntryError(cfg config.Config, scriptName string) error {
 		return nil
 	}
 	if len(task.Concurrent) == 0 && len(task.DependsOn) == 0 {
-		return fmt.Errorf("repo.tasks.%s declares nothing: no script named %q found and no concurrent entries", scriptName, scriptName)
+		return fmt.Errorf("repo.tasks.%s declares nothing: no script named %q found and no concurrent or dependsOn entries", scriptName, scriptName)
 	}
 	return nil
 }
@@ -328,7 +330,7 @@ func discoverSingleRepo(cfg config.Config, scriptName, root string, scriptArgs [
 // root task companions, resolved at root scope, appended exactly once per run
 func appendRootCompanions(cfg config.Config, scriptName, root string, entries []TuiScriptEntry, members []workspace.Member) ([]TuiScriptEntry, error) {
 	for _, concName := range cfg.TaskConcurrent(scriptName) {
-		concEntries, err := resolveConcurrent(cfg, concName, root, nil, members)
+		concEntries, err := resolveConcurrent(cfg, concName, root, nil, members, "concurrent")
 		if err != nil {
 			return nil, err
 		}
@@ -343,7 +345,8 @@ func appendRootCompanions(cfg config.Config, scriptName, root string, entries []
 // "@member/script" resolves script inside the named member regardless of
 // local scope, via the same name-first tiered matching as an explicit CLI
 // @scope (workspace.ResolveScopes).
-func resolveConcurrent(cfg config.Config, concName, root string, local *WorkspaceInfo, members []workspace.Member) ([]TuiScriptEntry, error) {
+// field names the task list the entry came from, for errors.
+func resolveConcurrent(cfg config.Config, concName, root string, local *WorkspaceInfo, members []workspace.Member, field string) ([]TuiScriptEntry, error) {
 	var entries []TuiScriptEntry
 	var err error
 	var scopeDesc string
@@ -360,7 +363,7 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 	case strings.HasPrefix(concName, "@"):
 		parts := strings.SplitN(strings.TrimPrefix(concName, "@"), "/", 2)
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("concurrent %q: expected @member/script", concName)
+			return nil, fmt.Errorf("%s %q: expected @member/script", field, concName)
 		}
 		memberName, script := parts[0], parts[1]
 		resolved, scopeErr := workspace.ResolveScopes([]string{"@" + memberName}, members, root)
@@ -388,7 +391,7 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 		return nil, err
 	}
 	if len(entries) == 0 {
-		return nil, fmt.Errorf("concurrent %q: no script found; searched %s", concName, scopeDesc)
+		return nil, fmt.Errorf("%s %q: no script found; searched %s", field, concName, scopeDesc)
 	}
 	return entries, nil
 }
@@ -440,7 +443,7 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 
 	entries := mainEntries
 	for _, concName := range concurrent {
-		concEntries, err := resolveConcurrent(cfg, concName, root, nil, members)
+		concEntries, err := resolveConcurrent(cfg, concName, root, nil, members, "concurrent")
 		if err != nil {
 			return nil, err
 		}
@@ -472,7 +475,7 @@ func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []
 		entries = append(entries, memberEntries...)
 
 		for _, concName := range effective.TaskConcurrent(scriptName) {
-			concEntries, err := resolveConcurrent(cfg, concName, root, &ws, members)
+			concEntries, err := resolveConcurrent(cfg, concName, root, &ws, members, "concurrent")
 			if err != nil {
 				return nil, err
 			}
@@ -483,18 +486,6 @@ func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []
 	// dedup happens once, in appendRootCompanions, over the final merged
 	// list whenever this fan-out is non-empty; an empty result needs no dedup
 	return entries, nil
-}
-
-func buildWSInfos(entries []TuiScriptEntry) []WorkspaceInfo {
-	seen := make(map[string]bool)
-	var infos []WorkspaceInfo
-	for _, e := range entries {
-		if !seen[e.Label] {
-			seen[e.Label] = true
-			infos = append(infos, WorkspaceInfo{Name: e.Label, Dir: e.WorkspaceDir})
-		}
-	}
-	return infos
 }
 
 // flags every entry as a concurrent companion, stamped at discovery so the

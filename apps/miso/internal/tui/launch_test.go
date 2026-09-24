@@ -506,6 +506,48 @@ func TestBuildRunMemberFanOutConcurrentCompanionExemptFromDependsOn(t *testing.T
 	}
 }
 
+// a task entry with no script of its own still runs what it depends on
+func TestBuildRunDependsOnOnlyTaskRunsDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeFolderScripts(t, root, "a", "b")
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"setup": {DependsOn: []string{"a", "b"}}},
+	}
+
+	pm, _, _, ran, err := buildRun(cfg, "setup", root, nil, nil, nil, false)
+	if err != nil {
+		t.Fatalf("buildRun: %v", err)
+	}
+	if !ran {
+		t.Fatal("buildRun returned not-applicable")
+	}
+	var got []string
+	for _, p := range pm.Processes {
+		got = append(got, p.Entry.Label)
+	}
+	slices.Sort(got)
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("processes = %v, want [a b]", got)
+	}
+}
+
+// a scoped run must not fall back to the root's dependencies when the scope
+// defines nothing
+func TestBuildRunScopedDependsOnOnlyTaskErrors(t *testing.T) {
+	root := t.TempDir()
+	writeFolderScripts(t, root, "a")
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"setup": {DependsOn: []string{"a"}}},
+	}
+
+	_, _, _, _, err := buildRun(cfg, "setup", root, nil, []string{"web"}, nil, false)
+	if err == nil || !strings.Contains(err.Error(), "web") {
+		t.Fatalf("err = %v, want an error naming the empty scope", err)
+	}
+}
+
 // a task entry that resolves no body and declares no companions is dead
 // config — error, not silence
 func TestDiscoverEntriesEmptyTaskEntryErrors(t *testing.T) {

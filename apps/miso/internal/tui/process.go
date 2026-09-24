@@ -23,6 +23,8 @@ const (
 	StateStarting ProcessState = iota
 	StateRunning
 	StateExited
+	// never started because a dependency failed
+	StateSkipped
 )
 
 // LineOp is one edit a child made to its output — append a tail line, overwrite
@@ -294,6 +296,19 @@ func (p *Process) Resize(rows, cols int) {
 	if fn != nil {
 		fn(rows, cols)
 	}
+}
+
+// no-op once the process has spawned
+func (pm *ProcessManager) Skip(p *Process) {
+	p.mu.Lock()
+	if p.State != StateStarting || p.cmd != nil {
+		p.mu.Unlock()
+		return
+	}
+	p.State = StateSkipped
+	close(p.done)
+	p.mu.Unlock()
+	pm.sendState(p, StateSkipped, 0)
 }
 
 // Restart stops the process and starts it again.
@@ -741,7 +756,7 @@ func (pm *ProcessManager) AllExited() bool {
 		p.mu.Lock()
 		state := p.State
 		p.mu.Unlock()
-		if state != StateExited {
+		if state != StateExited && state != StateSkipped {
 			return false
 		}
 	}

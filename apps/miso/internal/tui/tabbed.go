@@ -385,7 +385,8 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 		statusFg := runningColor
 		labelFg := lipgloss.Color("#aaaaaa")
 
-		if proc.State == StateExited {
+		switch proc.State {
+		case StateExited:
 			if proc.ExitCode != 0 {
 				statusText = fmt.Sprintf("✕ %d", proc.ExitCode)
 				statusFg = exitedColor
@@ -396,7 +397,10 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 				statusText = "✓"
 				statusFg = runningColor
 			}
-		} else {
+		case StateSkipped:
+			statusText = "■"
+			statusFg = mutedColor
+		default:
 			statusText = "●"
 		}
 

@@ -51,7 +51,7 @@ func startProcesses(pm *ProcessManager, levels [][]TuiScriptEntry, concurrentPro
 		}
 	}
 	if levels != nil {
-		for _, level := range levels {
+		for i, level := range levels {
 			var levelProcs []*Process
 			for _, entry := range level {
 				proc := pm.findProc(entry.Label)
@@ -66,6 +66,7 @@ func startProcesses(pm *ProcessManager, levels [][]TuiScriptEntry, concurrentPro
 			pm.WaitAllExited(levelProcs)
 			for _, proc := range levelProcs {
 				if proc.ExitCode != 0 {
+					skipLevels(pm, levels[i+1:])
 					return
 				}
 			}
@@ -75,6 +76,16 @@ func startProcesses(pm *ProcessManager, levels [][]TuiScriptEntry, concurrentPro
 	for _, proc := range pm.Processes {
 		if err := pm.Start(proc); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
+		}
+	}
+}
+
+func skipLevels(pm *ProcessManager, levels [][]TuiScriptEntry) {
+	for _, level := range levels {
+		for _, entry := range level {
+			if proc := pm.findProc(entry.Label); proc != nil {
+				pm.Skip(proc)
+			}
 		}
 	}
 }

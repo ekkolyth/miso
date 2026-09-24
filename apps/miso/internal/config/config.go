@@ -134,23 +134,6 @@ func (c Config) IsDelegated() bool {
 	return c.Repo == "turbo" || c.Repo == "nx"
 }
 
-// checks for ^ prefix in dependsOn
-func (c Config) HasDependsOn(command string) bool {
-	if c.Tasks == nil {
-		return false
-	}
-	task, ok := c.Tasks[command]
-	if !ok {
-		return false
-	}
-	for _, dep := range task.DependsOn {
-		if len(dep) > 0 && dep[0] == '^' {
-			return true
-		}
-	}
-	return false
-}
-
 func (c Config) TaskConcurrent(command string) []string {
 	if c.Tasks == nil {
 		return nil

@@ -96,7 +96,7 @@ otherwise (see `tui` Field above).
 
 ### `dependsOn`
 
-Run upstream tasks before this one (topological order):
+Run other tasks before this one (topological order):
 
 ```json
 "repo": {
@@ -109,8 +109,23 @@ Run upstream tasks before this one (topological order):
 }
 ```
 
-`"^build"` means: run `build` in all upstream dependencies first.
-Without `^`, it's a same-workspace dependency (rarely needed).
+Entries use the `concurrent` forms:
+
+- `name` — resolves in the declaring scope: root list → root, a member's own `miso.json` list → that member
+- `#name` — resolves at the repo root
+- `@member/script` — resolves inside the named member
+- `^name` — runs `name` in the members this member depends on (`package.json` graph); an upstream member without `name` is skipped
+
+Dependencies are followed transitively; each resolved script runs once per run. Each must exit 0 before its dependents start, and independent ones run in parallel. A failure stops the run: dependents never start (their chrome tab shows skipped). An entry that resolves nowhere (other than `^name`) fails the launch. A task entry with only `dependsOn` and no script runs its dependencies. A dependency's own `concurrent` list does not attach — companions start only for the invoked task. Works in simple mode.
+
+```json
+"repo": {
+  "tasks": {
+    "migrate": { "dependsOn": ["services"] },
+    "dev": { "dependsOn": ["migrate", "build"] }
+  }
+}
+```
 
 ### `concurrent`
 
@@ -214,7 +229,7 @@ An empty task entry is enough to make miso take over `dev`.
 ## Common Mistakes
 
 - **`repo: "turbo"` without Turbo installed** — Turbo must be in PATH; miso shells out to `turbo` directly
-- **`dependsOn` without `^`** — `"dependsOn": ["build"]` means same-workspace dependency; use `"dependsOn": ["^build"]` for cross-workspace topological ordering
+- **`dependsOn` without `^` for cross-workspace ordering** — `"dependsOn": ["build"]` in the root list runs the root's own `build` first; use `"dependsOn": ["^build"]` to build each member's upstream members first
 - **Assuming no TTY means no orchestration** — an agent or CI run still fans out, runs `concurrent`, and orders `dependsOn`; it just renders plain `[label] line` instead of chrome
 - **Assuming a root `dev` blocks fan-out** — the root is the orchestrator, not a fan-out member: a root `scripts/dev.sh` or `package.json` `"dev"` only runs as the body when no member defines `dev`; it never preempts fan-out. To run the root's `dev` alongside member fan-out, declare it as a task companion: `"repo": { "tasks": { "dev": { "concurrent": ["#dev"] } } }`
 - **Expecting chrome to need 2+ processes** — `tabbed`/`merged` render for a single process too; there's no minimum. Use `tui: "off"` for plain output on a lone script

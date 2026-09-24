@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunPlainStreamsPrefixedOutput(t *testing.T) {
@@ -120,5 +121,39 @@ func TestRunPlainDoesNotFlushPartialLines(t *testing.T) {
 	want := []string{"[p] ab", "[p] exited (0)"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("plain lines = %#v, want %#v", got, want)
+	}
+}
+
+// a failed level must not leave RunPlain waiting on a later level it never started
+func TestRunPlainStopsAfterFailedLevelWithoutHanging(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 1\n")
+	addPlainScript(t, pm, dir, "b", "touch "+filepath.Join(dir, "b-ran")+"\n")
+	levels := [][]TuiScriptEntry{{pm.Processes[0].Entry}, {pm.Processes[1].Entry}}
+
+	type result struct {
+		ran bool
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		ran, err := RunPlain(pm, io.Discard, levels, nil)
+		done <- result{ran, err}
+	}()
+
+	select {
+	case res := <-done:
+		if !res.ran {
+			t.Fatal("RunPlain returned not-applicable")
+		}
+		if res.err == nil {
+			t.Fatal("expected non-nil error when a level fails")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("RunPlain hung after a failed level")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "b-ran")); err == nil {
+		t.Error("b ran after its dependency failed")
 	}
 }

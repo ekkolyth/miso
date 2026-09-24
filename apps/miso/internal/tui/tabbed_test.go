@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -318,5 +320,29 @@ func TestWrapLine(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// the chrome auto-exit must fire once the only started level fails, even though
+// the next level never started
+func TestTabbedAutoExitsWhenLaterLevelSkipped(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 1\n")
+	addPlainScript(t, pm, dir, "b", "touch "+filepath.Join(dir, "b-ran")+"\n")
+	levels := [][]TuiScriptEntry{{pm.Processes[0].Entry}, {pm.Processes[1].Entry}}
+
+	startProcesses(pm, levels, nil)
+
+	m := NewTabbedModel(pm, "dev", false)
+	next, cmd := m.Update(ProcessStateMsg{Label: "a", State: StateExited, Code: 1})
+	if cmd == nil {
+		t.Fatal("expected an auto-exit tick once every process finished or was skipped")
+	}
+	if !next.(TabbedModel).allExitedPending {
+		t.Error("allExitedPending = false, want true")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "b-ran")); err == nil {
+		t.Error("b ran after its dependency failed")
 	}
 }

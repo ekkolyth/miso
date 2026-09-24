@@ -113,7 +113,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		}
 		scopes, rest := extractScopes(args[1:])
 		// check for multiple scripts
-		scriptNames, scriptArgs := splitMultipleScripts(rest)
+		scriptNames, scriptArgs := SplitMultipleScripts(rest)
 		if len(scriptNames) > 1 {
 			return ParsedCLI{Action: ActionRunMultiple, ScriptNames: scriptNames, ScriptArgs: scriptArgs, Scopes: scopes}, nil
 		}
@@ -229,7 +229,8 @@ func buildScriptAction(resolved scripting.ResolvedScript, name string, args []st
 	}
 }
 
-func splitMultipleScripts(rest []string) ([]string, []string) {
+// script names up to "--", then the args after it
+func SplitMultipleScripts(rest []string) ([]string, []string) {
 	if len(rest) == 0 {
 		return nil, nil
 	}
