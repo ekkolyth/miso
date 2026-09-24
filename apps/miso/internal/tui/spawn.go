@@ -11,7 +11,6 @@ import (
 // tool detects a non-tty and self-formats to line output rather than emitting
 // cursor-driven redraws. SetGroup makes the child its own group so Stop's
 // KillGroup reaps the tree; Wait closes the pipes on exit, so closer is a no-op.
-// Mirrors the Windows spawnProcess wiring.
 func spawnPipes(cmd *exec.Cmd) (*spawnResult, error) {
 	proc.SetGroup(cmd)
 

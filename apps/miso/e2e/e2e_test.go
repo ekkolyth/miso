@@ -22,9 +22,6 @@ func TestMain(m *testing.M) {
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	misoBin = filepath.Join(dir, "miso")
-	if os.PathSeparator == '\\' {
-		misoBin += ".exe"
-	}
 
 	build := exec.Command("go", "build",
 		"-ldflags", "-X github.com/ekkolyth/miso/internal/cli/commands.Version="+testVersion,

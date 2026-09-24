@@ -32,7 +32,7 @@ OS="$(uname -s)"
 case "$OS" in
   Darwin) OS="darwin" ;;
   Linux)  OS="linux"  ;;
-  *)      fail "Unsupported operating system: $OS (Windows users: use npm install -g @ekkolyth/miso)" ;;
+  *)      fail "Unsupported operating system: $OS" ;;
 esac
 
 # ── Detect arch ───────────────────────────────────────────────────────────────
