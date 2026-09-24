@@ -18,7 +18,7 @@ IDE autocomplete URL. Always use:
 **Default:** `true`
 
 `true` — miso wraps your package manager (npm, bun, pnpm, yarn). Detects lockfile automatically.
-`false` — simple mode. No package manager. `miso <script>` and `miso run <script>` resolve only from the `scripts/` folder; `repo.tasks` `concurrent` and `dependsOn` still run. See `miso-scripting` for script conventions and `miso-env` for env injection.
+`false` — simple mode. No package manager. `miso <script>` resolves only from the `scripts/` folder; `repo.tasks` `concurrent` and `dependsOn` still run. See `miso-scripting` for script conventions and `miso-env` for env injection.
 
 ---
 

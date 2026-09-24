@@ -260,29 +260,3 @@ func TestE2E_SimpleModeDependsOnOnlyTask(t *testing.T) {
 		t.Errorf("order.log = %v, want a and b", order)
 	}
 }
-
-func TestE2E_SimpleModeRunSubcommand(t *testing.T) {
-	root := t.TempDir()
-	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{"packageManager":false}`)
-	writeOrderScript(t, root, "hello", "")
-
-	out, code := runTimeout(t, root, 30*time.Second, "run", "hello", "--", "x")
-	if code != 0 {
-		t.Fatalf("miso run hello exit = %d, want 0 (out: %s)", code, out)
-	}
-	data, err := os.ReadFile(filepath.Join(root, "order.log"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.TrimSpace(string(data)); got != "hello x" {
-		t.Errorf("order.log = %q, want %q", got, "hello x")
-	}
-
-	out, code = runTimeout(t, root, 30*time.Second, "run")
-	if code == 0 {
-		t.Fatalf("miso run exit = 0, want non-zero (out: %s)", out)
-	}
-	if !strings.Contains(out, "usage: miso run") {
-		t.Errorf("output %q, want the miso run usage", out)
-	}
-}
