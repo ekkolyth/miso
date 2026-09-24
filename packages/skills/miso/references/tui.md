@@ -129,6 +129,8 @@ Launch additional tasks alongside this one:
 
 Running `miso dev` will also launch `studio` alongside it. `concurrent` tasks are always run by miso directly — they are **not** passed to turbo/nx even when `mode` is `"turbo"`.
 
+`concurrent` is how a companion starts alongside a task. Each entry resolves the exact script it names — `@lumen/ios` never starts `ios:device` — and `miso dev` never starts `dev:*` scripts unless they're listed here.
+
 **Scoping — bare name vs `@member/script`:**
 
 - A bare name is **local scope**. Declared in the root's `tasks.<script>.concurrent`, it resolves against the root's `scripts/` folder + `package.json`. Declared in a **member's own** `miso.json` `tasks.<script>.concurrent`, it resolves within that member instead — member-declared companions are first-class, not root-only.

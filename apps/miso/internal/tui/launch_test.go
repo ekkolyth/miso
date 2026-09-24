@@ -741,3 +741,78 @@ func TestDiscoverEntriesResolutionLadder(t *testing.T) {
 		})
 	}
 }
+
+// MISO-4: "miso lint" fanning out to a member must not run "lint:fix" or
+// "lint/fix" — the defect's signature is unrequested writes to the tree
+func TestBuildRunMemberFanOutDoesNotRunColonSibling(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	scriptsDir := filepath.Join(webDir, "scripts")
+	if err := os.MkdirAll(filepath.Join(scriptsDir, "lint"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	colonMarker := filepath.Join(webDir, "WROTE-BY-COLON-FIX")
+	slashMarker := filepath.Join(webDir, "WROTE-BY-SLASH-FIX")
+	scripts := map[string]string{
+		filepath.Join(scriptsDir, "lint.sh"):        "echo CHECK\n",
+		filepath.Join(scriptsDir, "lint:fix.sh"):    "touch '" + colonMarker + "'\n",
+		filepath.Join(scriptsDir, "lint", "fix.sh"): "touch '" + slashMarker + "'\n",
+	}
+	for path, content := range scripts {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	before := listFiles(t, webDir)
+
+	cfg := config.Config{Scripts: "./scripts"}
+	pm, levels, concurrentProcs, ran, err := buildRun(cfg, "lint", root, nil, nil, nil, false)
+	if err != nil {
+		t.Fatalf("buildRun: %v", err)
+	}
+	if !ran {
+		t.Fatal("buildRun returned not-applicable")
+	}
+
+	var buf bytes.Buffer
+	if _, err := RunPlain(pm, &buf, levels, concurrentProcs); err != nil {
+		t.Fatalf("RunPlain: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "CHECK") {
+		t.Errorf("lint did not run; output:\n%s", buf.String())
+	}
+	for _, marker := range []string{colonMarker, slashMarker} {
+		if _, err := os.Stat(marker); err == nil {
+			t.Errorf("sibling script ran and wrote %s", filepath.Base(marker))
+		}
+	}
+	if after := listFiles(t, webDir); !slices.Equal(before, after) {
+		t.Errorf("member dir changed:\nbefore %v\nafter  %v", before, after)
+	}
+}
+
+func listFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	var files []string
+	err := filepath.WalkDir(dir, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		files = append(files, rel)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", dir, err)
+	}
+	return files
+}

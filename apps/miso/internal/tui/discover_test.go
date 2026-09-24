@@ -42,9 +42,9 @@ func writeScript(t *testing.T, scriptsDir, name string) string {
 	return path
 }
 
-// TestDiscoverTuiScripts_PrefixMatching verifies that prefix matching works
-// across two workspaces, producing correct labels for single and multiple matches.
-func TestDiscoverTuiScripts_PrefixMatching(t *testing.T) {
+// TestDiscoverTuiScripts_ExactMatchAcrossWorkspaces verifies each workspace
+// contributes only its script named exactly "dev" — "dev:worker" stays opt-in.
+func TestDiscoverTuiScripts_ExactMatchAcrossWorkspaces(t *testing.T) {
 	// workspace A: has only "dev" in package.json
 	wsADir := t.TempDir()
 	writePackageJSON(t, wsADir, map[string]string{
@@ -70,34 +70,15 @@ func TestDiscoverTuiScripts_PrefixMatching(t *testing.T) {
 		t.Fatalf("DiscoverTuiScripts: %v", err)
 	}
 
-	// expect 3 entries: app (single match) + api/dev + api/dev:worker
-	if len(entries) != 3 {
-		t.Fatalf("expected 3 entries, got %d: %v", len(entries), labelsOf(entries))
-	}
-
 	// entries are sorted alphabetically by label
 	labels := labelsOf(entries)
-	expected := []string{"api/dev", "api/dev:worker", "app"}
-	sort.Strings(expected)
-	for i, want := range expected {
-		if labels[i] != want {
-			t.Errorf("entry[%d]: label = %q, want %q", i, labels[i], want)
-		}
+	if !slices.Equal(labels, []string{"api", "app"}) {
+		t.Fatalf("labels = %v, want [api app]", labels)
 	}
-
-	// verify script names
-	labelToName := make(map[string]string)
 	for _, e := range entries {
-		labelToName[e.Label] = e.ScriptName
-	}
-	if labelToName["app"] != "dev" {
-		t.Errorf("app label should have script name 'dev', got %q", labelToName["app"])
-	}
-	if labelToName["api/dev"] != "dev" {
-		t.Errorf("api/dev label should have script name 'dev', got %q", labelToName["api/dev"])
-	}
-	if labelToName["api/dev:worker"] != "dev:worker" {
-		t.Errorf("api/dev:worker label should have script name 'dev:worker', got %q", labelToName["api/dev:worker"])
+		if e.ScriptName != "dev" {
+			t.Errorf("%s: ScriptName = %q, want dev", e.Label, e.ScriptName)
+		}
 	}
 }
 
@@ -129,30 +110,43 @@ func TestDiscoverEntries_CarriesScopedMemberName(t *testing.T) {
 }
 
 // TestDiscoverWorkspaceScripts_WorkspaceNameSurvivesLabelDedup verifies that a
-// member with two matching scripts carries the member name in WorkspaceName
-// even though Label is rewritten to "member/scriptName".
+// member running its main script plus a member-local companion carries the
+// member name in WorkspaceName even though Label is rewritten to
+// "member/scriptName".
 func TestDiscoverWorkspaceScripts_WorkspaceNameSurvivesLabelDedup(t *testing.T) {
-	wsDir := t.TempDir()
-	writePackageJSON(t, wsDir, map[string]string{
-		"dev":      "next dev",
-		"dev:next": "next dev --turbo",
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(webDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePackageJSON(t, webDir, map[string]string{
+		"dev":    "next dev",
+		"studio": "prisma studio",
 	})
+	if err := os.WriteFile(filepath.Join(webDir, "miso.json"),
+		[]byte(`{"repo":{"tasks":{"dev":{"concurrent":["studio"]}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	ws := WorkspaceInfo{Name: "web", Dir: wsDir}
-	entries, err := discoverWorkspaceScripts("dev", ws, "./scripts")
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
 	if err != nil {
-		t.Fatalf("discoverWorkspaceScripts: %v", err)
+		t.Fatalf("discoverEntries: %v", err)
 	}
 
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d: %v", len(entries), labelsOf(entries))
 	}
 	for _, e := range entries {
-		if e.Label == ws.Name {
-			t.Errorf("Label = %q, want deduped (multiple matches in this member)", e.Label)
+		if e.Label == "web" {
+			t.Errorf("Label = %q, want deduped (two entries in this member)", e.Label)
 		}
-		if e.WorkspaceName != ws.Name {
-			t.Errorf("WorkspaceName = %q, want %q (label = %q)", e.WorkspaceName, ws.Name, e.Label)
+		if e.WorkspaceName != "web" {
+			t.Errorf("WorkspaceName = %q, want web (label = %q)", e.WorkspaceName, e.Label)
 		}
 	}
 }
@@ -319,43 +313,46 @@ func TestDiscoverEntries_HonorsMemberShell(t *testing.T) {
 	}
 }
 
-// TestEntryLabelUsesPackageNameForm verifies multi-script members produce
+// TestEntryLabelUsesPackageNameForm verifies a member with two entries produces
 // "@scope/pkg/script" labels (not "@scope/pkg:script"), and a member with a
-// single matching script uses the bare package name.
+// single entry uses the bare package name.
 func TestEntryLabelUsesPackageNameForm(t *testing.T) {
-	multiDir := t.TempDir()
-	writePackageJSON(t, multiDir, map[string]string{
-		"dev":      "next dev",
-		"dev:next": "next dev --turbo",
-	})
-
-	singleDir := t.TempDir()
-	writePackageJSON(t, singleDir, map[string]string{
-		"dev": "vite",
-	})
-
-	workspaces := []WorkspaceInfo{
-		{Name: "@ekko/web", Dir: multiDir},
-		{Name: "@ekko/single", Dir: singleDir},
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web","apps/single"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	singleDir := filepath.Join(root, "apps", "single")
+	for _, dir := range []string{webDir, singleDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "package.json"),
+		[]byte(`{"name":"@ekko/web","scripts":{"dev":"next dev","studio":"prisma studio"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "miso.json"),
+		[]byte(`{"repo":{"tasks":{"dev":{"concurrent":["studio"]}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(singleDir, "package.json"),
+		[]byte(`{"name":"@ekko/single","scripts":{"dev":"vite"}}`), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
-	entries, err := DiscoverTuiScripts("dev", workspaces, "./scripts")
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
 	if err != nil {
-		t.Fatalf("DiscoverTuiScripts: %v", err)
-	}
-
-	if len(entries) != 3 {
-		t.Fatalf("expected 3 entries, got %d: %v", len(entries), labelsOf(entries))
+		t.Fatalf("discoverEntries: %v", err)
 	}
 
 	labels := labelsOf(entries)
 	sort.Strings(labels)
-	expected := []string{"@ekko/single", "@ekko/web/dev", "@ekko/web/dev:next"}
-	sort.Strings(expected)
-	for i, want := range expected {
-		if labels[i] != want {
-			t.Errorf("entry[%d]: label = %q, want %q", i, labels[i], want)
-		}
+	expected := []string{"@ekko/single", "@ekko/web/dev", "@ekko/web/studio"}
+	if !slices.Equal(labels, expected) {
+		t.Errorf("labels = %v, want %v", labels, expected)
 	}
 }
 
@@ -702,4 +699,130 @@ func TestResolveConcurrentUnresolvableEntryErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// a check script never pulls in its "lint:fix" or "docker/up" sibling — those
+// write to the user's tree and must be named to run
+func TestDiscoverWorkspaceScriptsMatchesExactNameOnly(t *testing.T) {
+	wsDir := t.TempDir()
+	writePackageJSON(t, wsDir, map[string]string{
+		"lint":     "echo check",
+		"lint:fix": "echo fix",
+		"lint-fix": "echo dashfix",
+		"lintfix":  "echo barefix",
+	})
+	dockerDir := filepath.Join(wsDir, "scripts", "docker")
+	lintDir := filepath.Join(wsDir, "scripts", "lint")
+	for _, dir := range []string{dockerDir, lintDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeScript(t, dockerDir, "index")
+	writeScript(t, dockerDir, "up")
+	writeScript(t, dockerDir, "build")
+	writeScript(t, lintDir, "fix")
+
+	ws := WorkspaceInfo{Name: "web", Dir: wsDir}
+
+	lintEntries, err := discoverWorkspaceScripts("lint", ws, "./scripts")
+	if err != nil {
+		t.Fatalf("discoverWorkspaceScripts(lint): %v", err)
+	}
+	if len(lintEntries) != 1 || lintEntries[0].ScriptName != "lint" {
+		t.Fatalf("lint resolved %v, want only lint", scriptNamesOf(lintEntries))
+	}
+
+	dockerEntries, err := discoverWorkspaceScripts("docker", ws, "./scripts")
+	if err != nil {
+		t.Fatalf("discoverWorkspaceScripts(docker): %v", err)
+	}
+	if len(dockerEntries) != 1 || dockerEntries[0].ScriptName != "docker" {
+		t.Fatalf("docker resolved %v, want only docker", scriptNamesOf(dockerEntries))
+	}
+	if dockerEntries[0].ScriptSource != "folder" {
+		t.Errorf("ScriptSource = %q, want folder", dockerEntries[0].ScriptSource)
+	}
+}
+
+// MISO-2: "@lumen/ios" must not also start "ios:device", which needs a
+// physical device attached and fails the whole run
+func TestDiscoverEntriesAtRefConcurrentResolvesExactScript(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/lumen"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lumenDir := filepath.Join(root, "apps", "lumen")
+	if err := os.MkdirAll(lumenDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePackageJSON(t, lumenDir, map[string]string{
+		"ios":        "expo run:ios",
+		"ios:device": "expo run:ios --device",
+		"android":    "expo run:android",
+	})
+
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"@lumen/ios", "@lumen/android"}}},
+	}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+
+	names := scriptNamesOf(entries)
+	sort.Strings(names)
+	if !slices.Equal(names, []string{"android", "ios"}) {
+		t.Fatalf("script names = %v, want [android ios]", names)
+	}
+	labels := labelsOf(entries)
+	sort.Strings(labels)
+	if !slices.Equal(labels, []string{"lumen/android", "lumen/ios"}) {
+		t.Errorf("labels = %v, want [lumen/android lumen/ios]", labels)
+	}
+}
+
+// a bare concurrent name in a member's own miso.json resolves only that
+// script within the member
+func TestDiscoverEntriesMemberConcurrentResolvesExactScript(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	if err := os.MkdirAll(webDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writePackageJSON(t, webDir, map[string]string{
+		"dev":     "vite",
+		"ios":     "expo run:ios",
+		"ios:sim": "expo run:ios --simulator",
+	})
+	if err := os.WriteFile(filepath.Join(webDir, "miso.json"),
+		[]byte(`{"repo":{"tasks":{"dev":{"concurrent":["ios"]}}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Config{Scripts: "./scripts"}
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+
+	names := scriptNamesOf(entries)
+	sort.Strings(names)
+	if !slices.Equal(names, []string{"dev", "ios"}) {
+		t.Fatalf("script names = %v, want [dev ios]", names)
+	}
+}
+
+func scriptNamesOf(entries []TuiScriptEntry) []string {
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.ScriptName
+	}
+	return out
 }
