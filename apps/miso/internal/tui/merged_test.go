@@ -135,3 +135,66 @@ func TestMergedSelectedTextBySeq(t *testing.T) {
 		t.Errorf("copyAllText() = %q, want %q", got, "one\ntwo")
 	}
 }
+
+// a line painted before its newline and completed with no interleave stays one row
+func TestMergedPartialCompletesInPlaceWhenContiguous(t *testing.T) {
+	pm := &ProcessManager{Processes: []*Process{{Entry: TuiScriptEntry{Label: "a"}}}}
+	m := MergedModel{pm: pm, visible: map[int]bool{0: true}}
+
+	m = feedMerged(m, "a", OpAppend{Text: "p", Pending: true})
+	m = feedMerged(m, "a", OpRewrite{OffsetFromEnd: 0, Text: "p a", Pending: true})
+	m = feedMerged(m, "a", OpRewrite{OffsetFromEnd: 0, Text: "p ab"})
+	m = feedMerged(m, "a", OpAppend{Text: "next"})
+
+	got := mergedTexts(m)
+	want := []string{"p ab", "next"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("merged lines = %#v, want %#v", got, want)
+	}
+}
+
+// once another app writes below an unfinished line, the next update shows up
+// as a fresh copy at the bottom and the old one stays as history
+func TestMergedPartialRedisplaysAfterInterleave(t *testing.T) {
+	pm := &ProcessManager{Processes: []*Process{
+		{Entry: TuiScriptEntry{Label: "a"}},
+		{Entry: TuiScriptEntry{Label: "b"}},
+	}}
+	m := MergedModel{pm: pm, visible: map[int]bool{0: true, 1: true}}
+
+	m = feedMerged(m, "a", OpAppend{Text: "Resolving", Pending: true})
+	m = feedMerged(m, "b", OpAppend{Text: "b1"})
+	m = feedMerged(m, "a", OpRewrite{OffsetFromEnd: 0, Text: "Installing", Pending: true})
+	m = feedMerged(m, "a", OpRewrite{OffsetFromEnd: 0, Text: "Saved"})
+
+	got := mergedTexts(m)
+	want := []string{"Resolving", "b1", "Saved"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("merged lines = %#v, want %#v", got, want)
+	}
+}
+
+// one app's live progress line must not corrupt another app's redraw frame
+func TestMergedPartialDoesNotCorruptOtherRedraw(t *testing.T) {
+	pm := &ProcessManager{Processes: []*Process{
+		{Entry: TuiScriptEntry{Label: "a"}},
+		{Entry: TuiScriptEntry{Label: "b"}},
+	}}
+	m := MergedModel{pm: pm, visible: map[int]bool{0: true, 1: true}}
+
+	for _, line := range []string{"b1", "b2", "b3", "b4"} {
+		m = feedMerged(m, "b", OpAppend{Text: line})
+	}
+	m = feedMerged(m, "a", OpAppend{Text: "p", Pending: true})
+	m = feedMerged(m, "b", OpRewrite{OffsetFromEnd: 3, Text: "f1"})
+	m = feedMerged(m, "b", OpRewrite{OffsetFromEnd: 2, Text: "f2"})
+	m = feedMerged(m, "a", OpRewrite{OffsetFromEnd: 0, Text: "pa", Pending: true})
+	m = feedMerged(m, "b", OpRewrite{OffsetFromEnd: 1, Text: "f3"})
+	m = feedMerged(m, "b", OpRewrite{OffsetFromEnd: 0, Text: "f4"})
+
+	got := mergedTexts(m)
+	want := []string{"b1", "b2", "b3", "b4", "p", "f1", "f2", "pa", "f3", "f4"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("merged lines = %#v, want %#v", got, want)
+	}
+}

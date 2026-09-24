@@ -701,7 +701,7 @@ func wrapLine(line string, width int) []string {
 	if width <= 0 || lipgloss.Width(line) <= width {
 		return []string{line}
 	}
-	rows := strings.Split(ansi.HardwrapWc(line, width, true), "\n")
+	rows := strings.Split(ansi.Hardwrap(line, width, true), "\n")
 	pen := ""
 	for i, row := range rows {
 		next := penAfter(pen, row)

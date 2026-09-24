@@ -11,7 +11,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/ekkolyth/miso/internal/proc"
 )
 
@@ -28,12 +30,18 @@ const (
 // instead of re-appending every frame.
 type LineOp interface{ lineOp() }
 
-type OpAppend struct{ Text string }
+// Pending on OpAppend and OpRewrite marks a line the child hasn't ended yet;
+// the next non-pending op for that label is an OpRewrite committing the same row.
+type OpAppend struct {
+	Text    string
+	Pending bool
+}
 
 // OffsetFromEnd 0 is the newest line, matching RingBuffer.SetFromEnd.
 type OpRewrite struct {
 	OffsetFromEnd int
 	Text          string
+	Pending       bool
 }
 
 type OpClear struct{}
@@ -347,11 +355,24 @@ func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGr
 	// vite minified bundles) can't stall the pty and freeze the TUI.
 	const maxLine = 1024 * 1024
 	live := liveWriter{buf: p.Buffer}
+	p.mu.Lock()
+	noPTY := p.NoPTY
+	p.mu.Unlock()
+	// plain output stays one line per newline, so only a pty child's prompt or
+	// live echo is painted before its newline arrives
+	var partial func(string)
+	if !noPTY {
+		partial = func(raw string) {
+			for _, op := range live.feedPartial(raw) {
+				pm.sendLine(p, op)
+			}
+		}
+	}
 	readLines(r, maxLine, func(raw string) {
 		for _, op := range live.feed(raw) {
 			pm.sendLine(p, op)
 		}
-	})
+	}, partial)
 }
 
 // liveWriter maps a child's redraw stream onto in-place buffer edits so a tool
@@ -364,6 +385,10 @@ type liveWriter struct {
 	buf *RingBuffer
 	// rows above the append point the write cursor sits on; 0 = append
 	up int
+	// a painted line still waiting for its newline, at pendingOffset from the end
+	pending       bool
+	pendingOffset int
+	lastPainted   string
 }
 
 // feed resolves one newline-terminated segment against the buffer — resetting
@@ -374,10 +399,24 @@ func (lw *liveWriter) feed(raw string) []LineOp {
 	raw = strings.TrimSuffix(raw, "\r")
 	cleared := strings.IndexByte(raw, '\x1b') >= 0 && screenResetRe.MatchString(raw)
 	moveUp, raw := extractCursorUp(raw)
-	raw = collapseLineRewrites(raw)
+	raw = resolveLine(raw)
 	raw = stripNonColorANSI(raw)
 
 	var ops []LineOp
+	if lw.pending {
+		lw.pending = false
+		if !cleared && moveUp == 0 {
+			lw.buf.SetFromEnd(lw.pendingOffset, raw)
+			if lw.up > 0 {
+				lw.up--
+			}
+			return []LineOp{OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: raw}}
+		}
+		// the painted row stays as history and the redraw proceeds from there;
+		// text the child wrote before its cursor-up on this line shows twice
+		// (frozen here and at the rewrite target), which beats losing it
+		ops = append(ops, OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: lw.lastPainted})
+	}
 	if cleared {
 		lw.buf.Clear()
 		lw.up = 0
@@ -405,6 +444,65 @@ func (lw *liveWriter) feed(raw string) []LineOp {
 		lw.up--
 	}
 	return ops
+}
+
+// feedPartial paints a line the child hasn't ended yet — a prompt, typed
+// echo, a progress frame — at the row feed would commit it to
+func (lw *liveWriter) feedPartial(raw string) []LineOp {
+	if len(raw) > maxPartialLine {
+		return nil
+	}
+	raw = incompleteEscapeRe.ReplaceAllString(trimIncompleteRune(raw), "")
+	// redraw frames and screen clears only make sense once the whole line is in
+	if cursorUpRe.MatchString(raw) || screenResetRe.MatchString(raw) {
+		return nil
+	}
+	text := stripNonColorANSI(resolveLine(raw))
+
+	if lw.pending {
+		if text == lw.lastPainted {
+			return nil
+		}
+		lw.buf.SetFromEnd(lw.pendingOffset, text)
+		lw.lastPainted = text
+		return []LineOp{OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: text, Pending: true}}
+	}
+	if text == "" {
+		return nil
+	}
+	var op LineOp
+	if lw.up == 0 {
+		lw.buf.Write(text)
+		lw.pendingOffset = 0
+		op = OpAppend{Text: text, Pending: true}
+	} else {
+		lw.pendingOffset = lw.up - 1
+		lw.buf.SetFromEnd(lw.pendingOffset, text)
+		op = OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: text, Pending: true}
+	}
+	lw.pending = true
+	lw.lastPainted = text
+	return []LineOp{op}
+}
+
+// each read re-resolves the whole open line, so painting stops at a length no
+// prompt or progress frame reaches and the line waits for its newline
+const maxPartialLine = 64 * 1024
+
+// a read can end partway through an escape sequence
+var incompleteEscapeRe = regexp.MustCompile(`\x1b(\[[0-9;?]*)?$`)
+
+// a read can end partway through a multi-byte rune
+func trimIncompleteRune(s string) string {
+	for i := len(s) - 1; i >= 0 && i >= len(s)-utf8.UTFMax+1; i-- {
+		if utf8.RuneStart(s[i]) {
+			if !utf8.FullRuneInString(s[i:]) {
+				return s[:i]
+			}
+			return s
+		}
+	}
+	return s
 }
 
 // screenResetRe matches full-screen clears a redrawing child emits before
@@ -438,25 +536,146 @@ func extractCursorUp(s string) (int, string) {
 	return total, rest
 }
 
-var eraseAndHomeRe = regexp.MustCompile(`\x1b\[2K\x1b\[[01]?G`)
+type lineCell struct {
+	seq   string
+	width int
+}
 
-// text after the final carriage return or erase-line/cursor-home pair wins
-func collapseLineRewrites(s string) string {
-	start := strings.LastIndexByte(s, '\r') + 1
-	matches := eraseAndHomeRe.FindAllStringIndex(s, -1)
-	if len(matches) > 0 {
-		if end := matches[len(matches)-1][1]; end > start {
-			start = end
+// resolveLine replays the in-line cursor edits a child made (\r, \b, ESC[<n>D,
+// ESC[K, ESC[2K, ESC[G) against a column model and returns what a terminal
+// would show. A line the child erased before it ended keeps its last non-empty
+// frame, so a progress line leaves its final state in the scrollback.
+func resolveLine(s string) string {
+	if !strings.ContainsAny(s, "\r\b\x1b") {
+		return s
+	}
+	var (
+		cells     []lineCell
+		cursor    int
+		lastFrame string
+		state     byte
+	)
+	parser := ansi.NewParser()
+	snapshot := func(from int) {
+		for _, c := range cells[from:] {
+			if c.width > 0 {
+				lastFrame = joinCells(cells)
+				return
+			}
 		}
 	}
-	return s[start:]
+	// SGR and other zero-width cells survive an erase so the color of the text
+	// before the cursor stays intact
+	eraseFrom := func(from int) {
+		kept := cells[:from:from]
+		for _, c := range cells[from:] {
+			if c.width == 0 {
+				kept = append(kept, c)
+			}
+		}
+		cells = kept
+	}
+	insert := func(c lineCell) {
+		cells = append(cells, lineCell{})
+		copy(cells[cursor+1:], cells[cursor:])
+		cells[cursor] = c
+		cursor++
+	}
+
+	for len(s) > 0 {
+		seq, width, n, next := ansi.DecodeSequence(s, state, parser)
+		state = next
+		s = s[n:]
+		if width > 0 {
+			for cursor < len(cells) && cells[cursor].width == 0 {
+				cursor++
+			}
+			if cursor == len(cells) {
+				cells = append(cells, lineCell{seq, width})
+			} else {
+				cells[cursor] = lineCell{seq, width}
+			}
+			cursor++
+			continue
+		}
+		switch {
+		case seq == "\r":
+			snapshot(0)
+			cells, cursor = nil, 0
+		case seq == "\b":
+			cursor = backColumns(cells, cursor, 1)
+		case ansi.HasCsiPrefix(seq) && isPlainCsi(parser):
+			param, _ := parser.Param(0, 0)
+			switch ansi.Cmd(parser.Command()).Final() {
+			case 'D':
+				cursor = backColumns(cells, cursor, max(param, 1))
+			case 'K':
+				switch param {
+				case 0:
+					snapshot(cursor)
+					eraseFrom(cursor)
+				case 2:
+					snapshot(0)
+					eraseFrom(0)
+					cursor = 0
+				default:
+					insert(lineCell{seq: seq})
+				}
+			case 'G':
+				if param <= 1 {
+					cursor = 0
+				} else {
+					insert(lineCell{seq: seq})
+				}
+			default:
+				insert(lineCell{seq: seq})
+			}
+		default:
+			insert(lineCell{seq: seq})
+		}
+	}
+
+	for _, c := range cells {
+		if c.width > 0 {
+			return joinCells(cells)
+		}
+	}
+	if lastFrame != "" {
+		return lastFrame
+	}
+	return joinCells(cells)
+}
+
+func isPlainCsi(p *ansi.Parser) bool {
+	cmd := ansi.Cmd(p.Command())
+	return cmd.Prefix() == 0 && cmd.Intermediate() == 0
+}
+
+// clamps at column 0: bun sizes its cursor-back by the frame's bytes, not its
+// columns, so it routinely overshoots the start of the line
+func backColumns(cells []lineCell, cursor, cols int) int {
+	for cursor > 0 && cols > 0 {
+		cursor--
+		cols -= cells[cursor].width
+	}
+	return cursor
+}
+
+func joinCells(cells []lineCell) string {
+	var b strings.Builder
+	for _, c := range cells {
+		b.WriteString(c.seq)
+	}
+	return b.String()
 }
 
 // readLines calls emit once per '\n'-terminated line (newline excluded), plus
-// any unterminated remainder at EOF. A line longer than maxLine is truncated in
-// what's passed to emit but still fully drained from r, so an oversized line
-// can never block the writer on the other end of a pty.
-func readLines(r io.Reader, maxLine int, emit func(string)) {
+// any unterminated remainder at EOF. A non-nil partial gets the whole
+// unterminated line so far after every read that leaves one open, until the
+// line overflows maxLine. A line longer than maxLine is truncated in what's
+// passed to emit but still fully drained from r, so an oversized line can
+// never block the writer on the other end of a pty.
+func readLines(r io.Reader, maxLine int, emit func(string), partial func(string)) {
 	reader := bufio.NewReader(r)
 	buf := make([]byte, 32*1024)
 	var line []byte
@@ -485,6 +704,9 @@ func readLines(r io.Reader, maxLine int, emit func(string)) {
 				line = line[:0]
 				overflow = false
 			}
+		}
+		if partial != nil && len(line) > 0 && !overflow && err == nil {
+			partial(string(line))
 		}
 		if err != nil {
 			if len(line) > 0 {

@@ -28,7 +28,7 @@ below).
 
 ## Interactive Mode
 
-Press `i` to forward keyboard input to the focused task — every keystroke goes to that process's stdin (reload Metro with `r`, trigger bundler shortcuts, answer prompts). Press `Ctrl+Z` to return to miso's controls. Each task runs in its own pseudo-terminal, so tools that gate color or prompts on a TTY behave as if run directly, and long-lived dev servers stay alive instead of shutting down on a closed stdin. Interactive mode is unavailable in delegated (`turbo`/`nx`) mode — the delegate owns the child processes.
+Press `i` to forward keyboard input to the focused task — every keystroke goes to that process's stdin (reload Metro with `r`, trigger bundler shortcuts, answer prompts). Press `Ctrl+Z` to return to miso's controls. Each task runs in its own pseudo-terminal, so tools that gate color or prompts on a TTY behave as if run directly, and long-lived dev servers stay alive instead of shutting down on a closed stdin. Interactive mode is unavailable in merged mode, and in delegated (`turbo`/`nx`) mode — the delegate owns the child processes.
 
 ## Selection and Copy
 

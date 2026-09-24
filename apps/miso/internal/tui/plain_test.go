@@ -98,3 +98,27 @@ func TestRunPlainReturnsNilOnAllSuccess(t *testing.T) {
 		t.Errorf("FailedCount = %d, want 0", got)
 	}
 }
+
+// plain output keeps its one-line-per-newline shape; a partial is never
+// flushed as its own [label] line
+func TestRunPlainDoesNotFlushPartialLines(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "p", "printf 'a'; sleep 0.2; printf 'b\\n'\n")
+	markPlain(pm.Processes)
+
+	var buf bytes.Buffer
+	if _, err := RunPlain(pm, &buf, nil, nil); err != nil {
+		t.Fatalf("RunPlain: %v", err)
+	}
+	var got []string
+	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if strings.HasPrefix(line, "[p] ") {
+			got = append(got, line)
+		}
+	}
+	want := []string{"[p] ab", "[p] exited (0)"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("plain lines = %#v, want %#v", got, want)
+	}
+}

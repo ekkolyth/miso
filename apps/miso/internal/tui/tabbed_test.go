@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // a line op just refreshes tabbed — it re-reads p.Buffer, which the op already
@@ -292,11 +293,22 @@ func TestWrapLine(t *testing.T) {
 				"BB",
 			},
 		},
+		{
+			name:  "vs16 emoji counted at grapheme width",
+			line:  "ab⚙️cd",
+			width: 3,
+			want:  []string{"ab", "⚙️c", "d"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := wrapLine(tt.line, tt.width)
+			for i, row := range got {
+				if tt.width > 0 && lipgloss.Width(row) > tt.width {
+					t.Errorf("row %d %q is %d columns, want <= %d", i, row, lipgloss.Width(row), tt.width)
+				}
+			}
 			if len(got) != len(tt.want) {
 				t.Fatalf("wrapLine(%q, %d) = %v (len %d), want %v (len %d)", tt.line, tt.width, got, len(got), tt.want, len(tt.want))
 			}

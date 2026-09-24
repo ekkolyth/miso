@@ -55,7 +55,7 @@ Press `i` to hand keyboard input to the focused task. Every keystroke is forward
 
 On Unix, each task runs in its own pseudo-terminal, so tools that gate color or interactive prompts on a TTY (dev servers, bundlers, Storybook) render exactly as they would when run directly — and long-lived dev servers such as Electron and Vite stay alive instead of shutting down on a closed stdin.
 
-Interactive mode applies to tasks miso orchestrates directly. In delegated mode (Turbo/Nx) turbo owns the child processes, so `i` is unavailable there — see [Turborepo Integration](/tui/turborepo-integration).
+Interactive mode is available in tabbed mode, not merged. It applies to tasks miso orchestrates directly. In delegated mode (Turbo/Nx) turbo owns the child processes, so `i` is unavailable there — see [Turborepo Integration](/tui/turborepo-integration).
 
 ## Non-interactive Environments
 
