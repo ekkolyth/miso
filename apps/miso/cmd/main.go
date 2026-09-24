@@ -206,7 +206,7 @@ func main() {
 		switch cmd {
 		case "env":
 			if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
-				os.Exit(1)
+				cli.Fail(logger, err, false)
 			}
 			return
 		case "scripts":
@@ -235,7 +235,7 @@ func main() {
 		envValidated := env.HasEnvFlag(scriptArgs)
 		if envValidated {
 			if err := env.Run(projectRoot, cfg, logger); err != nil {
-				os.Exit(1)
+				cli.Fail(logger, err, false)
 			}
 			scriptArgs = env.StripEnvFlag(scriptArgs)
 		}
@@ -302,7 +302,7 @@ func main() {
 	// env does not need package manager
 	if parsed.Action == cli.ActionEnv {
 		if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
-			os.Exit(1)
+			cli.Fail(logger, err, false)
 		}
 		return
 	}
@@ -582,7 +582,7 @@ func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedC
 	}
 
 	if err := env.Run(projectRoot, cfg, logger); err != nil {
-		os.Exit(1)
+		cli.Fail(logger, err, false)
 	}
 
 	// Strip --env from cfg flags and parsed args

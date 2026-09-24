@@ -211,7 +211,7 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		}
 		processEnv, envErr := env.BuildTargetEnv(root, cfg, target)
 		if envErr != nil {
-			return nil, nil, nil, false, fmt.Errorf("build env for %s: %w", entry.Label, envErr)
+			return nil, nil, nil, false, envErr
 		}
 
 		proc := pm.Add(entry, cmd, args, dir, processEnv)

@@ -11,7 +11,6 @@ import (
 	"charm.land/huh/v2"
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/x/term"
-	"github.com/joho/godotenv"
 
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/workspace"
@@ -87,7 +86,7 @@ func readEnvSoft(path string) (map[string]string, error) {
 		}
 		return nil, err
 	}
-	return godotenv.Read(path)
+	return readDotenvFile(path)
 }
 
 // destination dir for a scope's .env.generated: a member scope → member dir;
@@ -106,6 +105,8 @@ func scopeDir(scope, projectRoot string, members []workspace.Member) string {
 type scopedEntry struct {
 	entry   *config.EnvEntry
 	baseDir string
+	// set for a member's own entries, which `miso env` labels "<member>: <entry>"
+	memberName string
 }
 
 // collectScopes groups declared entries by scope. Root entries use their declared
@@ -208,8 +209,6 @@ func validateEntryValues(values map[string]string, entry *config.EnvEntry) []err
 func Command(projectRoot string, cfg config.Config, logger *log.Logger, args []string) error {
 	generate, opts, err := ParseGenerateFlags(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr)
-		logger.Error(err.Error())
 		return err
 	}
 	if generate {
@@ -224,8 +223,6 @@ func Command(projectRoot string, cfg config.Config, logger *log.Logger, args []s
 func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts GenerateOptions) error {
 	members, err := workspace.DiscoverMembers(projectRoot, cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr)
-		logger.Error("failed to discover workspaces", "error", err)
 		return fmt.Errorf("discover members: %w", err)
 	}
 	scopes := collectScopes(projectRoot, cfg, members)
@@ -275,9 +272,7 @@ func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts Ge
 		} else {
 			keys, values, err = buildScopeEnv(entries, opts)
 			if err != nil {
-				fmt.Fprintln(os.Stderr)
-				logger.Error("env generate: failed to build env", "dir", dir, "error", err)
-				return err
+				return fmt.Errorf("env generate: build env for %s: %w", dir, err)
 			}
 			if opts.Populate || opts.Override {
 				for _, scoped := range entries {
@@ -294,10 +289,7 @@ func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts Ge
 	}
 
 	if len(failures) > 0 {
-		fmt.Fprintln(os.Stderr)
-		logger.Error("env generation failed validation")
-		printGroupedErrors(os.Stderr, failures)
-		return errors.New("env generation failed validation")
+		return &ValidationError{summary: "env generation failed validation", failures: failures}
 	}
 
 	filename := ".env.generated"
@@ -313,8 +305,6 @@ func Generate(projectRoot string, cfg config.Config, logger *log.Logger, opts Ge
 			}
 		}
 		if err := os.WriteFile(path, []byte(out.text), 0o644); err != nil {
-			fmt.Fprintln(os.Stderr)
-			logger.Error("env generate: failed to write file", "path", path, "error", err)
 			return fmt.Errorf("write %s: %w", path, err)
 		}
 		logger.Info("env generated", "path", path, "variables", len(out.keys))

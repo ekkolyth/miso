@@ -40,8 +40,15 @@ func TestMain(m *testing.M) {
 // run execs the built binary in workdir, returning combined output + exit code.
 func run(t *testing.T, workdir string, args ...string) (string, int) {
 	t.Helper()
+	return runEnv(t, workdir, nil, args...)
+}
+
+// like run, with environ as the process env (nil inherits the test's)
+func runEnv(t *testing.T, workdir string, environ []string, args ...string) (string, int) {
+	t.Helper()
 	cmd := exec.Command(misoBin, args...)
 	cmd.Dir = workdir
+	cmd.Env = environ
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if err != nil {
@@ -100,8 +107,11 @@ func TestE2E_EnvFail(t *testing.T) {
 	if code == 0 {
 		t.Errorf("env (invalid) exit = 0, want non-zero (out: %s)", out)
 	}
-	if !strings.Contains(out, "port must be 1-65535") {
+	if !strings.Contains(out, "expected port 1-65535, got integer above maximum") {
 		t.Errorf("env fail output %q, want port range message", out)
+	}
+	if strings.Contains(out, "99999") {
+		t.Errorf("env fail output %q leaks the value", out)
 	}
 }
 
@@ -259,4 +269,93 @@ func TestE2E_SimpleModeDependsOnOnlyTask(t *testing.T) {
 	if !slices.Equal(order, []string{"a", "b"}) {
 		t.Errorf("order.log = %v, want a and b", order)
 	}
+}
+
+// the test's env minus the named keys, plus extra
+func environWithout(keys []string, extra ...string) []string {
+	var environ []string
+	for _, kv := range os.Environ() {
+		key, _, _ := strings.Cut(kv, "=")
+		if !slices.Contains(keys, key) {
+			environ = append(environ, kv)
+		}
+	}
+	return append(environ, extra...)
+}
+
+const shellDefaultURL = "postgres://test:test@localhost:55432/ekkolore_test?sslmode=disable"
+
+func TestE2E_ShellDefaultInjected(t *testing.T) {
+	environ := environWithout([]string{"TEST_DATABASE_URL"})
+	out, code := runEnv(t, "testdata/env-shell-default", environ, "show")
+	if code != 0 {
+		t.Fatalf("show exit = %d, want 0 (out: %s)", code, out)
+	}
+	if !strings.Contains(out, "TEST_DATABASE_URL="+shellDefaultURL) {
+		t.Errorf("show output %q, want the default URL", out)
+	}
+
+	out, code = runEnv(t, "testdata/env-shell-default", environ, "env")
+	if code != 0 {
+		t.Errorf("env exit = %d, want 0 (out: %s)", code, out)
+	}
+}
+
+func TestE2E_ShellDefault_ProcessEnvWins(t *testing.T) {
+	environ := environWithout([]string{"TEST_DATABASE_URL"}, "TEST_DATABASE_URL=postgres://ci:1/x")
+	out, code := runEnv(t, "testdata/env-shell-default", environ, "show")
+	if code != 0 {
+		t.Fatalf("show exit = %d, want 0 (out: %s)", code, out)
+	}
+	if !strings.Contains(out, "TEST_DATABASE_URL=postgres://ci:1/x") {
+		t.Errorf("show output %q, want the process env value", out)
+	}
+}
+
+func TestE2E_UnsupportedExpansionStopsBeforeSpawn(t *testing.T) {
+	environ := environWithout([]string{"X"})
+	for _, args := range [][]string{{"show"}, {"env"}} {
+		out, code := runEnv(t, "testdata/env-unsupported", environ, args...)
+		if code == 0 {
+			t.Errorf("%v exit = 0, want non-zero (out: %s)", args, out)
+		}
+		if !strings.Contains(out, "${X:?") {
+			t.Errorf("%v output %q, want the unsupported form named", args, out)
+		}
+		if strings.Contains(out, "SPAWNED") || strings.Contains(out, "s3cr3t") {
+			t.Errorf("%v output %q: spawned the script or leaked the value", args, out)
+		}
+	}
+}
+
+// every command that reports an env failure prints it through one renderer
+func assertSameEnvOutput(t *testing.T, dir string, commands ...[]string) {
+	t.Helper()
+	environ := environWithout([]string{"PORT", "X", "Y"})
+	var first string
+	for i, args := range commands {
+		out, code := runEnv(t, dir, environ, args...)
+		if code == 0 {
+			t.Errorf("%v exit = 0, want non-zero (out: %s)", args, out)
+		}
+		if strings.Contains(out, "SPAWNED") || strings.Contains(out, "s3cr3t") {
+			t.Errorf("%v output %q: spawned the script or leaked the value", args, out)
+		}
+		if i == 0 {
+			first = out
+			continue
+		}
+		if out != first {
+			t.Errorf("%v printed\n%q\n%v printed\n%q", commands[0], first, args, out)
+		}
+	}
+}
+
+func TestE2E_EnvFailuresRenderIdentically(t *testing.T) {
+	assertSameEnvOutput(t, "testdata/env-render-full", []string{"env"}, []string{"show", "--env"})
+}
+
+// without --env nothing is validated, so a plain run matches on load failures only
+func TestE2E_LoadFailuresRenderIdenticallyWithoutEnvFlag(t *testing.T) {
+	assertSameEnvOutput(t, "testdata/env-render-load", []string{"env"}, []string{"show", "--env"}, []string{"show"})
 }

@@ -71,6 +71,18 @@ func TestReadEnvSoft_Reads(t *testing.T) {
 	}
 }
 
+func TestReadEnvSoft_ExpandsDefault(t *testing.T) {
+	unsetEnv(t, "K")
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte(`K="${K:-v}"`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := readEnvSoft(path)
+	if err != nil || m["K"] != "v" {
+		t.Errorf("read => K=v; got %v %v", m, err)
+	}
+}
+
 func TestScopeDir(t *testing.T) {
 	root := "/repo"
 	members := []workspace.Member{{Name: "web", Dir: "/repo/apps/web"}}

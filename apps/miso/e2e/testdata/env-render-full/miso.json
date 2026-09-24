@@ -1,0 +1,9 @@
+{
+  "packageManager": false,
+  "scripts": "./scripts",
+  "env": [
+    { "scope": "global", "label": "ports", "path": "ports.env", "variables": { "PORT": "port" } },
+    { "scope": "global", "label": "shell", "path": "shell.env", "variables": { "X": "string" } },
+    { "scope": "global", "label": "local", "path": ".env.local", "variables": { "Y": "string" } }
+  ]
+}

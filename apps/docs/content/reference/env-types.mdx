@@ -124,6 +124,14 @@ Miso's JSON schema flags unknown `VarConfig` keys in your editor; at runtime, un
 | `uuid`    | UUID.                                                          |
 | `pattern` | Regex match. Requires `pattern` field.                         |
 
+A failure reads `expected <constraint>, got <kind>`:
+
+```
+DATABASE_URL: expected url with scheme one of [postgres postgresql], got string
+```
+
+The value itself is never printed, because it may be a secret. `got` names only its kind (`empty`, `integer`, `number`, `boolean`, `url`, `json`, `string`), plus detail that gives nothing away, such as `integer above maximum` or `string of 2 characters`.
+
 ### Basic Example
 
 <Terminal

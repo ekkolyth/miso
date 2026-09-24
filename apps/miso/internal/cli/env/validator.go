@@ -1,12 +1,14 @@
 package env
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-playground/validator/v10"
 
@@ -128,75 +130,83 @@ func isRequired(name string, required config.EnvRequired, vars map[string]config
 }
 
 func validateVar(validate *validator.Validate, name, val string, cfg config.VarConfig) error {
+	// every message is "expected <constraint>, got <kind>"; the value itself may
+	// be a secret, so only its kind and non-revealing detail are reported
+	fail := func(expected, got string) error {
+		return &varError{name: name, msg: fmt.Sprintf("expected %s, got %s", expected, got)}
+	}
+
 	// Types that need custom validation (validator expects specific Go types)
 	switch cfg.Type {
 	case "port":
+		const expected = "port 1-65535"
 		p, err := strconv.Atoi(strings.TrimSpace(val))
 		if err != nil {
-			return &varError{name: name, msg: fmt.Sprintf("expected port, found '%s'", val)}
+			return fail(expected, valueKind(val))
 		}
-		if p < 1 || p > 65535 {
-			return &varError{name: name, msg: fmt.Sprintf("port must be 1-65535, got %d", p)}
+		if p < 1 {
+			return fail(expected, "integer below minimum")
+		}
+		if p > 65535 {
+			return fail(expected, "integer above maximum")
 		}
 		return nil
 	case "int", "int+":
+		expected := "integer"
+		if cfg.Type == "int+" {
+			expected = "positive integer"
+		}
+		expected += boundsPhrase(cfg)
 		n, err := strconv.Atoi(strings.TrimSpace(val))
 		if err != nil {
-			return &varError{name: name, msg: fmt.Sprintf("expected integer, found '%s'", val)}
+			return fail(expected, valueKind(val))
 		}
 		if cfg.Type == "int+" && n <= 0 {
-			return &varError{name: name, msg: "must be positive integer"}
+			return fail(expected, "integer below minimum")
 		}
 		if cfg.Min != nil && float64(n) < *cfg.Min {
-			return &varError{name: name, msg: fmt.Sprintf("must be >= %v", *cfg.Min)}
+			return fail(expected, "integer below minimum")
 		}
 		if cfg.Max != nil && float64(n) > *cfg.Max {
-			return &varError{name: name, msg: fmt.Sprintf("must be <= %v", *cfg.Max)}
+			return fail(expected, "integer above maximum")
 		}
 		return nil
 	case "float":
+		expected := "number" + boundsPhrase(cfg)
 		f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
 		if err != nil {
-			return &varError{name: name, msg: fmt.Sprintf("expected float, found '%s'", val)}
+			return fail(expected, valueKind(val))
 		}
 		if cfg.Min != nil && f < *cfg.Min {
-			return &varError{name: name, msg: fmt.Sprintf("must be >= %v", *cfg.Min)}
+			return fail(expected, valueKind(val)+" below minimum")
 		}
 		if cfg.Max != nil && f > *cfg.Max {
-			return &varError{name: name, msg: fmt.Sprintf("must be <= %v", *cfg.Max)}
+			return fail(expected, valueKind(val)+" above maximum")
 		}
 		return nil
 	case "url":
 		u, err := url.Parse(val)
-		if err != nil {
-			return &varError{name: name, msg: fmt.Sprintf("expected url, found '%s'", val)}
-		}
-		if u.Scheme == "" || u.Host == "" {
-			return &varError{name: name, msg: fmt.Sprintf("expected url, found '%s'", val)}
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return fail("url", valueKind(val))
 		}
 		schemes := cfg.Schemes
 		if len(schemes) == 0 {
 			schemes = []string{"http", "https"}
 		}
-		allowed := false
 		for _, s := range schemes {
 			if u.Scheme == s {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return &varError{name: name, msg: fmt.Sprintf("url scheme must be one of %v", schemes)}
-		}
-		return nil
-	case "enum":
-		val = strings.TrimSpace(val)
-		for _, v := range cfg.Values {
-			if val == v {
 				return nil
 			}
 		}
-		return &varError{name: name, msg: fmt.Sprintf("must be one of %v", cfg.Values)}
+		return fail(fmt.Sprintf("url with scheme one of %v", schemes), "url with a different scheme")
+	case "enum":
+		trimmed := strings.TrimSpace(val)
+		for _, v := range cfg.Values {
+			if trimmed == v {
+				return nil
+			}
+		}
+		return fail(fmt.Sprintf("one of %v", cfg.Values), valueKind(val))
 	case "pattern":
 		if cfg.Pattern == "" {
 			return &varError{name: name, msg: "pattern type requires pattern"}
@@ -206,7 +216,7 @@ func validateVar(validate *validator.Validate, name, val string, cfg config.VarC
 			return &varError{name: name, msg: fmt.Sprintf("invalid pattern: %s", err)}
 		}
 		if !re.MatchString(val) {
-			return &varError{name: name, msg: "value does not match pattern"}
+			return fail("match for "+cfg.Pattern, valueKind(val))
 		}
 		return nil
 	case "bool":
@@ -218,18 +228,18 @@ func validateVar(validate *validator.Validate, name, val string, cfg config.VarC
 		if len(falseVals) == 0 {
 			falseVals = []string{"false", "0", "no", "off"}
 		}
-		val = strings.TrimSpace(strings.ToLower(val))
+		lowered := strings.TrimSpace(strings.ToLower(val))
 		for _, t := range trueVals {
-			if val == strings.ToLower(t) {
+			if lowered == strings.ToLower(t) {
 				return nil
 			}
 		}
 		for _, f := range falseVals {
-			if val == strings.ToLower(f) {
+			if lowered == strings.ToLower(f) {
 				return nil
 			}
 		}
-		return &varError{name: name, msg: fmt.Sprintf("invalid bool (use %v or %v)", trueVals, falseVals)}
+		return fail(fmt.Sprintf("boolean (%v or %v)", trueVals, falseVals), valueKind(val))
 	}
 
 	// String with pattern: validate directly (matches_regex tag breaks when pattern contains commas)
@@ -239,7 +249,7 @@ func validateVar(validate *validator.Validate, name, val string, cfg config.VarC
 			return &varError{name: name, msg: fmt.Sprintf("invalid pattern: %s", err)}
 		}
 		if !re.MatchString(val) {
-			return &varError{name: name, msg: "value does not match pattern"}
+			return fail("match for "+cfg.Pattern, valueKind(val))
 		}
 	}
 
@@ -259,27 +269,58 @@ func validateVar(validate *validator.Validate, name, val string, cfg config.VarC
 	return nil
 }
 
-// friendlyValidationMsg converts go-playground/validator errors into human-readable messages.
+// " >= min", " <= max", or both joined by "and"
+func boundsPhrase(cfg config.VarConfig) string {
+	var bounds []string
+	if cfg.Min != nil {
+		bounds = append(bounds, fmt.Sprintf(">= %v", *cfg.Min))
+	}
+	if cfg.Max != nil {
+		bounds = append(bounds, fmt.Sprintf("<= %v", *cfg.Max))
+	}
+	if len(bounds) == 0 {
+		return ""
+	}
+	return " " + strings.Join(bounds, " and ")
+}
+
+// describes a value without revealing it
+func valueKind(val string) string {
+	trimmed := strings.TrimSpace(val)
+	if trimmed == "" {
+		return "empty"
+	}
+	if _, err := strconv.Atoi(trimmed); err == nil {
+		return "integer"
+	}
+	if _, err := strconv.ParseFloat(trimmed, 64); err == nil {
+		return "number"
+	}
+	if lowered := strings.ToLower(trimmed); lowered == "true" || lowered == "false" {
+		return "boolean"
+	}
+	if u, err := url.Parse(trimmed); err == nil && u.Scheme != "" && u.Host != "" {
+		return "url"
+	}
+	if (trimmed[0] == '{' || trimmed[0] == '[') && json.Valid([]byte(trimmed)) {
+		return "json"
+	}
+	return "string"
+}
+
+// converts go-playground/validator errors into "expected X, got Y"
 func friendlyValidationMsg(typeName, val string, ve validator.ValidationErrors) string {
 	if len(ve) == 0 {
 		return "validation failed"
 	}
 	fe := ve[0]
 	switch fe.Tag() {
-	case "required":
-		return fmt.Sprintf("expected %s, found ''", typeName)
 	case "min":
-		return fmt.Sprintf("must be at least %s characters, found '%s'", fe.Param(), val)
+		return fmt.Sprintf("expected string of at least %s characters, got string of %d characters", fe.Param(), utf8.RuneCountInString(val))
 	case "max":
-		return fmt.Sprintf("must be at most %s characters, found '%s'", fe.Param(), val)
-	case "email":
-		return fmt.Sprintf("expected email, found '%s'", val)
-	case "json":
-		return fmt.Sprintf("expected json, found '%s'", val)
-	case "uuid":
-		return fmt.Sprintf("expected uuid, found '%s'", val)
+		return fmt.Sprintf("expected string of at most %s characters, got string of %d characters", fe.Param(), utf8.RuneCountInString(val))
 	default:
-		return fmt.Sprintf("expected %s, found '%s'", typeName, val)
+		return fmt.Sprintf("expected %s, got %s", typeName, valueKind(val))
 	}
 }
 

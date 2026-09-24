@@ -1,0 +1,2 @@
+#!/bin/sh
+echo "TEST_DATABASE_URL=$TEST_DATABASE_URL"

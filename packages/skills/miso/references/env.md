@@ -83,6 +83,33 @@ This checks that each named variable is present in the env file but does not val
 
 ---
 
+## Expansion in `.env` files
+
+miso expands three forms in unquoted and double-quoted values:
+
+- `$VAR`
+- `${VAR}`
+- `${VAR:-default}`: `default` when `VAR` is unset or empty. The default is expanded by the same rules, so `${A:-$B}` works.
+
+A name resolves from the shell environment first, then from keys defined earlier in the same file, and is empty otherwise. So a committed default yields to a value CI exports:
+
+```bash
+TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgres://test:test@localhost:55432/ekkolore_test?sslmode=disable}"
+```
+
+- Single-quoted values stay literal: `'${VAR:-x}'` is the text `${VAR:-x}`.
+- `\$` is a literal `$`.
+- A `$` that doesn't start a name stays literal (`pa$$word`, `cost$`, `$1`).
+- Every other shell form is a load error naming the form: `${VAR:?…}`, `${VAR:=…}`, `${VAR:+…}`, `${VAR-…}`, `${#VAR}`, `${VAR/…}`, `${VAR%…}`, `$(…)`.
+
+```
+scripts/test.env:1: X: unsupported expansion ${X:?…} — miso expands $VAR, ${VAR} and ${VAR:-default}
+```
+
+The same rules apply wherever miso reads a `.env` file: validation, injection, and `miso env -g -p`/`-o`.
+
+---
+
 ## Env Scoping
 
 **`scope` is a miso-mode requirement.** In `miso` mode (the default — miso runs the processes) every root entry **requires** a `scope`. In `turbo`/`nx` mode the delegate resolves targets, so `scope` is **not required** and `"global"` carries no reserved meaning. (miso prepends each `node_modules/.bin` to `PATH` in every mode so scripts resolve local binaries.)
@@ -244,6 +271,7 @@ Entry field `override`: path to that scope's override file (root/global override
 - Shell environment variables take precedence over `.env` file values
 - `.env` files only fill in variables not already set in the shell environment
 - Each target receives only its resolved scopes (global + whichever config declares that target); root variables never bleed across workspaces. See **Env Scoping** above.
+- A file that fails to load stops the run before anything spawns, with the same message `miso env` prints. That covers a parse error, an unsupported expansion, a declared `path` that doesn't exist, and a member `miso.json` that won't parse. Auto-discovered files follow the same rule. Injection never type-checks values; only `miso env` and `--env` do.
 
 ---
 
@@ -257,4 +285,5 @@ Entry field `override`: path to that scope's override file (root/global override
 - **Assuming a clean `miso env` skips member schemas** — validation traverses every workspace member in every mode; a member `miso.json` that won't parse fails the run rather than being skipped
 - **Declaring one scope in both the root and the member config** — a config error; keep each scope in exactly one file
 - **Root `env` entry without `scope` in miso mode** — in miso mode every root entry needs `scope` (a target name or `"global"`); a missing or empty scope is a config error (in `turbo`/`nx` mode scope isn't required)
+- **Pointing `path` at a bash fragment** — a file meant to be `source`d (`${VAR:?}`, `$(…)`, `set -a` scripts) is a load error, not a dotenv file. Only `$VAR`, `${VAR}` and `${VAR:-default}` expand.
 - **Naming a workspace `global`** — `global` is reserved for env scope; no member or target may use it

@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/ekkolyth/miso/internal/cli/env"
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
 	"github.com/ekkolyth/miso/internal/ui"
@@ -132,7 +133,15 @@ func EnsureManager(root string, cfg config.Config) (string, config.Config, error
 // print styled error and exit with code 1
 func Fail(_ *log.Logger, err error, showUsage bool) {
 	s := ui.Default()
+	var envErr *env.ValidationError
+	if errors.As(err, &envErr) {
+		// blank line sets the block apart from `miso env`'s passing-entry lines
+		fmt.Fprintln(os.Stderr)
+	}
 	fmt.Fprintf(os.Stderr, "%s %s %s\n", s.Error.Render("ERROR"), s.Muted.Render("miso:"), err.Error())
+	if envErr != nil {
+		envErr.Render(os.Stderr)
+	}
 	if showUsage {
 		// UsageText owns its own leading/trailing spacing
 		fmt.Fprint(os.Stderr, UsageText())
