@@ -108,9 +108,9 @@ You can also use the object form to configure per-task behaviour:
 
 <DocProp prop="dependsOn" />
 
-Tasks to run before this one, using the same forms as `concurrent`: a bare `name` resolves in the scope declaring it (root list → root, a member's list → that member), `#name` resolves at the repo root, and `@member/script` resolves inside the named workspace member. `^name` runs `name` in the workspace members this member depends on, reading the graph from each member's `package.json`; an upstream member without that script is skipped.
+Tasks to run before this one. A bare `name` runs in the dependent's own workspace, whichever list declares it: `web`'s `dev` depends on `web`'s `name`, and a root script on the root's. A workspace without that script is skipped. `#name` resolves at the repo root, and `@member/script` resolves inside the named workspace member. `^name` runs `name` in the workspace members this member depends on, reading the graph from each member's `package.json`; an upstream member without that script is skipped.
 
-Dependencies are followed transitively, and each script runs once per run even when several tasks depend on it. Each dependency must exit 0 before anything depending on it starts; independent ones run in parallel. A failure stops the run — dependents never start, and their tab shows as skipped. An entry that resolves nowhere fails the launch. A task entry with only `dependsOn` and no script of its own runs its dependencies. A dependency's own `concurrent` list does not attach — companions start only for the task you invoked. This all works in simple mode too.
+Dependencies are followed transitively, and each script runs once per run even when several tasks depend on it. Each dependency must exit 0 before anything depending on it starts; independent ones run in parallel. A failure stops the run — dependents never start, and their tab shows as skipped. A `#name` or `@member/script` entry that resolves nowhere fails the launch. A task entry with only `dependsOn` and no script of its own runs its dependencies. A dependency's own `concurrent` list does not attach — companions start only for the task you invoked. This all works in simple mode too.
 
 <DocProp prop="concurrent" />
 

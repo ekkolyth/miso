@@ -173,7 +173,8 @@ func writeDependsOnFixture(t *testing.T, packageManager bool, failing string) st
   }
 }`)
 	for _, name := range []string{"services", "migrate", "build", "dev"} {
-		tail := ""
+		// "<name>-done" proves the script finished, not just that it started
+		tail := "echo " + name + "-done >> \"" + filepath.Join(root, "order.log") + "\"\n"
 		if name == failing {
 			tail = "exit 1\n"
 		}
@@ -193,15 +194,12 @@ func assertBefore(t *testing.T, order []string, first, second string) {
 func assertDependsOnOrder(t *testing.T, root string) {
 	t.Helper()
 	order := readOrder(t, root)
-	if len(order) != 4 {
-		t.Fatalf("order.log = %v, want four entries", order)
+	if len(order) != 8 {
+		t.Fatalf("order.log = %v, want a start and a finish for each of four scripts", order)
 	}
-	assertBefore(t, order, "services", "migrate")
-	assertBefore(t, order, "migrate", "dev")
-	assertBefore(t, order, "build", "dev")
-	if order[3] != "dev" {
-		t.Errorf("order %v: want dev last", order)
-	}
+	assertBefore(t, order, "services-done", "migrate")
+	assertBefore(t, order, "migrate-done", "dev")
+	assertBefore(t, order, "build-done", "dev")
 }
 
 func TestE2E_DependsOnSimpleMode(t *testing.T) {

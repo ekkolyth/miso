@@ -84,7 +84,7 @@ For build commands that need to run in order, configure `dependsOn` in the `repo
 
 The `^` prefix means "before building this workspace, build everything it depends on first." For example, if `apps/web` lists `packages/ui` as a dependency in its `package.json`, then `^build` ensures `packages/ui` builds before `apps/web` starts. Miso walks the dependency graph automatically — you just declare the rule once.
 
-A bare name runs another task first. It works in single repos and simple mode too:
+A bare name runs another task first, in the same workspace. In a single repo or simple mode, that's the root:
 
 <Terminal
     copy={false}

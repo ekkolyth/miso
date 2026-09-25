@@ -154,9 +154,10 @@ type resolvedDep struct {
 	ref   string
 }
 
-// the root's dependsOn list resolves at the root and a member's own list in
-// that member, mirroring concurrent; "^name" is always relative to the node's
-// member
+// a bare name runs in the node's own workspace — the member it belongs to, or
+// the root — whichever list declared it, and a workspace without that script
+// is skipped; "#name" and "@member/script" resolve as in concurrent, and "^name"
+// runs in the node's upstream members
 func (g *taskGraph) dependenciesOf(node TuiScriptEntry) ([]resolvedDep, bool, error) {
 	var member *workspace.Member
 	if node.WorkspaceName != "" {
@@ -167,10 +168,10 @@ func (g *taskGraph) dependenciesOf(node TuiScriptEntry) ([]resolvedDep, bool, er
 
 	var deps []resolvedDep
 	hasRefs := false
-	resolveList := func(refs []string, local *WorkspaceInfo) error {
+	resolveList := func(refs []string) error {
 		for _, ref := range refs {
 			hasRefs = true
-			entries, err := g.resolveRef(ref, local, member)
+			entries, err := g.resolveRef(ref, member)
 			if err != nil {
 				return err
 			}
@@ -181,22 +182,24 @@ func (g *taskGraph) dependenciesOf(node TuiScriptEntry) ([]resolvedDep, bool, er
 		return nil
 	}
 
-	if err := resolveList(g.cfg.Tasks[node.ScriptName].DependsOn, nil); err != nil {
+	if err := resolveList(g.cfg.Tasks[node.ScriptName].DependsOn); err != nil {
 		return nil, false, err
 	}
 	if member != nil {
-		info := g.memberInfo(*member)
-		if err := resolveList(g.effective(*member).Tasks[node.ScriptName].DependsOn, &info); err != nil {
+		if err := resolveList(g.effective(*member).Tasks[node.ScriptName].DependsOn); err != nil {
 			return nil, false, err
 		}
 	}
 	return deps, hasRefs, nil
 }
 
-func (g *taskGraph) resolveRef(ref string, local *WorkspaceInfo, member *workspace.Member) ([]TuiScriptEntry, error) {
+func (g *taskGraph) resolveRef(ref string, member *workspace.Member) ([]TuiScriptEntry, error) {
+	if strings.HasPrefix(ref, "#") || strings.HasPrefix(ref, "@") {
+		return resolveConcurrent(g.cfg, ref, g.root, nil, g.members, "dependsOn")
+	}
 	name, isCaret := strings.CutPrefix(ref, "^")
 	if !isCaret {
-		return resolveConcurrent(g.cfg, ref, g.root, local, g.members, "dependsOn")
+		return g.resolveInWorkspace(name, member)
 	}
 	if member == nil {
 		return nil, nil
@@ -215,6 +218,17 @@ func (g *taskGraph) resolveRef(ref string, local *WorkspaceInfo, member *workspa
 		entries = append(entries, found...)
 	}
 	return entries, nil
+}
+
+// empty when the workspace has no script by that name
+func (g *taskGraph) resolveInWorkspace(name string, member *workspace.Member) ([]TuiScriptEntry, error) {
+	if member != nil {
+		return DiscoverTuiScripts(name, []WorkspaceInfo{g.memberInfo(*member)}, g.cfg.Scripts)
+	}
+	if g.cfg.SimpleMode() {
+		return ResolveSingleRepoScriptsFolderOnly([]string{name}, g.root, g.cfg)
+	}
+	return ResolveSingleRepoScripts([]string{name}, g.root, g.cfg)
 }
 
 // built over every member, not only those in the run, so "^name" can reach a

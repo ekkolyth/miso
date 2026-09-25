@@ -77,7 +77,7 @@
 										"items": {
 											"type": "string"
 										},
-										"description": "Tasks to run first. Same forms as concurrent: 'name' resolves in the declaring scope (root list → root, member list → that member); '#name' resolves at the repo root; '@member/script' resolves inside the named member. '^name' runs 'name' in the workspace members this member depends on (package.json graph); an upstream member without it is skipped. Followed transitively; each script runs once per run. Each dependency must exit 0 before its dependents start, and a failure stops the run. An entry that resolves nowhere fails the launch. A dependency's own concurrent list does not attach, and concurrent companions of the invoked task always start immediately. Works in simple mode."
+										"description": "Tasks to run first. 'name' runs in the dependent's own workspace (a member's script depends on that member's 'name', a root script on the root's), whichever list declares it; a workspace without it is skipped. '#name' resolves at the repo root; '@member/script' resolves inside the named member. '^name' runs 'name' in the workspace members this member depends on (package.json graph); an upstream member without it is skipped. Followed transitively; each script runs once per run. Each dependency must exit 0 before its dependents start, and a failure stops the run. A '#name' or '@member/script' entry that resolves nowhere fails the launch. A dependency's own concurrent list does not attach, and concurrent companions of the invoked task always start immediately. Works in simple mode."
 									},
 									"concurrent": {
 										"type": "array",

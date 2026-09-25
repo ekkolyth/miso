@@ -152,11 +152,11 @@ func TestBuildRunCaretSameNameKeepsPackageOrder(t *testing.T) {
 	assertLevels(t, cfg, "build", root, [][]string{{"ui"}, {"web"}})
 }
 
-func TestBuildRunDependsOnUnresolvableErrors(t *testing.T) {
+func TestBuildRunDependsOnUnresolvableRootRefErrors(t *testing.T) {
 	root := t.TempDir()
 	writeFolderScripts(t, root, "dev")
 	cfg := config.Config{Scripts: "./scripts", Tasks: map[string]config.TaskConfig{
-		"dev": {DependsOn: []string{"ghost"}},
+		"dev": {DependsOn: []string{"#ghost"}},
 	}}
 
 	_, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
@@ -166,6 +166,32 @@ func TestBuildRunDependsOnUnresolvableErrors(t *testing.T) {
 	if !strings.Contains(err.Error(), "ghost") || !strings.Contains(err.Error(), "root scope") {
 		t.Errorf("error %q does not name the entry and the searched location", err.Error())
 	}
+}
+
+// a bare name resolves in the dependent's own workspace, like turbo; a
+// workspace without that script is skipped
+func TestBuildRunBareDependsOnMissingScriptIsSkipped(t *testing.T) {
+	root := t.TempDir()
+	writeFolderScripts(t, root, "dev")
+	cfg := config.Config{Scripts: "./scripts", Tasks: map[string]config.TaskConfig{
+		"dev": {DependsOn: []string{"ghost"}},
+	}}
+
+	assertLevels(t, cfg, "dev", root, [][]string{{"dev"}})
+}
+
+// the root's bare "build" runs each member's own build, never the root's
+func TestBuildRunRootBareDependsOnResolvesInEachMember(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspace(t, root, map[string]string{"web": `{"name":"web"}`, "api": `{"name":"api"}`})
+	writeFolderScripts(t, root, "build")
+	writeFolderScripts(t, filepath.Join(root, "apps", "web"), "dev", "build")
+	writeFolderScripts(t, filepath.Join(root, "apps", "api"), "dev")
+	cfg := config.Config{Scripts: "./scripts", Tasks: map[string]config.TaskConfig{
+		"dev": {DependsOn: []string{"build"}},
+	}}
+
+	assertLevels(t, cfg, "dev", root, [][]string{{"api", "web/build"}, {"web/dev"}})
 }
 
 // an upstream member without the named script is skipped, not an error
