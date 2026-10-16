@@ -1,52 +1,25 @@
 #!/usr/bin/env bash
-# Resolve the next release version from the merged PR's patch/minor/major label.
-# Finds the PR for the pushed merge commit, reads its patch/minor/major
-# label, and computes the next semver from the latest git tag.
-# Fails (non-zero) when no patch/minor/major label is present.
+# Resolve the next release version from the pending changesets.
+# An empty version means nothing is pending, and the release jobs skip.
+# Usage: GITHUB_OUTPUT=<file> ./scripts/release/version/resolve.sh (run from repo root)
 set -euo pipefail
 
-SHA="${GITHUB_SHA:?GITHUB_SHA required}"
+OUTPUT="${GITHUB_OUTPUT:?GITHUB_OUTPUT required}"
+STATUS_FILE="$(mktemp)"
+trap 'rm -f "$STATUS_FILE"' EXIT
 
-PR_NUM=$(gh pr list --state merged --search "$SHA" --json number -q '.[0].number' 2>/dev/null || true)
-if [[ -z "$PR_NUM" ]]; then
-    echo "::error::no merged PR found for commit $SHA" >&2
-    exit 1
+# a status failure (bad config, missing CLI) must fail the job, not read as "nothing pending"
+bunx --no-install changeset status --output="$STATUS_FILE"
+
+VERSION=$(node -e '
+  const status = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  const release = status.releases.find((r) => r.name === "@ekkolyth/miso");
+  process.stdout.write(release ? release.newVersion : "");
+' "$STATUS_FILE")
+
+echo "version=$VERSION" >> "$OUTPUT"
+if [[ -z "$VERSION" ]]; then
+    echo "No pending changesets - skipping release"
+else
+    echo "Resolved pending changesets: $VERSION"
 fi
-
-LABELS=$(gh pr view "$PR_NUM" --json labels -q '.labels[].name')
-LEVEL=""
-for l in $LABELS; do
-    case "$l" in
-        patch) LEVEL="patch" ;;
-        minor) LEVEL="minor" ;;
-        major) LEVEL="major" ;;
-    esac
-done
-
-if [[ -z "$LEVEL" ]]; then
-    echo "::error::PR #$PR_NUM has no patch/minor/major label — refusing to release" >&2
-    exit 1
-fi
-
-LATEST=$(git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' --abbrev=0 2>/dev/null || echo "v0.0.0")
-LATEST="${LATEST#v}"
-IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
-
-case "$LEVEL" in
-    major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-    minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-    patch) PATCH=$((PATCH + 1)) ;;
-esac
-
-VERSION="${MAJOR}.${MINOR}.${PATCH}"
-TITLE=$(gh pr view "$PR_NUM" --json title -q '.title')
-
-echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-# random delimiter so a PR title can't close the heredoc early
-DELIM="EOF_NOTES_$(openssl rand -hex 8)"
-{
-    echo "notes<<$DELIM"
-    echo "$TITLE"
-    echo "$DELIM"
-} >> "$GITHUB_OUTPUT"
-echo "Resolved $LEVEL bump from PR #$PR_NUM: $LATEST -> $VERSION"
