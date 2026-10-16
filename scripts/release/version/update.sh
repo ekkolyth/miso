@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
-# Update version in apps/miso/package.json
-# Usage: VERSION=0.3.2 ./scripts/release/update-version.sh
+# Consume the pending changesets: bump apps/miso/package.json, write apps/miso/CHANGELOG.md,
+# delete the consumed changesets, then stamp the schema.
+# Usage: VERSION=0.3.2 ./scripts/release/version/update.sh (run from repo root)
 
-set -e
+set -euo pipefail
 
 VERSION="${VERSION:?VERSION is required}"
 
-node -e "
-const fs = require('fs');
-const pkg = JSON.parse(fs.readFileSync('apps/miso/package.json', 'utf8'));
-pkg.version = process.env.VERSION;
-fs.writeFileSync('apps/miso/package.json', JSON.stringify(pkg, null, 2) + '\n');
-"
+bunx --no-install changeset version
+
+# resolve.sh predicted VERSION; the commit must not disagree with what gets tagged
+BUMPED=$(node -p "require('./apps/miso/package.json').version")
+if [[ "$BUMPED" != "$VERSION" ]]; then
+    echo "::error::changeset version produced $BUMPED, expected $VERSION" >&2
+    exit 1
+fi
 echo "Updated apps/miso/package.json to version $VERSION"
 
 # Stamp the same version into the schema: source (latest) + pinned public copy.
