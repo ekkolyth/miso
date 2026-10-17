@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
 )
 
@@ -320,4 +322,31 @@ func TestBuildRunScriptlessDependencyCompanionClashNamesDeclaringTask(t *testing
 	if err == nil || !strings.Contains(err.Error(), "repo.tasks.setup:") {
 		t.Fatalf("err = %v, want the clash attributed to repo.tasks.setup", err)
 	}
+}
+
+// a lookup that fails is not a task without a script — the error must reach
+// the user instead of the task's script being silently dropped
+func TestBuildRunPinnedDependencyLookupErrorSurfaces(t *testing.T) {
+	t.Run("#setup", func(t *testing.T) {
+		root := t.TempDir()
+		writeFolderScripts(t, root, "setup", "build", "dev")
+		writePackageJSONRaw(t, root, `{"scripts":{"setup":"echo setup"}}`)
+		cfg := config.Config{Scripts: "./scripts", Tasks: scriptlessSetupTasks("#setup")}
+
+		_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+		if !errors.Is(err, scripting.ErrAmbiguousScript) {
+			t.Fatalf("err = %v, want the ambiguous setup script error", err)
+		}
+	})
+	t.Run("@ui/setup", func(t *testing.T) {
+		root := t.TempDir()
+		writeWorkspace(t, root, map[string]string{"ui": `{"name":"ui","scripts":{"setup":"echo setup"}}`})
+		writeFolderScripts(t, filepath.Join(root, "apps", "ui"), "setup", "build", "dev")
+		cfg := config.Config{Scripts: "./scripts", Tasks: scriptlessSetupTasks("@ui/setup")}
+
+		_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+		if err == nil || !strings.Contains(err.Error(), "ambiguous script") {
+			t.Fatalf("err = %v, want the ambiguous setup script error", err)
+		}
+	})
 }

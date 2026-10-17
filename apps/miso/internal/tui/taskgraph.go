@@ -241,14 +241,17 @@ func (g *taskGraph) declaresDependsOn(node TuiScriptEntry) bool {
 // dependsOn of their own
 func (g *taskGraph) resolveRef(ref string, member *workspace.Member) ([]TuiScriptEntry, []TuiScriptEntry, error) {
 	if strings.HasPrefix(ref, "#") || strings.HasPrefix(ref, "@") {
-		entries, err := resolveConcurrent(g.cfg, ref, g.root, nil, g.members, "dependsOn")
-		if err == nil {
-			return entries, nil, nil
-		}
+		// only a lookup that succeeds and finds nothing makes the task
+		// scriptless; a failed one must surface, not drop the task's script
 		if task, ok := g.pinnedTask(ref); ok && g.declaresDependsOn(task) {
+			entries, err := g.resolveInWorkspace(task.ScriptName, g.memberOf(task))
+			if err != nil || len(entries) > 0 {
+				return entries, nil, err
+			}
 			return nil, []TuiScriptEntry{task}, nil
 		}
-		return nil, nil, err
+		entries, err := resolveConcurrent(g.cfg, ref, g.root, nil, g.members, "dependsOn")
+		return entries, nil, err
 	}
 	name, isCaret := strings.CutPrefix(ref, "^")
 	if !isCaret {
