@@ -52,7 +52,7 @@ func filterEntriesByWorkspace(entries []TuiScriptEntry, names []string) []TuiScr
 // errored or a child exited non-zero, (false, nil) when nothing resolved so
 // the caller falls through to normal execution
 func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (bool, error) {
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated)
+	pm, levels, deps, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated)
 	if err != nil {
 		return false, err
 	}
@@ -86,7 +86,7 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 	// Start all processes in a goroutine — prog.Send() blocks until the
 	// bubbletea event loop is running, so we can't call Start before p.Run().
 	go func() {
-		startProcesses(pm, levels, concurrentProcs)
+		startProcesses(pm, levels, deps, concurrentProcs)
 	}()
 
 	_, err = p.Run()
@@ -112,7 +112,7 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 // then streams "[label] line" to stdout instead of rendering bubbletea chrome.
 // Same (ran, err) contract as Launch
 func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (bool, error) {
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated)
+	pm, levels, deps, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated)
 	if err != nil {
 		return false, err
 	}
@@ -120,7 +120,7 @@ func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.
 		return false, nil
 	}
 	markPlain(pm.Processes)
-	return RunPlain(pm, os.Stdout, levels, concurrentProcs)
+	return RunPlain(pm, os.Stdout, levels, deps, concurrentProcs)
 }
 
 // markPlain switches every process to pipe-mode (no pty) and adds FORCE_COLOR,
@@ -141,19 +141,20 @@ func markPlain(procs []*Process) {
 
 // shared discovery + process setup for both the chrome (Launch) and plain
 // (LaunchPlain) paths: resolves entries, applies workspace filters, adds a
-// process per entry with scoped env, and pre-computes dependency levels. ran is
-// false when no entries resolve — the caller falls through to normal execution
-func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (*ProcessManager, [][]TuiScriptEntry, []*Process, bool, error) {
+// process per entry with scoped env, and pre-computes dependency levels and
+// each task's dependency labels. ran is false when no entries resolve — the
+// caller falls through to normal execution
+func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (*ProcessManager, [][]TuiScriptEntry, map[string][]string, []*Process, bool, error) {
 	entries, err := discoverEntries(cfg, scriptName, root, scriptArgs)
 	if err != nil {
-		return nil, nil, nil, false, err
+		return nil, nil, nil, nil, false, err
 	}
 	// a deps-only task has no entries yet but must still honor the scope
 	hasDeps := len(cfg.Tasks[scriptName].DependsOn) > 0
 	if len(filterNames) > 0 && (len(entries) > 0 || hasDeps) {
 		filtered := filterEntriesByWorkspace(entries, filterNames)
 		if len(filtered) == 0 {
-			return nil, nil, nil, false, fmt.Errorf("no %q script in workspace(s) %s", scriptName, strings.Join(filterNames, ", "))
+			return nil, nil, nil, nil, false, fmt.Errorf("no %q script in workspace(s) %s", scriptName, strings.Join(filterNames, ", "))
 		}
 		entries = filtered
 	}
@@ -161,10 +162,10 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	// after the filter, so an @scope run keeps its root-scope dependencies
 	entries, graph, err := expandDependencies(cfg, root, scriptName, entries)
 	if err != nil {
-		return nil, nil, nil, false, err
+		return nil, nil, nil, nil, false, err
 	}
 	if len(entries) == 0 {
-		return nil, nil, nil, false, nil // fall through to normal execution
+		return nil, nil, nil, nil, false, nil // fall through to normal execution
 	}
 
 	pm := NewProcessManager()
@@ -190,14 +191,14 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 			}
 			spawnCmd, spawnArgs, spawnErr := folderSpawn(entry.ScriptPath, shell, managerName)
 			if spawnErr != nil {
-				return nil, nil, nil, false, spawnErr
+				return nil, nil, nil, nil, false, spawnErr
 			}
 			cmd = spawnCmd
 			args = append(spawnArgs, entry.Args...)
 		} else {
 			// Run via package manager
 			if mgr == nil {
-				return nil, nil, nil, false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
+				return nil, nil, nil, nil, false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
 			}
 			spec := mgr.BuildRun(entry.ScriptName, entry.Args)
 			cmd = spec.Command
@@ -211,7 +212,7 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		}
 		processEnv, envErr := env.BuildTargetEnv(root, cfg, target)
 		if envErr != nil {
-			return nil, nil, nil, false, envErr
+			return nil, nil, nil, nil, false, envErr
 		}
 
 		proc := pm.Add(entry, cmd, args, dir, processEnv)
@@ -238,11 +239,11 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		var sortErr error
 		levels, sortErr = TopoSort(mainEntries, graph)
 		if sortErr != nil {
-			return nil, nil, nil, false, sortErr
+			return nil, nil, nil, nil, false, sortErr
 		}
 	}
 
-	return pm, levels, concurrentProcs, true, nil
+	return pm, levels, graph, concurrentProcs, true, nil
 }
 
 // members ≥ 1: fan out over members (root is the orchestrator, never a

@@ -47,7 +47,7 @@ func levelLabels(levels [][]TuiScriptEntry) [][]string {
 
 func assertLevels(t *testing.T, cfg config.Config, cmd, root string, want [][]string) {
 	t.Helper()
-	_, levels, _, ran, err := buildRun(cfg, cmd, root, nil, nil, nil, false)
+	_, levels, _, _, ran, err := buildRun(cfg, cmd, root, nil, nil, nil, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestBuildRunDependsOnUnresolvableRootRefErrors(t *testing.T) {
 		"dev": {DependsOn: []string{"#ghost"}},
 	}}
 
-	_, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
 	if err == nil {
 		t.Fatal("expected error for unresolvable dependsOn, got nil")
 	}
@@ -218,7 +218,7 @@ func TestBuildRunDependsOnCycleErrors(t *testing.T) {
 		"b": {DependsOn: []string{"a"}},
 	}}
 
-	_, _, _, _, err := buildRun(cfg, "a", root, nil, nil, nil, false)
+	_, _, _, _, _, err := buildRun(cfg, "a", root, nil, nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "circular dependency") {
 		t.Fatalf("err = %v, want circular dependency", err)
 	}
@@ -231,8 +231,93 @@ func TestBuildRunDependsOnCompanionClashErrors(t *testing.T) {
 		"dev": {Concurrent: []string{"logs"}, DependsOn: []string{"logs"}},
 	}}
 
-	_, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "both concurrent and dependsOn") {
 		t.Fatalf("err = %v, want a concurrent/dependsOn clash", err)
+	}
+}
+
+func scriptlessSetupTasks(ref string) map[string]config.TaskConfig {
+	return map[string]config.TaskConfig{
+		"dev":   {DependsOn: []string{ref}},
+		"setup": {DependsOn: []string{"build"}},
+	}
+}
+
+// a dependency with no script still runs what it depends on
+func TestBuildRunScriptlessDependencyRunsItsDependencies(t *testing.T) {
+	for _, ref := range []string{"setup", "#setup"} {
+		t.Run(ref, func(t *testing.T) {
+			root := t.TempDir()
+			writeFolderScripts(t, root, "build", "dev")
+			cfg := config.Config{Scripts: "./scripts", Tasks: scriptlessSetupTasks(ref)}
+
+			assertLevels(t, cfg, "dev", root, [][]string{{"build"}, {"dev"}})
+		})
+	}
+}
+
+func TestBuildRunScriptlessMemberDependencyRunsItsDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspace(t, root, map[string]string{"web": `{"name":"web"}`, "ui": `{"name":"ui"}`})
+	writeFolderScripts(t, filepath.Join(root, "apps", "ui"), "build", "dev")
+	writeFolderScripts(t, filepath.Join(root, "apps", "web"), "build", "dev")
+	cfg := config.Config{Scripts: "./scripts", Tasks: scriptlessSetupTasks("setup")}
+
+	assertLevels(t, cfg, "dev", root, [][]string{{"ui/build", "web/build"}, {"ui/dev", "web/dev"}})
+}
+
+func TestBuildRunScriptlessAtRefRunsItsDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspace(t, root, map[string]string{
+		"ui":  `{"name":"ui"}`,
+		"web": `{"name":"web","dependencies":{"ui":"*"}}`,
+	})
+	writeFolderScripts(t, filepath.Join(root, "apps", "ui"), "build", "dev")
+	writeFolderScripts(t, filepath.Join(root, "apps", "web"), "dev")
+	cfg := config.Config{Scripts: "./scripts", Tasks: scriptlessSetupTasks("@ui/setup")}
+
+	assertLevels(t, cfg, "dev", root, [][]string{{"ui/build"}, {"ui/dev", "web"}})
+}
+
+func TestBuildRunScriptlessCaretRefRunsItsDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspace(t, root, map[string]string{
+		"ui":  `{"name":"ui"}`,
+		"web": `{"name":"web","dependencies":{"ui":"*"}}`,
+	})
+	writeFolderScripts(t, filepath.Join(root, "apps", "ui"), "build", "dev")
+	writeFolderScripts(t, filepath.Join(root, "apps", "web"), "dev")
+	cfg := config.Config{Scripts: "./scripts", Tasks: scriptlessSetupTasks("^setup")}
+
+	assertLevels(t, cfg, "dev", root, [][]string{{"ui/build", "ui/dev"}, {"web"}})
+}
+
+func TestBuildRunScriptlessDependencyCycleErrors(t *testing.T) {
+	root := t.TempDir()
+	writeFolderScripts(t, root, "dev")
+	cfg := config.Config{Scripts: "./scripts", Tasks: map[string]config.TaskConfig{
+		"dev": {DependsOn: []string{"a"}},
+		"a":   {DependsOn: []string{"b"}},
+		"b":   {DependsOn: []string{"a"}},
+	}}
+
+	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+	if err == nil || !strings.Contains(err.Error(), "circular dependency") {
+		t.Fatalf("err = %v, want circular dependency", err)
+	}
+}
+
+func TestBuildRunScriptlessDependencyCompanionClashNamesDeclaringTask(t *testing.T) {
+	root := t.TempDir()
+	writeFolderScripts(t, root, "dev", "logs")
+	cfg := config.Config{Scripts: "./scripts", Tasks: map[string]config.TaskConfig{
+		"dev":   {Concurrent: []string{"logs"}, DependsOn: []string{"setup"}},
+		"setup": {DependsOn: []string{"logs"}},
+	}}
+
+	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+	if err == nil || !strings.Contains(err.Error(), "repo.tasks.setup:") {
+		t.Fatalf("err = %v, want the clash attributed to repo.tasks.setup", err)
 	}
 }

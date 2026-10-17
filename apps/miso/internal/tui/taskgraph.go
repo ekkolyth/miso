@@ -63,10 +63,10 @@ func expandDependencies(cfg config.Config, root string, scriptName string, entri
 	edges := make(map[string][]string)
 	declared := false
 	added := false
-	addDep := func(declaringTask string, dep resolvedDep) (string, error) {
+	addDep := func(dep resolvedDep) (string, error) {
 		depKey := entryKey(dep.entry)
 		if companions[depKey] {
-			return "", fmt.Errorf("repo.tasks.%s: %q is listed in both concurrent and dependsOn", declaringTask, dep.ref)
+			return "", fmt.Errorf("repo.tasks.%s: %q is listed in both concurrent and dependsOn", dep.declaredBy, dep.ref)
 		}
 		if _, ok := index[depKey]; !ok {
 			entry := dep.entry
@@ -88,7 +88,7 @@ func expandDependencies(cfg config.Config, root string, scriptName string, entri
 		}
 		declared = hasRefs
 		for _, dep := range deps {
-			if _, err := addDep(scriptName, dep); err != nil {
+			if _, err := addDep(dep); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -106,7 +106,7 @@ func expandDependencies(cfg config.Config, root string, scriptName string, entri
 		nodeKey := entryKey(node)
 		edges[nodeKey] = nil
 		for _, dep := range deps {
-			depKey, err := addDep(node.ScriptName, dep)
+			depKey, err := addDep(dep)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -152,31 +152,49 @@ func hasMainEntry(entries []TuiScriptEntry, scriptName string) bool {
 type resolvedDep struct {
 	entry TuiScriptEntry
 	ref   string
+	// the task whose dependsOn lists ref, which differs from the node when
+	// ref came through a scriptless task
+	declaredBy string
 }
 
 // a bare name runs in the node's own workspace — the member it belongs to, or
 // the root — whichever list declared it, and a workspace without that script
 // is skipped; "#name" and "@member/script" resolve as in concurrent, and "^name"
-// runs in the node's upstream members
+// runs in the node's upstream members. A named task with no script but its own
+// dependsOn stands in for what it depends on
 func (g *taskGraph) dependenciesOf(node TuiScriptEntry) ([]resolvedDep, bool, error) {
-	var member *workspace.Member
-	if node.WorkspaceName != "" {
-		if m, ok := g.byName[node.WorkspaceName]; ok {
-			member = &m
-		}
-	}
+	return g.collectDependencies(node, map[string]bool{})
+}
+
+// visiting holds the scriptless tasks on the current path, which TopoSort
+// never sees, so a cycle through them would otherwise recurse forever
+func (g *taskGraph) collectDependencies(node TuiScriptEntry, visiting map[string]bool) ([]resolvedDep, bool, error) {
+	member := g.memberOf(node)
 
 	var deps []resolvedDep
 	hasRefs := false
 	resolveList := func(refs []string) error {
 		for _, ref := range refs {
 			hasRefs = true
-			entries, err := g.resolveRef(ref, member)
+			entries, scriptless, err := g.resolveRef(ref, member)
 			if err != nil {
 				return err
 			}
 			for _, entry := range entries {
-				deps = append(deps, resolvedDep{entry: entry, ref: ref})
+				deps = append(deps, resolvedDep{entry: entry, ref: ref, declaredBy: node.ScriptName})
+			}
+			for _, task := range scriptless {
+				key := entryKey(task)
+				if visiting[key] {
+					return fmt.Errorf("circular dependency detected")
+				}
+				visiting[key] = true
+				inner, _, err := g.collectDependencies(task, visiting)
+				delete(visiting, key)
+				if err != nil {
+					return err
+				}
+				deps = append(deps, inner...)
 			}
 		}
 		return nil
@@ -193,31 +211,99 @@ func (g *taskGraph) dependenciesOf(node TuiScriptEntry) ([]resolvedDep, bool, er
 	return deps, hasRefs, nil
 }
 
-func (g *taskGraph) resolveRef(ref string, member *workspace.Member) ([]TuiScriptEntry, error) {
+func (g *taskGraph) memberOf(node TuiScriptEntry) *workspace.Member {
+	if node.WorkspaceName == "" {
+		return nil
+	}
+	if m, ok := g.byName[node.WorkspaceName]; ok {
+		return &m
+	}
+	return nil
+}
+
+// a node for a task with no script, in the given workspace (nil is the root)
+func (g *taskGraph) taskNode(name string, member *workspace.Member) TuiScriptEntry {
+	if member == nil {
+		return TuiScriptEntry{ScriptName: name, WorkspaceDir: g.root}
+	}
+	return TuiScriptEntry{ScriptName: name, WorkspaceName: member.Name, WorkspaceDir: member.Dir}
+}
+
+func (g *taskGraph) declaresDependsOn(node TuiScriptEntry) bool {
+	if len(g.cfg.Tasks[node.ScriptName].DependsOn) > 0 {
+		return true
+	}
+	member := g.memberOf(node)
+	return member != nil && len(g.effective(*member).Tasks[node.ScriptName].DependsOn) > 0
+}
+
+// scripts the ref runs, plus the scriptless tasks it names that declare
+// dependsOn of their own
+func (g *taskGraph) resolveRef(ref string, member *workspace.Member) ([]TuiScriptEntry, []TuiScriptEntry, error) {
 	if strings.HasPrefix(ref, "#") || strings.HasPrefix(ref, "@") {
-		return resolveConcurrent(g.cfg, ref, g.root, nil, g.members, "dependsOn")
+		entries, err := resolveConcurrent(g.cfg, ref, g.root, nil, g.members, "dependsOn")
+		if err == nil {
+			return entries, nil, nil
+		}
+		if task, ok := g.pinnedTask(ref); ok && g.declaresDependsOn(task) {
+			return nil, []TuiScriptEntry{task}, nil
+		}
+		return nil, nil, err
 	}
 	name, isCaret := strings.CutPrefix(ref, "^")
 	if !isCaret {
-		return g.resolveInWorkspace(name, member)
+		entries, err := g.resolveInWorkspace(name, member)
+		if err != nil || len(entries) > 0 {
+			return entries, nil, err
+		}
+		return nil, g.scriptlessIn(name, member), nil
 	}
 	if member == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	upstream, err := g.upstreamOf(member.Name)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var entries []TuiScriptEntry
+	var entries, scriptless []TuiScriptEntry
 	for _, upName := range upstream {
+		upMember := g.byName[upName]
 		// an upstream member without the script is skipped, not an error
-		found, err := DiscoverTuiScripts(name, []WorkspaceInfo{g.memberInfo(g.byName[upName])}, g.cfg.Scripts)
+		found, err := DiscoverTuiScripts(name, []WorkspaceInfo{g.memberInfo(upMember)}, g.cfg.Scripts)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		if len(found) == 0 {
+			scriptless = append(scriptless, g.scriptlessIn(name, &upMember)...)
 		}
 		entries = append(entries, found...)
 	}
-	return entries, nil
+	return entries, scriptless, nil
+}
+
+func (g *taskGraph) scriptlessIn(name string, member *workspace.Member) []TuiScriptEntry {
+	task := g.taskNode(name, member)
+	if !g.declaresDependsOn(task) {
+		return nil
+	}
+	return []TuiScriptEntry{task}
+}
+
+// the workspace a "#name" or "@member/name" ref pins, resolved as concurrent
+// would; false when the ref names no workspace
+func (g *taskGraph) pinnedTask(ref string) (TuiScriptEntry, bool) {
+	if name, ok := strings.CutPrefix(ref, "#"); ok {
+		return g.taskNode(name, nil), true
+	}
+	parts := strings.SplitN(strings.TrimPrefix(ref, "@"), "/", 2)
+	if len(parts) != 2 {
+		return TuiScriptEntry{}, false
+	}
+	resolved, err := workspace.ResolveScopes([]string{"@" + parts[0]}, g.members, g.root)
+	if err != nil || len(resolved) == 0 {
+		return TuiScriptEntry{}, false
+	}
+	return g.taskNode(parts[1], &resolved[0]), true
 }
 
 // empty when the workspace has no script by that name

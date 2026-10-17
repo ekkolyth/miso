@@ -31,7 +31,7 @@ func TestRunPlainStreamsPrefixedOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	ok, err := RunPlain(pm, &buf, nil, nil)
+	ok, err := RunPlain(pm, &buf, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("RunPlain: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestRunPlainReturnsErrorOnChildFailure(t *testing.T) {
 	addPlainScript(t, pm, dir, "ok", "exit 0\n")
 	addPlainScript(t, pm, dir, "bad", "exit 1\n")
 
-	ran, err := RunPlain(pm, io.Discard, nil, nil)
+	ran, err := RunPlain(pm, io.Discard, nil, nil, nil)
 	if !ran {
 		t.Fatal("RunPlain returned not-applicable")
 	}
@@ -88,7 +88,7 @@ func TestRunPlainReturnsNilOnAllSuccess(t *testing.T) {
 	addPlainScript(t, pm, dir, "a", "exit 0\n")
 	addPlainScript(t, pm, dir, "b", "exit 0\n")
 
-	ran, err := RunPlain(pm, io.Discard, nil, nil)
+	ran, err := RunPlain(pm, io.Discard, nil, nil, nil)
 	if !ran {
 		t.Fatal("RunPlain returned not-applicable")
 	}
@@ -109,7 +109,7 @@ func TestRunPlainDoesNotFlushPartialLines(t *testing.T) {
 	markPlain(pm.Processes)
 
 	var buf bytes.Buffer
-	if _, err := RunPlain(pm, &buf, nil, nil); err != nil {
+	if _, err := RunPlain(pm, &buf, nil, nil, nil); err != nil {
 		t.Fatalf("RunPlain: %v", err)
 	}
 	var got []string
@@ -138,7 +138,7 @@ func TestRunPlainStopsAfterFailedLevelWithoutHanging(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		ran, err := RunPlain(pm, io.Discard, levels, nil)
+		ran, err := RunPlain(pm, io.Discard, levels, map[string][]string{"b": {"a"}}, nil)
 		done <- result{ran, err}
 	}()
 
@@ -155,5 +155,80 @@ func TestRunPlainStopsAfterFailedLevelWithoutHanging(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "b-ran")); err == nil {
 		t.Error("b ran after its dependency failed")
+	}
+}
+
+func waitForFile(t *testing.T, path string, timeout time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
+// a dev server with no dependents must not hold back a task whose own
+// dependency already finished
+func TestStartProcessesDoesNotWaitOnUnrelatedLongRunningTask(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "web-dev", "sleep 30\n")
+	addPlainScript(t, pm, dir, "api-build", "exit 0\n")
+	addPlainScript(t, pm, dir, "api-dev", "touch "+filepath.Join(dir, "api-dev-ran")+"\nsleep 30\n")
+	levels := [][]TuiScriptEntry{{pm.Processes[0].Entry, pm.Processes[1].Entry}, {pm.Processes[2].Entry}}
+	deps := map[string][]string{"web-dev": nil, "api-build": nil, "api-dev": {"api-build"}}
+	t.Cleanup(pm.StopAll)
+
+	go startProcesses(pm, levels, deps, nil)
+
+	if !waitForFile(t, filepath.Join(dir, "api-dev-ran"), 10*time.Second) {
+		t.Fatal("api-dev never started while web-dev was still running")
+	}
+}
+
+// a failure skips the tasks that depend on it, not unrelated ones
+func TestStartProcessesSkipsOnlyDependentsOfFailedTask(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 1\n")
+	addPlainScript(t, pm, dir, "c", "sleep 1\n")
+	addPlainScript(t, pm, dir, "b", "touch "+filepath.Join(dir, "b-ran")+"\n")
+	addPlainScript(t, pm, dir, "d", "touch "+filepath.Join(dir, "d-ran")+"\n")
+	addPlainScript(t, pm, dir, "e", "touch "+filepath.Join(dir, "e-ran")+"\n")
+	levels := [][]TuiScriptEntry{
+		{pm.Processes[0].Entry, pm.Processes[1].Entry},
+		{pm.Processes[2].Entry, pm.Processes[3].Entry},
+		{pm.Processes[4].Entry},
+	}
+	deps := map[string][]string{"a": nil, "c": nil, "b": {"a"}, "d": {"c"}, "e": {"b"}}
+
+	done := make(chan struct{})
+	go func() {
+		startProcesses(pm, levels, deps, nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("startProcesses hung after a failure")
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "d-ran")); err != nil {
+		t.Error("d did not run although its dependency succeeded")
+	}
+	for _, label := range []string{"b", "e"} {
+		if _, err := os.Stat(filepath.Join(dir, label+"-ran")); err == nil {
+			t.Errorf("%s ran after a dependency failed", label)
+		}
+		proc := pm.findProc(label)
+		proc.mu.Lock()
+		state := proc.State
+		proc.mu.Unlock()
+		if state != StateSkipped {
+			t.Errorf("%s state = %v, want skipped", label, state)
+		}
 	}
 }

@@ -332,7 +332,7 @@ func TestTabbedAutoExitsWhenLaterLevelSkipped(t *testing.T) {
 	addPlainScript(t, pm, dir, "b", "touch "+filepath.Join(dir, "b-ran")+"\n")
 	levels := [][]TuiScriptEntry{{pm.Processes[0].Entry}, {pm.Processes[1].Entry}}
 
-	startProcesses(pm, levels, nil)
+	startProcesses(pm, levels, map[string][]string{"b": {"a"}}, nil)
 
 	m := NewTabbedModel(pm, "dev", false)
 	next, cmd := m.Update(ProcessStateMsg{Label: "a", State: StateExited, Code: 1})

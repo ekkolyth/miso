@@ -41,60 +41,87 @@ func (s *stdoutSink) OnState(label string, state ProcessState, code int) {
 	_, _ = fmt.Fprintf(s.w, "[%s] exited (%d)\n", label, code)
 }
 
-// starts concurrent companions immediately, then runs dependsOn levels
-// sequentially (blocking per level), or every process in parallel when there
-// are no levels
-func startProcesses(pm *ProcessManager, levels [][]TuiScriptEntry, concurrentProcs []*Process) {
+// starts concurrent companions immediately, then each dependsOn task as soon
+// as its own dependencies exit, so a long-running task never holds back one
+// that doesn't depend on it. A task whose dependency failed or was skipped is
+// skipped, and so are its dependents; unrelated tasks keep going. Without
+// levels every process starts in parallel. Blocks until every task in levels
+// has exited or been skipped
+func startProcesses(pm *ProcessManager, levels [][]TuiScriptEntry, deps map[string][]string, concurrentProcs []*Process) {
 	for _, proc := range concurrentProcs {
-		if err := pm.Start(proc); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
-		}
+		startOrWarn(pm, proc)
 	}
-	if levels != nil {
-		for i, level := range levels {
-			var levelProcs []*Process
-			for _, entry := range level {
-				proc := pm.findProc(entry.Label)
-				if proc == nil {
-					continue
-				}
-				if err := pm.Start(proc); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
-				}
-				levelProcs = append(levelProcs, proc)
-			}
-			pm.WaitAllExited(levelProcs)
-			for _, proc := range levelProcs {
-				if proc.ExitCode != 0 {
-					skipLevels(pm, levels[i+1:])
-					return
-				}
-			}
+	if levels == nil {
+		for _, proc := range pm.Processes {
+			startOrWarn(pm, proc)
 		}
 		return
 	}
-	for _, proc := range pm.Processes {
-		if err := pm.Start(proc); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
+
+	// closed once the task has exited or been skipped; Process.done can't
+	// serve, since Start replaces it
+	finished := make(map[string]chan struct{})
+	for _, level := range levels {
+		for _, entry := range level {
+			finished[entry.Label] = make(chan struct{})
 		}
+	}
+
+	var wg sync.WaitGroup
+	for _, level := range levels {
+		for _, entry := range level {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer close(finished[entry.Label])
+				proc := pm.findProc(entry.Label)
+				if proc == nil {
+					return
+				}
+				depsSucceeded := true
+				for _, dep := range deps[entry.Label] {
+					depFinished, ok := finished[dep]
+					if !ok {
+						continue
+					}
+					<-depFinished
+					if !exitedCleanly(pm.findProc(dep)) {
+						depsSucceeded = false
+					}
+				}
+				if !depsSucceeded {
+					pm.Skip(proc)
+					return
+				}
+				startOrWarn(pm, proc)
+				pm.WaitAllExited([]*Process{proc})
+			}()
+		}
+	}
+	wg.Wait()
+}
+
+func startOrWarn(pm *ProcessManager, proc *Process) {
+	if err := pm.Start(proc); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to start %s: %v\n", proc.Entry.Label, err)
 	}
 }
 
-func skipLevels(pm *ProcessManager, levels [][]TuiScriptEntry) {
-	for _, level := range levels {
-		for _, entry := range level {
-			if proc := pm.findProc(entry.Label); proc != nil {
-				pm.Skip(proc)
-			}
-		}
+// a missing process never ran, so it holds nothing back
+func exitedCleanly(proc *Process) bool {
+	if proc == nil {
+		return true
 	}
+	proc.mu.Lock()
+	defer proc.mu.Unlock()
+	return proc.State == StateExited && proc.ExitCode == 0
 }
 
 // orchestrates without chrome: streams "[label] line" to w and blocks until
 // every process exits or SIGINT/SIGTERM arrives. Returns (true, nil) on a clean
 // run, (true, err) when a child exited non-zero, (false, nil) when there was
 // nothing to run
-func RunPlain(pm *ProcessManager, w io.Writer, levels [][]TuiScriptEntry, concurrentProcs []*Process) (bool, error) {
+func RunPlain(pm *ProcessManager, w io.Writer, levels [][]TuiScriptEntry, deps map[string][]string, concurrentProcs []*Process) (bool, error) {
 	if len(pm.Processes) == 0 {
 		return false, nil
 	}
@@ -106,7 +133,7 @@ func RunPlain(pm *ProcessManager, w io.Writer, levels [][]TuiScriptEntry, concur
 
 	done := make(chan struct{})
 	go func() {
-		startProcesses(pm, levels, concurrentProcs)
+		startProcesses(pm, levels, deps, concurrentProcs)
 		pm.WaitAllExited(pm.Processes)
 		close(done)
 	}()
