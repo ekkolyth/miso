@@ -206,7 +206,7 @@ func main() {
 		switch cmd {
 		case "env":
 			if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
-				os.Exit(1)
+				cli.Fail(logger, err, false)
 			}
 			return
 		case "scripts":
@@ -222,7 +222,10 @@ func main() {
 			cli.Fail(logger, err, false)
 		}
 
-		if resolved.Source == scripting.ScriptSourceNone {
+		// a task entry may have no script of its own and still orchestrate
+		// companions or dependencies
+		_, isTask := cfg.Tasks[cmd]
+		if resolved.Source == scripting.ScriptSourceNone && !isTask {
 			cli.Fail(logger, fmt.Errorf("script '%s' not found in %s", cmd, cfg.Scripts), false)
 		}
 
@@ -232,7 +235,7 @@ func main() {
 		envValidated := env.HasEnvFlag(scriptArgs)
 		if envValidated {
 			if err := env.Run(projectRoot, cfg, logger); err != nil {
-				os.Exit(1)
+				cli.Fail(logger, err, false)
 			}
 			scriptArgs = env.StripEnvFlag(scriptArgs)
 		}
@@ -257,6 +260,10 @@ func main() {
 			if ran {
 				return
 			}
+		}
+
+		if resolved.Source == scripting.ScriptSourceNone {
+			cli.Fail(logger, fmt.Errorf("script '%s' not found in %s", cmd, cfg.Scripts), false)
 		}
 
 		target, _ := workspace.ResolveTarget(cmd, nil, projectRoot, cfg)
@@ -295,7 +302,7 @@ func main() {
 	// env does not need package manager
 	if parsed.Action == cli.ActionEnv {
 		if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
-			os.Exit(1)
+			cli.Fail(logger, err, false)
 		}
 		return
 	}
@@ -575,7 +582,7 @@ func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedC
 	}
 
 	if err := env.Run(projectRoot, cfg, logger); err != nil {
-		os.Exit(1)
+		cli.Fail(logger, err, false)
 	}
 
 	// Strip --env from cfg flags and parsed args

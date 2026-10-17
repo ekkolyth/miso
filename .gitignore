@@ -8,3 +8,6 @@ bun.lock
 .DS_Store
 .superpowers
 .claude
+.agents
+.codex
+AGENTS.md

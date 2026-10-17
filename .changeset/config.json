@@ -1,0 +1,4 @@
+{
+	"baseBranch": "main",
+	"ignore": ["@ekkolyth/miso-content", "@ekkolyth/miso-skills", "miso-docs"]
+}

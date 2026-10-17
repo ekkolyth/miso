@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"io"
 	"reflect"
 	"strings"
 	"sync"
@@ -52,6 +53,42 @@ func TestLiveWriterFeedEmitsOps(t *testing.T) {
 			segment: "\x1b[2A",
 			want:    nil,
 		},
+		{
+			// bun's own bytes; its N counts bytes, so it overshoots column 0
+			name:    "cursor-back and erase collapse bun frames",
+			segment: "  🔍 Resolving [1/3] \x1b[23D\x1b[0K  🚚 is-number [15/14] \x1b[25D\x1b[0K  🔒 Saving lockfile... \x1b[26D\x1b[0K",
+			want:    []LineOp{OpAppend{Text: "  🔒 Saving lockfile... "}},
+		},
+		{
+			name:    "cursor-back one column rewrites a spinner char",
+			segment: "Loading |\x1b[1D\x1b[K/",
+			want:    []LineOp{OpAppend{Text: "Loading /"}},
+		},
+		{
+			name:    "bare ESC[K erases to end of line",
+			segment: "abcdef\x1b[3D\x1b[K",
+			want:    []LineOp{OpAppend{Text: "abc"}},
+		},
+		{
+			name:    "backspace echo edits in place",
+			segment: "Release notes: ab\b \bc",
+			want:    []LineOp{OpAppend{Text: "Release notes: ac"}},
+		},
+		{
+			name:    "backspace clamps at column zero",
+			segment: "a\b\b\bb",
+			want:    []LineOp{OpAppend{Text: "b"}},
+		},
+		{
+			name:    "color survives an erase",
+			segment: "\x1b[32mok\x1b[0m done\x1b[5D\x1b[K",
+			want:    []LineOp{OpAppend{Text: "\x1b[32mok\x1b[0m"}},
+		},
+		{
+			name:    "erased line with no prior frame stays empty",
+			segment: "\x1b[K",
+			want:    []LineOp{OpAppend{Text: ""}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -94,7 +131,7 @@ func TestReadLinesTruncatesButKeepsDraining(t *testing.T) {
 	input := big + "\n" + "after\n" + "tail" // "tail" = trailing partial, no newline
 
 	var got []string
-	readLines(strings.NewReader(input), 10, func(s string) { got = append(got, s) })
+	readLines(strings.NewReader(input), 10, func(s string) { got = append(got, s) }, nil)
 
 	if len(got) != 3 {
 		t.Fatalf("emitted %d lines, want 3: %#v", len(got), got)
@@ -112,11 +149,199 @@ func TestReadLinesTruncatesButKeepsDraining(t *testing.T) {
 
 func TestReadLinesReassemblesAndCountsExactly(t *testing.T) {
 	var got []string
-	readLines(strings.NewReader("a\nbb\nccc\n"), 1024, func(s string) { got = append(got, s) })
+	readLines(strings.NewReader("a\nbb\nccc\n"), 1024, func(s string) { got = append(got, s) }, nil)
 	want := []string{"a", "bb", "ccc"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("got %#v, want %#v", got, want)
 	}
+}
+
+func TestReadLinesReportsPartialPerRead(t *testing.T) {
+	r, w := io.Pipe()
+	var got []string
+	done := make(chan struct{})
+	go func() {
+		readLines(r, 1024,
+			func(s string) { got = append(got, "emit:"+s) },
+			func(s string) { got = append(got, "partial:"+s) })
+		close(done)
+	}()
+	for _, chunk := range []string{"a\nb", "c", "\n"} {
+		if _, err := w.Write([]byte(chunk)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = w.Close()
+	<-done
+
+	want := []string{"emit:a", "partial:b", "partial:bc", "emit:bc"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("calls = %#v, want %#v", got, want)
+	}
+}
+
+// an oversized line stops being repainted once it hits the cap, so draining a
+// minified bundle line doesn't re-process the retained megabyte on every read
+func TestReadLinesSkipsPartialOnceOverflowed(t *testing.T) {
+	r, w := io.Pipe()
+	var got []string
+	done := make(chan struct{})
+	go func() {
+		readLines(r, 4,
+			func(s string) { got = append(got, "emit:"+s) },
+			func(s string) { got = append(got, "partial:"+s) })
+		close(done)
+	}()
+	for _, chunk := range []string{"ab", "cdef", "gh", "\n"} {
+		if _, err := w.Write([]byte(chunk)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = w.Close()
+	<-done
+
+	want := []string{"partial:ab", "emit:abcd"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("calls = %#v, want %#v", got, want)
+	}
+}
+
+// a line too long to be a prompt or a progress frame waits for its newline
+func TestFeedPartialSkipsLongLines(t *testing.T) {
+	lw := liveWriter{buf: NewRingBuffer(DefaultBufferSize)}
+	if ops := lw.feedPartial(strings.Repeat("x", maxPartialLine+1)); ops != nil {
+		t.Errorf("feedPartial painted an oversized line: %d ops", len(ops))
+	}
+	if n := lw.buf.Len(); n != 0 {
+		t.Errorf("buffer has %d lines, want 0", n)
+	}
+}
+
+// startPipeCapture runs captureOutput over a pipe so every write lands as its
+// own read, the way a pty delivers a prompt
+func startPipeCapture(t *testing.T, label string) (*ProcessManager, *Process, *recordingSink, *io.PipeWriter, func()) {
+	t.Helper()
+	pm := NewProcessManager()
+	rec := &recordingSink{}
+	pm.SetSink(rec)
+	p := pm.Add(TuiScriptEntry{Label: label}, "", nil, "", nil)
+	r, w := io.Pipe()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go pm.captureOutput(p, r, &wg)
+	return pm, p, rec, w, func() {
+		_ = w.Close()
+		wg.Wait()
+	}
+}
+
+func writeAndWaitFor(t *testing.T, p *Process, w io.Writer, chunk string, want []string) {
+	t.Helper()
+	if _, err := w.Write([]byte(chunk)); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got = p.Buffer.Lines()
+		if reflect.DeepEqual(got, want) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("after writing %q: buffer = %#v, want %#v", chunk, got, want)
+}
+
+func TestCaptureOutputPaintsPartialLineInPlace(t *testing.T) {
+	_, p, rec, w, stop := startPipeCapture(t, "promote")
+
+	writeAndWaitFor(t, p, w, "Release notes: ", []string{"Release notes: "})
+	writeAndWaitFor(t, p, w, "ab", []string{"Release notes: ab"})
+	writeAndWaitFor(t, p, w, "\b \bc", []string{"Release notes: ac"})
+	writeAndWaitFor(t, p, w, "\r\n", []string{"Release notes: ac"})
+	writeAndWaitFor(t, p, w, "next\r\n", []string{"Release notes: ac", "next"})
+	stop()
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	var got []LineOp
+	for _, msg := range rec.outputs {
+		got = append(got, msg.Op)
+	}
+	want := []LineOp{
+		OpAppend{Text: "Release notes: ", Pending: true},
+		OpRewrite{OffsetFromEnd: 0, Text: "Release notes: ab", Pending: true},
+		OpRewrite{OffsetFromEnd: 0, Text: "Release notes: ac", Pending: true},
+		OpRewrite{OffsetFromEnd: 0, Text: "Release notes: ac"},
+		OpAppend{Text: "next"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ops = %#v, want %#v", got, want)
+	}
+}
+
+func TestCaptureOutputPartialHoldsBackIncompleteSequence(t *testing.T) {
+	_, p, _, w, stop := startPipeCapture(t, "install")
+	defer stop()
+
+	writeAndWaitFor(t, p, w, "  🔍 Resolving [1/3] \x1b[2", []string{"  🔍 Resolving [1/3] "})
+	writeAndWaitFor(t, p, w, "3D\x1b[0K  🚚 is-number", []string{"  🚚 is-number"})
+	writeAndWaitFor(t, p, w, " [15/14] \x1b[25D\x1b[0K\r\n", []string{"  🚚 is-number [15/14] "})
+
+	truck := "🚚"
+	writeAndWaitFor(t, p, w, "x"+truck[:2], []string{"  🚚 is-number [15/14] ", "x"})
+	for _, line := range p.Buffer.Lines() {
+		if strings.ContainsRune(line, '\uFFFD') {
+			t.Errorf("painted a split rune: %q", line)
+		}
+	}
+	writeAndWaitFor(t, p, w, truck[2:]+"\r\n", []string{"  🚚 is-number [15/14] ", "x🚚"})
+}
+
+func TestCaptureOutputPartialDuringCursorUpFrame(t *testing.T) {
+	_, p, _, w, stop := startPipeCapture(t, "compose")
+	defer stop()
+
+	seeded := []string{"web  Creating", "db  Creating"}
+	writeAndWaitFor(t, p, w, "web  Creating\r\ndb  Creating\r\n", seeded)
+	if _, err := w.Write([]byte("\x1b[2Aweb  Crea")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if got := p.Buffer.Lines(); !reflect.DeepEqual(got, seeded) {
+		t.Fatalf("partial inside a redraw frame painted: %#v", got)
+	}
+	writeAndWaitFor(t, p, w, "ted\r\ndb  Created\r\n", []string{"web  Created", "db  Created"})
+}
+
+func TestPtyPromptVisibleBeforeNewline(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "prompt"}, "bash",
+		[]string{"-c", `read -p "Release notes: " m; echo "got=$m"`}, "", nil)
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer pm.StopAll()
+
+	waitForLine := func(substr string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			for _, line := range p.Buffer.Lines() {
+				if strings.Contains(line, substr) {
+					return
+				}
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Fatalf("buffer never showed %q: %#v", substr, p.Buffer.Lines())
+	}
+
+	waitForLine("Release notes: ")
+	if err := p.WriteStdin([]byte("ac\r")); err != nil {
+		t.Fatalf("WriteStdin: %v", err)
+	}
+	waitForLine("got=ac")
 }
 
 func TestProcessManagerPinLast(t *testing.T) {
@@ -574,6 +799,27 @@ func TestCaptureOutputCarriageReturnProgressCollapses(t *testing.T) {
 	}
 	if got[0] != "Progress: 100%" {
 		t.Errorf("line = %q, want %q", got[0], "Progress: 100%")
+	}
+}
+
+func TestCaptureOutputCursorBackProgressCollapses(t *testing.T) {
+	// bun redraws its install progress with cursor-back + erase-to-EOL, then
+	// erases the last frame before the newline.
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "install"}, "", nil, "", nil)
+
+	stream := "  🔍 Resolving [1/3] \x1b[23D\x1b[0K  🚚 is-number [15/14] \x1b[25D\x1b[0K  🔒 Saving lockfile... \x1b[26D\x1b[0K\r\n" +
+		"+ ms@2.1.3\r\n"
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	pm.captureOutput(p, strings.NewReader(stream), &wg)
+	wg.Wait()
+
+	got := p.Buffer.Lines()
+	want := []string{"  🔒 Saving lockfile... ", "+ ms@2.1.3"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("buffer = %#v, want %#v", got, want)
 	}
 }
 

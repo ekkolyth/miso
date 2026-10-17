@@ -2,10 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // a line op just refreshes tabbed — it re-reads p.Buffer, which the op already
@@ -292,11 +295,22 @@ func TestWrapLine(t *testing.T) {
 				"BB",
 			},
 		},
+		{
+			name:  "vs16 emoji counted at grapheme width",
+			line:  "ab⚙️cd",
+			width: 3,
+			want:  []string{"ab", "⚙️c", "d"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := wrapLine(tt.line, tt.width)
+			for i, row := range got {
+				if tt.width > 0 && lipgloss.Width(row) > tt.width {
+					t.Errorf("row %d %q is %d columns, want <= %d", i, row, lipgloss.Width(row), tt.width)
+				}
+			}
 			if len(got) != len(tt.want) {
 				t.Fatalf("wrapLine(%q, %d) = %v (len %d), want %v (len %d)", tt.line, tt.width, got, len(got), tt.want, len(tt.want))
 			}
@@ -306,5 +320,29 @@ func TestWrapLine(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// the chrome auto-exit must fire once the only started level fails, even though
+// the next level never started
+func TestTabbedAutoExitsWhenLaterLevelSkipped(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 1\n")
+	addPlainScript(t, pm, dir, "b", "touch "+filepath.Join(dir, "b-ran")+"\n")
+	levels := [][]TuiScriptEntry{{pm.Processes[0].Entry}, {pm.Processes[1].Entry}}
+
+	startProcesses(pm, levels, map[string][]string{"b": {"a"}}, nil)
+
+	m := NewTabbedModel(pm, "dev", false)
+	next, cmd := m.Update(ProcessStateMsg{Label: "a", State: StateExited, Code: 1})
+	if cmd == nil {
+		t.Fatal("expected an auto-exit tick once every process finished or was skipped")
+	}
+	if !next.(TabbedModel).allExitedPending {
+		t.Error("allExitedPending = false, want true")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "b-ran")); err == nil {
+		t.Error("b ran after its dependency failed")
 	}
 }

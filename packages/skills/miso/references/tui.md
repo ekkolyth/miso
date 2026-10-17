@@ -28,7 +28,7 @@ below).
 
 ## Interactive Mode
 
-Press `i` to forward keyboard input to the focused task — every keystroke goes to that process's stdin (reload Metro with `r`, trigger bundler shortcuts, answer prompts). Press `Ctrl+Z` to return to miso's controls. Each task runs in its own pseudo-terminal, so tools that gate color or prompts on a TTY behave as if run directly, and long-lived dev servers stay alive instead of shutting down on a closed stdin. Interactive mode is unavailable in delegated (`turbo`/`nx`) mode — the delegate owns the child processes.
+Press `i` to forward keyboard input to the focused task — every keystroke goes to that process's stdin (reload Metro with `r`, trigger bundler shortcuts, answer prompts). Press `Ctrl+Z` to return to miso's controls. Each task runs in its own pseudo-terminal, so tools that gate color or prompts on a TTY behave as if run directly, and long-lived dev servers stay alive instead of shutting down on a closed stdin. Interactive mode is unavailable in merged mode, and in delegated (`turbo`/`nx`) mode — the delegate owns the child processes.
 
 ## Selection and Copy
 
@@ -96,7 +96,7 @@ otherwise (see `tui` Field above).
 
 ### `dependsOn`
 
-Run upstream tasks before this one (topological order):
+Run other tasks before this one (topological order):
 
 ```json
 "repo": {
@@ -109,8 +109,23 @@ Run upstream tasks before this one (topological order):
 }
 ```
 
-`"^build"` means: run `build` in all upstream dependencies first.
-Without `^`, it's a same-workspace dependency (rarely needed).
+Entry forms:
+
+- `name` — runs in the dependent's own workspace, whichever list declares it: a member's script depends on that member's `name`, a root script on the root's. A workspace without `name` is skipped
+- `#name` — resolves at the repo root
+- `@member/script` — resolves inside the named member
+- `^name` — runs `name` in the members this member depends on (`package.json` graph); an upstream member without `name` is skipped
+
+Dependencies are followed transitively; each resolved script runs once per run. Each must exit 0 before its dependents start, and independent ones run in parallel. A failure stops the run: dependents never start (their chrome tab shows skipped). A `#name` or `@member/script` entry that resolves nowhere fails the launch. A task entry with only `dependsOn` and no script runs its dependencies. A dependency's own `concurrent` list does not attach — companions start only for the invoked task. Works in simple mode.
+
+```json
+"repo": {
+  "tasks": {
+    "migrate": { "dependsOn": ["services"] },
+    "dev": { "dependsOn": ["migrate", "build"] }
+  }
+}
+```
 
 ### `concurrent`
 
@@ -128,6 +143,8 @@ Launch additional tasks alongside this one:
 ```
 
 Running `miso dev` will also launch `studio` alongside it. `concurrent` tasks are always run by miso directly — they are **not** passed to turbo/nx even when `mode` is `"turbo"`.
+
+`concurrent` is how a companion starts alongside a task. Each entry resolves the exact script it names — `@lumen/ios` never starts `ios:device` — and `miso dev` never starts `dev:*` scripts unless they're listed here.
 
 **Scoping — bare name vs `@member/script`:**
 
@@ -212,7 +229,7 @@ An empty task entry is enough to make miso take over `dev`.
 ## Common Mistakes
 
 - **`repo: "turbo"` without Turbo installed** — Turbo must be in PATH; miso shells out to `turbo` directly
-- **`dependsOn` without `^`** — `"dependsOn": ["build"]` means same-workspace dependency; use `"dependsOn": ["^build"]` for cross-workspace topological ordering
+- **`dependsOn` without `^` for cross-workspace ordering** — `"dependsOn": ["build"]` runs each workspace's own `build` first; use `"dependsOn": ["^build"]` to build each member's upstream members first, and `"#build"` for the root's
 - **Assuming no TTY means no orchestration** — an agent or CI run still fans out, runs `concurrent`, and orders `dependsOn`; it just renders plain `[label] line` instead of chrome
 - **Assuming a root `dev` blocks fan-out** — the root is the orchestrator, not a fan-out member: a root `scripts/dev.sh` or `package.json` `"dev"` only runs as the body when no member defines `dev`; it never preempts fan-out. To run the root's `dev` alongside member fan-out, declare it as a task companion: `"repo": { "tasks": { "dev": { "concurrent": ["#dev"] } } }`
 - **Expecting chrome to need 2+ processes** — `tabbed`/`merged` render for a single process too; there's no minimum. Use `tui: "off"` for plain output on a lone script

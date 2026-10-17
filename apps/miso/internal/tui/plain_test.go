@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunPlainStreamsPrefixedOutput(t *testing.T) {
@@ -30,7 +31,7 @@ func TestRunPlainStreamsPrefixedOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	ok, err := RunPlain(pm, &buf, nil, nil)
+	ok, err := RunPlain(pm, &buf, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("RunPlain: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestRunPlainReturnsErrorOnChildFailure(t *testing.T) {
 	addPlainScript(t, pm, dir, "ok", "exit 0\n")
 	addPlainScript(t, pm, dir, "bad", "exit 1\n")
 
-	ran, err := RunPlain(pm, io.Discard, nil, nil)
+	ran, err := RunPlain(pm, io.Discard, nil, nil, nil)
 	if !ran {
 		t.Fatal("RunPlain returned not-applicable")
 	}
@@ -87,7 +88,7 @@ func TestRunPlainReturnsNilOnAllSuccess(t *testing.T) {
 	addPlainScript(t, pm, dir, "a", "exit 0\n")
 	addPlainScript(t, pm, dir, "b", "exit 0\n")
 
-	ran, err := RunPlain(pm, io.Discard, nil, nil)
+	ran, err := RunPlain(pm, io.Discard, nil, nil, nil)
 	if !ran {
 		t.Fatal("RunPlain returned not-applicable")
 	}
@@ -96,5 +97,138 @@ func TestRunPlainReturnsNilOnAllSuccess(t *testing.T) {
 	}
 	if got := pm.FailedCount(); got != 0 {
 		t.Errorf("FailedCount = %d, want 0", got)
+	}
+}
+
+// plain output keeps its one-line-per-newline shape; a partial is never
+// flushed as its own [label] line
+func TestRunPlainDoesNotFlushPartialLines(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "p", "printf 'a'; sleep 0.2; printf 'b\\n'\n")
+	markPlain(pm.Processes)
+
+	var buf bytes.Buffer
+	if _, err := RunPlain(pm, &buf, nil, nil, nil); err != nil {
+		t.Fatalf("RunPlain: %v", err)
+	}
+	var got []string
+	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if strings.HasPrefix(line, "[p] ") {
+			got = append(got, line)
+		}
+	}
+	want := []string{"[p] ab", "[p] exited (0)"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("plain lines = %#v, want %#v", got, want)
+	}
+}
+
+// a failed level must not leave RunPlain waiting on a later level it never started
+func TestRunPlainStopsAfterFailedLevelWithoutHanging(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 1\n")
+	addPlainScript(t, pm, dir, "b", "touch "+filepath.Join(dir, "b-ran")+"\n")
+	levels := [][]TuiScriptEntry{{pm.Processes[0].Entry}, {pm.Processes[1].Entry}}
+
+	type result struct {
+		ran bool
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		ran, err := RunPlain(pm, io.Discard, levels, map[string][]string{"b": {"a"}}, nil)
+		done <- result{ran, err}
+	}()
+
+	select {
+	case res := <-done:
+		if !res.ran {
+			t.Fatal("RunPlain returned not-applicable")
+		}
+		if res.err == nil {
+			t.Fatal("expected non-nil error when a level fails")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("RunPlain hung after a failed level")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "b-ran")); err == nil {
+		t.Error("b ran after its dependency failed")
+	}
+}
+
+func waitForFile(t *testing.T, path string, timeout time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
+// a dev server with no dependents must not hold back a task whose own
+// dependency already finished
+func TestStartProcessesDoesNotWaitOnUnrelatedLongRunningTask(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "web-dev", "sleep 30\n")
+	addPlainScript(t, pm, dir, "api-build", "exit 0\n")
+	addPlainScript(t, pm, dir, "api-dev", "touch "+filepath.Join(dir, "api-dev-ran")+"\nsleep 30\n")
+	levels := [][]TuiScriptEntry{{pm.Processes[0].Entry, pm.Processes[1].Entry}, {pm.Processes[2].Entry}}
+	deps := map[string][]string{"web-dev": nil, "api-build": nil, "api-dev": {"api-build"}}
+	t.Cleanup(pm.StopAll)
+
+	go startProcesses(pm, levels, deps, nil)
+
+	if !waitForFile(t, filepath.Join(dir, "api-dev-ran"), 10*time.Second) {
+		t.Fatal("api-dev never started while web-dev was still running")
+	}
+}
+
+// a failure skips the tasks that depend on it, not unrelated ones
+func TestStartProcessesSkipsOnlyDependentsOfFailedTask(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 1\n")
+	addPlainScript(t, pm, dir, "c", "sleep 1\n")
+	addPlainScript(t, pm, dir, "b", "touch "+filepath.Join(dir, "b-ran")+"\n")
+	addPlainScript(t, pm, dir, "d", "touch "+filepath.Join(dir, "d-ran")+"\n")
+	addPlainScript(t, pm, dir, "e", "touch "+filepath.Join(dir, "e-ran")+"\n")
+	levels := [][]TuiScriptEntry{
+		{pm.Processes[0].Entry, pm.Processes[1].Entry},
+		{pm.Processes[2].Entry, pm.Processes[3].Entry},
+		{pm.Processes[4].Entry},
+	}
+	deps := map[string][]string{"a": nil, "c": nil, "b": {"a"}, "d": {"c"}, "e": {"b"}}
+
+	done := make(chan struct{})
+	go func() {
+		startProcesses(pm, levels, deps, nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("startProcesses hung after a failure")
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "d-ran")); err != nil {
+		t.Error("d did not run although its dependency succeeded")
+	}
+	for _, label := range []string{"b", "e"} {
+		if _, err := os.Stat(filepath.Join(dir, label+"-ran")); err == nil {
+			t.Errorf("%s ran after a dependency failed", label)
+		}
+		proc := pm.findProc(label)
+		proc.mu.Lock()
+		state := proc.State
+		proc.mu.Unlock()
+		if state != StateSkipped {
+			t.Errorf("%s state = %v, want skipped", label, state)
+		}
 	}
 }

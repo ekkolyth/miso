@@ -45,8 +45,6 @@ Merged mode shows all workspace output in a single interleaved stream. Each line
 | `space`   | Toggle selected workspace visibility                        |
 | `r`       | Restart workspace at cursor                                 |
 | `R`       | Restart all workspaces                                      |
-| `i`       | Enter interactive mode — forward keys to the cursor process |
-| `Ctrl+Z`  | Exit interactive mode                                       |
 | `c`       | Copy selected text to clipboard                             |
 | `C`       | Copy all visible workspace logs to clipboard                |
 | `Ctrl+C`  | Quit (stops all processes)                                  |
@@ -59,6 +57,6 @@ Each workspace appears as a colored badge in the filter bar. Use arrow keys to m
 
 Both modes behave the same here:
 
-- Press `i` for **interactive mode** — keystrokes forward to the selected/cursor process's stdin; `Ctrl+Z` returns to miso's controls. Unavailable in delegated mode (Turbo/Nx). See [Interactive Mode](/tui#interactive-mode) for the full rundown.
+- Press `i` in tabbed mode for **interactive mode** — keystrokes forward to the selected process's stdin; `Ctrl+Z` returns to miso's controls. Unavailable in merged mode and in delegated mode (Turbo/Nx). See [Interactive Mode](/tui#interactive-mode) for the full rundown.
 - In delegated mode (Turbo/Nx), single-process restart (`r`) is disabled — only `R` (restart all) is available.
 - Hold a modifier (⌘/Alt/Ctrl) while clicking to let your terminal handle the click natively — miso ignores modifier-held clicks so opening links and native text selection keep working.

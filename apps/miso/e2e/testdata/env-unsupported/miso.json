@@ -1,0 +1,1 @@
+{ "packageManager": false, "scripts": "./scripts", "env": [{ "scope": "global", "label": "app", "path": "test.env", "variables": { "X": "string" } }] }

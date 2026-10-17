@@ -79,7 +79,7 @@ Two consequences worth knowing:
 - **A member `miso.json` that won't parse fails the run.** Skipping it would report a pass over requirements nothing checked, which is the failure mode the gate exists to prevent.
 
     ```
-    failed to read a workspace config error="load apps/web/miso.json: parse config: …"
+    ERROR miso: load apps/web/miso.json: parse config: …
     ```
 
 - **Membership is the package manager's.** Members come from `package.json` workspaces or `pnpm-workspace.yaml`. A `miso.json` in a directory that isn't a workspace member isn't traversed — if you keep schemas outside the workspace set, declare them at the root instead.
@@ -98,6 +98,8 @@ Even without an `env` block in `miso.json`, Miso automatically loads a `.env` fi
 Variables already set in the shell environment take precedence over values in the file — Miso never overrides a variable that is already present in the process environment.
 
 In a monorepo, auto-discovery searches that member's own directory rather than the project root when you run a workspace-scoped script.
+
+Discovered files follow the same expansion rules as a declared `path` (see [Configuration](/env-validation/config#path)), and a file that fails to parse stops the run.
 
 ## Scope & Resolution
 

@@ -140,17 +140,23 @@ func TestPlatformTarget_knownPlatforms(t *testing.T) {
 }
 
 func TestPlatformTarget_unsupported(t *testing.T) {
-	cases := [][2]string{
-		{"windows", "amd64"},
-		{"windows", "arm64"},
-		{"freebsd", "amd64"},
-		{"linux", "mips"},
+	cases := []struct {
+		goos, goarch string
+		want         string
+	}{
+		{"windows", "amd64", "unsupported OS: windows"},
+		{"windows", "arm64", "unsupported OS: windows"},
+		{"freebsd", "amd64", "unsupported OS: freebsd"},
+		{"linux", "mips", "unsupported architecture: linux/mips"},
 	}
 	for _, tc := range cases {
-		t.Run(tc[0]+"/"+tc[1], func(t *testing.T) {
-			_, err := platformTarget(tc[0], tc[1])
+		t.Run(tc.goos+"/"+tc.goarch, func(t *testing.T) {
+			_, err := platformTarget(tc.goos, tc.goarch)
 			if err == nil {
-				t.Errorf("expected error for %s/%s, got nil", tc[0], tc[1])
+				t.Fatalf("expected error for %s/%s, got nil", tc.goos, tc.goarch)
+			}
+			if err.Error() != tc.want {
+				t.Errorf("expected %q, got %q", tc.want, err.Error())
 			}
 		})
 	}

@@ -1,9 +1,12 @@
 package env
 
 import (
+	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ekkolyth/miso/internal/config"
@@ -16,7 +19,7 @@ import (
 // targetEntries returns the declared entries that apply to target, in layer
 // order: global first, then whichever config names the target — a root-scoped
 // entry or the member's own, never both (checkScopeExclusivity enforces that).
-func targetEntries(projectRoot string, cfg config.Config, target workspace.Target) []scopedEntry {
+func targetEntries(projectRoot string, cfg config.Config, target workspace.Target) ([]scopedEntry, error) {
 	var applied []scopedEntry
 	for _, entry := range cfg.Env {
 		if entry.Scope == "global" {
@@ -36,20 +39,27 @@ func targetEntries(projectRoot string, cfg config.Config, target workspace.Targe
 		}
 	}
 	if target.Kind == workspace.TargetMember && target.Dir != "" {
-		if memberCfg, err := config.Load(target.Dir); err == nil {
+		memberCfg, err := config.Load(target.Dir)
+		switch {
+		case errors.Is(err, config.ErrNotFound):
+		case err != nil:
+			return nil, fmt.Errorf("load %s: %w", relativeTo(projectRoot, config.Path(target.Dir)), err)
+		default:
 			for _, entry := range memberCfg.Env {
-				applied = append(applied, scopedEntry{entry: entry, baseDir: target.Dir})
+				applied = append(applied, scopedEntry{entry: entry, baseDir: target.Dir, memberName: target.Name})
 			}
 		}
 	}
-	return applied
+	return applied, nil
 }
 
 // TargetSummary counts the declared scopes and variables that apply to target —
 // what `--env` checked on its behalf. Zero scopes means nothing was declared for
 // it, so callers have nothing to report.
 func TargetSummary(projectRoot string, cfg config.Config, target workspace.Target) (scopes int, variables int) {
-	for _, applied := range targetEntries(projectRoot, cfg, target) {
+	// a broken member config already failed BuildTargetEnv before anything reports
+	entries, _ := targetEntries(projectRoot, cfg, target)
+	for _, applied := range entries {
 		scopes++
 		variables += len(applied.entry.Variables.Object) + len(applied.entry.Variables.Array)
 	}
@@ -74,9 +84,16 @@ func plural(count int, noun string) string {
 	return fmt.Sprintf("%d %ss", count, noun)
 }
 
+// a file that won't load fails the run, labelled as `miso env` labels it
 func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Target) ([]string, error) {
+	entries, err := targetEntries(projectRoot, cfg, target)
+	if err != nil {
+		return nil, err
+	}
 	vars := make(map[string]string)
 	loaded := false
+	var discoveryFailures, memberFailures []entryErrors
+	rootFailures := make(map[int]entryErrors)
 
 	// Injection follows orchestration, not repo mode: a turbo/nx run that turbo
 	// owns goes through DelegateLaunch and never lands here, so reaching this
@@ -86,8 +103,11 @@ func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Targ
 		if target.Kind == workspace.TargetMember && target.Dir != "" {
 			searchDir = target.Dir
 		}
-		if path, err := discoverEnvFile(searchDir); err == nil {
-			if fileVars, err := loadEnvFile(path); err == nil {
+		if path, err := discoverEnvFile(searchDir); err == nil && !declaresFile(entries, path) {
+			fileVars, err := loadEnvFile(path)
+			if err != nil {
+				discoveryFailures = append(discoveryFailures, entryErrors{label: relativeTo(projectRoot, path), errs: []error{err}})
+			} else {
 				loaded = true
 				for key, value := range fileVars {
 					vars[key] = value
@@ -96,26 +116,39 @@ func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Targ
 		}
 	}
 
-	apply := func(entry *config.EnvEntry, baseDir string) {
-		if entry.Path == "" {
-			return
+	for _, applied := range entries {
+		if applied.entry.Path == "" {
+			continue
 		}
-		abs := entry.Path
+		abs := applied.entry.Path
 		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(baseDir, entry.Path)
+			abs = filepath.Join(applied.baseDir, applied.entry.Path)
 		}
-		fileVars, err := loadEnvFile(abs)
+		var fileVars map[string]string
+		err := checkEnvFile(abs)
+		if err == nil {
+			fileVars, err = loadEnvFile(abs)
+		}
 		if err != nil {
-			return
+			if applied.memberName != "" {
+				memberFailures = append(memberFailures, entryErrors{label: applied.memberName + ": " + entryLabel(applied.entry), errs: []error{err}})
+			} else {
+				rootFailures[slices.Index(cfg.Env, applied.entry)] = entryErrors{label: entryLabel(applied.entry), errs: []error{err}}
+			}
+			continue
 		}
 		loaded = true
 		for key, value := range fileVars {
 			vars[key] = value
 		}
 	}
-
-	for _, applied := range targetEntries(projectRoot, cfg, target) {
-		apply(applied.entry, applied.baseDir)
+	// ordered as `miso env` reports them: member entries, then root entries as declared
+	failures := append(discoveryFailures, memberFailures...)
+	for _, index := range slices.Sorted(maps.Keys(rootFailures)) {
+		failures = append(failures, rootFailures[index])
+	}
+	if len(failures) > 0 {
+		return nil, &ValidationError{summary: "env validation failed", failures: failures}
 	}
 
 	startDir := projectRoot
@@ -144,6 +177,16 @@ func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Targ
 		processEnv = prependPath(processEnv, binDirs)
 	}
 	return processEnv, nil
+}
+
+// a member entry naming the discovered file loads it already
+func declaresFile(entries []scopedEntry, path string) bool {
+	for _, applied := range entries {
+		if applied.entry.Path != "" && resolveAgainst(applied.baseDir, applied.entry.Path) == filepath.Clean(path) {
+			return true
+		}
+	}
+	return false
 }
 
 // collectBinDirs returns existing node_modules/.bin dirs from startDir up to

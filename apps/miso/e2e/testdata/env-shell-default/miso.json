@@ -1,0 +1,1 @@
+{ "packageManager": false, "scripts": "./scripts", "env": [{ "scope": "global", "label": "test", "path": "test.env", "variables": { "TEST_DATABASE_URL": { "type": "pattern", "pattern": "^postgres" } } }] }

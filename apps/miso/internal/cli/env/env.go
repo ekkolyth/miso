@@ -3,12 +3,13 @@ package env
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/log"
-	"github.com/joho/godotenv"
 
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/ui"
@@ -62,14 +63,42 @@ type entryErrors struct {
 	errs  []error
 }
 
+// every env failure, from `miso env`, --env or a run's injection, renders
+// through Render so each command prints the same text
+type ValidationError struct {
+	summary  string
+	failures []entryErrors
+}
+
+func (e *ValidationError) Error() string {
+	return e.summary
+}
+
+// grouped by entry label, variable names highlighted
+func (e *ValidationError) Render(w io.Writer) {
+	warnStyle := lipgloss.NewStyle().Foreground(ui.WarningColor)
+
+	for i, f := range e.failures {
+		labelColor := ui.LabelColors[i%len(ui.LabelColors)]
+		labelStyle := lipgloss.NewStyle().Bold(true).Foreground(labelColor)
+
+		_, _ = fmt.Fprintf(w, "  %s\n", labelStyle.Render(f.label))
+		for _, err := range f.errs {
+			if ve, ok := err.(*varError); ok {
+				_, _ = fmt.Fprintf(w, "    %s %s\n", warnStyle.Render(ve.name+":"), ve.msg)
+			} else {
+				_, _ = fmt.Fprintf(w, "    %s\n", err.Error())
+			}
+		}
+	}
+}
+
 // Run executes the miso env command: for each EnvEntry, resolve its path, load the file,
 // validate variables, and report results. When no env config is present, falls back to
 // discovery mode and reports which file was found.
 func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 	members, err := workspace.DiscoverMembers(projectRoot, cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr)
-		logger.Error("failed to discover workspaces", "error", err)
 		return fmt.Errorf("discover members: %w", err)
 	}
 
@@ -78,8 +107,6 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 	// injection, not the gate that says the values are there.
 	memberEntries, err := collectMemberEntries(projectRoot, members)
 	if err != nil {
-		fmt.Fprintln(os.Stderr)
-		logger.Error("failed to read a workspace config", "error", err)
 		return err
 	}
 
@@ -88,6 +115,12 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 		path, err := discoverEnvFile(projectRoot)
 		if err != nil {
 			return err
+		}
+		if _, err := loadEnvFile(path); err != nil {
+			return &ValidationError{
+				summary:  "env validation failed",
+				failures: []entryErrors{{label: relativeTo(projectRoot, path), errs: []error{err}}},
+			}
 		}
 		logger.Info("env loaded", "path", path)
 		return nil
@@ -98,8 +131,6 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 	if !cfg.IsDelegated() {
 		for _, member := range members {
 			if member.Name == "global" {
-				fmt.Fprintln(os.Stderr)
-				logger.Error("member uses the reserved name \"global\"", "dir", member.Dir)
 				return fmt.Errorf("member %q uses the reserved name \"global\"", member.Dir)
 			}
 		}
@@ -110,16 +141,11 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 			}
 		}
 		if len(unscoped) > 0 {
-			fmt.Fprintln(os.Stderr)
-			logger.Error("env config invalid — every root entry needs a scope (a target name or \"global\")")
-			for _, path := range unscoped {
-				fmt.Fprintf(os.Stderr, "    %s\n", path)
-			}
-			return errors.New("env config invalid: missing scope")
+			return errors.New("env config invalid — every root entry needs a scope (a target name or \"global\")" + indentedLines(unscoped))
 		}
 	}
 
-	if err := checkScopeExclusivity(projectRoot, cfg, memberEntries, logger); err != nil {
+	if err := checkScopeExclusivity(projectRoot, cfg, memberEntries); err != nil {
 		return err
 	}
 
@@ -149,12 +175,15 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 		return nil
 	}
 
-	// Print styled error block to stderr (blank line separates from INFO lines)
-	fmt.Fprintln(os.Stderr)
-	logger.Error("env validation failed")
-	printGroupedErrors(os.Stderr, failures)
+	return &ValidationError{summary: "env validation failed", failures: failures}
+}
 
-	return errors.New("env validation failed")
+func indentedLines(lines []string) string {
+	var out strings.Builder
+	for _, line := range lines {
+		out.WriteString("\n    " + line)
+	}
+	return out.String()
 }
 
 // memberEntry pairs a member-local entry with the member that declared it.
@@ -204,7 +233,7 @@ func relativeTo(projectRoot, path string) string {
 // across both. Two axes catch that: the scope name, and the file it resolves to
 // — a root scope renamed away from its member ("ekko-api" over member "api")
 // stops matching by name while still describing the same file.
-func checkScopeExclusivity(projectRoot string, cfg config.Config, memberEntries []memberEntry, logger *log.Logger) error {
+func checkScopeExclusivity(projectRoot string, cfg config.Config, memberEntries []memberEntry) error {
 	byName := make(map[string]workspace.Member)
 	byPath := make(map[string]memberEntry)
 	for _, owned := range memberEntries {
@@ -239,31 +268,7 @@ func checkScopeExclusivity(projectRoot string, cfg config.Config, memberEntries 
 		return nil
 	}
 
-	fmt.Fprintln(os.Stderr)
-	logger.Error("env scope declared in two places — keep it in the root config or the member's, not both")
-	for _, conflict := range conflicts {
-		fmt.Fprintf(os.Stderr, "    %s\n", conflict)
-	}
-	return errors.New("env config invalid: scope declared in two places")
-}
-
-// printGroupedErrors writes styled, grouped errors to the given writer.
-func printGroupedErrors(w *os.File, failures []entryErrors) {
-	warnStyle := lipgloss.NewStyle().Foreground(ui.WarningColor)
-
-	for i, f := range failures {
-		labelColor := ui.LabelColors[i%len(ui.LabelColors)]
-		labelStyle := lipgloss.NewStyle().Bold(true).Foreground(labelColor)
-
-		_, _ = fmt.Fprintf(w, "  %s\n", labelStyle.Render(f.label))
-		for _, e := range f.errs {
-			if ve, ok := e.(*varError); ok {
-				_, _ = fmt.Fprintf(w, "    %s %s\n", warnStyle.Render(ve.name+":"), ve.msg)
-			} else {
-				_, _ = fmt.Fprintf(w, "    %s\n", e.Error())
-			}
-		}
-	}
+	return errors.New("env scope declared in two places — keep it in the root config or the member's, not both" + indentedLines(conflicts))
 }
 
 // runEntry resolves, loads, and validates a single EnvEntry.
@@ -328,18 +333,25 @@ func entryLabel(entry *config.EnvEntry) string {
 // empty we fall back to discovery so that label-only entries still work.
 func resolveEntryPath(projectRoot string, entry *config.EnvEntry) (string, error) {
 	if entry.Path != "" {
-		abs := filepath.Join(projectRoot, entry.Path)
-		if _, err := os.Stat(abs); err != nil {
-			if os.IsNotExist(err) {
-				return "", fmt.Errorf("env file not found: %s", abs)
-			}
-			return "", fmt.Errorf("env file %s: %w", abs, err)
+		abs := resolveAgainst(projectRoot, entry.Path)
+		if err := checkEnvFile(abs); err != nil {
+			return "", err
 		}
 		return abs, nil
 	}
 
 	// No path on this entry: fall back to discovery
 	return discoverEnvFile(projectRoot)
+}
+
+func checkEnvFile(abs string) error {
+	if _, err := os.Stat(abs); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("env file not found: %s", abs)
+		}
+		return fmt.Errorf("env file %s: %w", abs, err)
+	}
+	return nil
 }
 
 // discoverEnvFile walks discoveryOrder and returns the first file that exists.
@@ -363,7 +375,7 @@ func discoverEnvFile(projectRoot string) (string, error) {
 
 // loadEnvFile reads a single .env file and returns its key-value map.
 func loadEnvFile(path string) (map[string]string, error) {
-	envMap, err := godotenv.Read(path)
+	envMap, err := readDotenvFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("load env: %w", err)
 	}

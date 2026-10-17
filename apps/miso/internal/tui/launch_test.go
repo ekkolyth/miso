@@ -59,7 +59,7 @@ func TestBuildRunRootScriptArgsReachScript(t *testing.T) {
 	}
 
 	cfg := config.Config{Scripts: "./scripts"}
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, "echo-args", root, nil, nil, []string{"staging"}, false)
+	pm, levels, deps, concurrentProcs, ran, err := buildRun(cfg, "echo-args", root, nil, nil, []string{"staging"}, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestBuildRunRootScriptArgsReachScript(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if _, err := RunPlain(pm, &buf, levels, concurrentProcs); err != nil {
+	if _, err := RunPlain(pm, &buf, levels, deps, concurrentProcs); err != nil {
 		t.Fatalf("RunPlain: %v", err)
 	}
 
@@ -89,7 +89,7 @@ func TestBuildRunPackageJSONScriptArgsReachScript(t *testing.T) {
 	}
 
 	cfg := config.Config{Scripts: "./scripts"}
-	pm, _, _, ran, err := buildRun(cfg, "deploy", root, bun.Bun{}, nil, []string{"staging"}, false)
+	pm, _, _, _, ran, err := buildRun(cfg, "deploy", root, bun.Bun{}, nil, []string{"staging"}, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestBuildRunConcurrentCompanionDoesNotReceiveArgs(t *testing.T) {
 		Scripts: "./scripts",
 		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"worker"}}},
 	}
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, []string{"staging"}, false)
+	pm, levels, deps, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, []string{"staging"}, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestBuildRunConcurrentCompanionDoesNotReceiveArgs(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if _, err := RunPlain(pm, &buf, levels, concurrentProcs); err != nil {
+	if _, err := RunPlain(pm, &buf, levels, deps, concurrentProcs); err != nil {
 		t.Fatalf("RunPlain: %v", err)
 	}
 
@@ -179,7 +179,7 @@ func TestBuildRunMemberFanOutDropsArgs(t *testing.T) {
 	}
 
 	cfg := config.Config{Scripts: "./scripts"}
-	pm, levels, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, []string{"staging"}, false)
+	pm, levels, deps, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, []string{"staging"}, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestBuildRunMemberFanOutDropsArgs(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if _, err := RunPlain(pm, &buf, levels, concurrentProcs); err != nil {
+	if _, err := RunPlain(pm, &buf, levels, deps, concurrentProcs); err != nil {
 		t.Fatalf("RunPlain: %v", err)
 	}
 
@@ -229,7 +229,7 @@ func TestBuildRunRootConcurrentUnresolvableAtRootErrors(t *testing.T) {
 		Scripts: "./scripts",
 		Tasks:   map[string]config.TaskConfig{"dev": {Concurrent: []string{"services"}}},
 	}
-	_, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
 	if err == nil {
 		t.Fatal("expected error: root concurrent \"services\" is unresolvable at root scope")
 	}
@@ -482,7 +482,7 @@ func TestBuildRunMemberFanOutConcurrentCompanionExemptFromDependsOn(t *testing.T
 		Scripts: "./scripts",
 		Tasks:   map[string]config.TaskConfig{"dev": {DependsOn: []string{"^dev"}}},
 	}
-	_, levels, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+	_, levels, _, concurrentProcs, ran, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -503,6 +503,48 @@ func TestBuildRunMemberFanOutConcurrentCompanionExemptFromDependsOn(t *testing.T
 				t.Fatalf("companion web/worker leaked into dependency levels: %v", levels)
 			}
 		}
+	}
+}
+
+// a task entry with no script of its own still runs what it depends on
+func TestBuildRunDependsOnOnlyTaskRunsDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeFolderScripts(t, root, "a", "b")
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"setup": {DependsOn: []string{"a", "b"}}},
+	}
+
+	pm, _, _, _, ran, err := buildRun(cfg, "setup", root, nil, nil, nil, false)
+	if err != nil {
+		t.Fatalf("buildRun: %v", err)
+	}
+	if !ran {
+		t.Fatal("buildRun returned not-applicable")
+	}
+	var got []string
+	for _, p := range pm.Processes {
+		got = append(got, p.Entry.Label)
+	}
+	slices.Sort(got)
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("processes = %v, want [a b]", got)
+	}
+}
+
+// a scoped run must not fall back to the root's dependencies when the scope
+// defines nothing
+func TestBuildRunScopedDependsOnOnlyTaskErrors(t *testing.T) {
+	root := t.TempDir()
+	writeFolderScripts(t, root, "a")
+	cfg := config.Config{
+		Scripts: "./scripts",
+		Tasks:   map[string]config.TaskConfig{"setup": {DependsOn: []string{"a"}}},
+	}
+
+	_, _, _, _, _, err := buildRun(cfg, "setup", root, nil, []string{"web"}, nil, false)
+	if err == nil || !strings.Contains(err.Error(), "web") {
+		t.Fatalf("err = %v, want an error naming the empty scope", err)
 	}
 }
 
@@ -740,4 +782,79 @@ func TestDiscoverEntriesResolutionLadder(t *testing.T) {
 			testCase.checkEntry(t, root, entries)
 		})
 	}
+}
+
+// MISO-4: "miso lint" fanning out to a member must not run "lint:fix" or
+// "lint/fix" — the defect's signature is unrequested writes to the tree
+func TestBuildRunMemberFanOutDoesNotRunColonSibling(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"workspaces":["apps/web"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	webDir := filepath.Join(root, "apps", "web")
+	scriptsDir := filepath.Join(webDir, "scripts")
+	if err := os.MkdirAll(filepath.Join(scriptsDir, "lint"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	colonMarker := filepath.Join(webDir, "WROTE-BY-COLON-FIX")
+	slashMarker := filepath.Join(webDir, "WROTE-BY-SLASH-FIX")
+	scripts := map[string]string{
+		filepath.Join(scriptsDir, "lint.sh"):        "echo CHECK\n",
+		filepath.Join(scriptsDir, "lint:fix.sh"):    "touch '" + colonMarker + "'\n",
+		filepath.Join(scriptsDir, "lint", "fix.sh"): "touch '" + slashMarker + "'\n",
+	}
+	for path, content := range scripts {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	before := listFiles(t, webDir)
+
+	cfg := config.Config{Scripts: "./scripts"}
+	pm, levels, deps, concurrentProcs, ran, err := buildRun(cfg, "lint", root, nil, nil, nil, false)
+	if err != nil {
+		t.Fatalf("buildRun: %v", err)
+	}
+	if !ran {
+		t.Fatal("buildRun returned not-applicable")
+	}
+
+	var buf bytes.Buffer
+	if _, err := RunPlain(pm, &buf, levels, deps, concurrentProcs); err != nil {
+		t.Fatalf("RunPlain: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "CHECK") {
+		t.Errorf("lint did not run; output:\n%s", buf.String())
+	}
+	for _, marker := range []string{colonMarker, slashMarker} {
+		if _, err := os.Stat(marker); err == nil {
+			t.Errorf("sibling script ran and wrote %s", filepath.Base(marker))
+		}
+	}
+	if after := listFiles(t, webDir); !slices.Equal(before, after) {
+		t.Errorf("member dir changed:\nbefore %v\nafter  %v", before, after)
+	}
+}
+
+func listFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	var files []string
+	err := filepath.WalkDir(dir, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		files = append(files, rel)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", dir, err)
+	}
+	return files
 }

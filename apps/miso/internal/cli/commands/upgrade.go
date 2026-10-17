@@ -59,12 +59,6 @@ func platformTarget(goos, goarch string) (string, error) {
 	}
 	archs, ok := supported[goos]
 	if !ok {
-		if goos == "windows" {
-			return "", fmt.Errorf(
-				"automatic upgrade is not supported on Windows\n" +
-					"Please reinstall manually: https://misojs.dev/install#windows",
-			)
-		}
 		return "", fmt.Errorf("unsupported OS: %s", goos)
 	}
 	if !archs[goarch] {

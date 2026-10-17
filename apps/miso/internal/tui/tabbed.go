@@ -385,7 +385,8 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 		statusFg := runningColor
 		labelFg := lipgloss.Color("#aaaaaa")
 
-		if proc.State == StateExited {
+		switch proc.State {
+		case StateExited:
 			if proc.ExitCode != 0 {
 				statusText = fmt.Sprintf("✕ %d", proc.ExitCode)
 				statusFg = exitedColor
@@ -396,7 +397,10 @@ func (m TabbedModel) renderSidebar(width, height int) string {
 				statusText = "✓"
 				statusFg = runningColor
 			}
-		} else {
+		case StateSkipped:
+			statusText = "■"
+			statusFg = mutedColor
+		default:
 			statusText = "●"
 		}
 
@@ -701,7 +705,7 @@ func wrapLine(line string, width int) []string {
 	if width <= 0 || lipgloss.Width(line) <= width {
 		return []string{line}
 	}
-	rows := strings.Split(ansi.HardwrapWc(line, width, true), "\n")
+	rows := strings.Split(ansi.Hardwrap(line, width, true), "\n")
 	pen := ""
 	for i, row := range rows {
 		next := penAfter(pen, row)

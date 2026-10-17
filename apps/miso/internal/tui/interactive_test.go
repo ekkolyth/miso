@@ -78,7 +78,9 @@ func TestTabbedInteractiveRouting(t *testing.T) {
 	}
 }
 
-func TestMergedInteractiveRouting(t *testing.T) {
+// merged interleaves every app's output, so keystrokes have no single pane to
+// echo into; typing into a process happens from tabbed mode
+func TestMergedIgnoresInteractiveKey(t *testing.T) {
 	var sink bytes.Buffer
 	proc := &Process{stdin: &sink, State: StateRunning, Buffer: NewRingBuffer(10)}
 	pm := &ProcessManager{Processes: []*Process{proc}}
@@ -86,20 +88,11 @@ func TestMergedInteractiveRouting(t *testing.T) {
 
 	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "i", Code: 'i'}))
 	m = next.(MergedModel)
-	if !m.interactive {
-		t.Fatal("expected interactive mode after 'i'")
-	}
-
 	next, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	m = next.(MergedModel)
-	if sink.String() != "\r" {
-		t.Errorf("expected enter forwarded as CR, got %q", sink.String())
-	}
-
-	next, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: 'z', Mod: tea.ModCtrl}))
-	m = next.(MergedModel)
-	if m.interactive {
-		t.Error("expected interactive mode off after ctrl+z")
+	m.Update(tea.PasteMsg{Content: "hello"})
+	if sink.String() != "" {
+		t.Errorf("merged forwarded input to stdin: %q", sink.String())
 	}
 }
 
@@ -132,25 +125,6 @@ func TestTabbedPasteForwards(t *testing.T) {
 
 	sink.Reset()
 	m = TabbedModel{pm: pm, interactive: false}
-	m.Update(tea.PasteMsg{Content: "hello"})
-	if sink.String() != "" {
-		t.Errorf("expected no paste forwarded outside interactive mode, got %q", sink.String())
-	}
-}
-
-func TestMergedPasteForwards(t *testing.T) {
-	var sink bytes.Buffer
-	proc := &Process{stdin: &sink, State: StateRunning, Buffer: NewRingBuffer(10)}
-	pm := &ProcessManager{Processes: []*Process{proc}}
-
-	m := MergedModel{pm: pm, visible: map[int]bool{0: true}, interactive: true}
-	m.Update(tea.PasteMsg{Content: "hello"})
-	if sink.String() != "hello" {
-		t.Errorf("expected paste forwarded to stdin, got %q", sink.String())
-	}
-
-	sink.Reset()
-	m = MergedModel{pm: pm, visible: map[int]bool{0: true}, interactive: false}
 	m.Update(tea.PasteMsg{Content: "hello"})
 	if sink.String() != "" {
 		t.Errorf("expected no paste forwarded outside interactive mode, got %q", sink.String())

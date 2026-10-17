@@ -102,6 +102,8 @@ Pick the surface by size:
 - **Multi-line or `&&`-chained → `scripts/` folder.** Once a command spans multiple lines, chains with `&&`, or needs real logic, a `.sh` file reads far better than a cramped JSON string.
 - **Opt-in dev variants → `dev:<name>` in `package.json`.** A dev target that shouldn't run under a bare `miso dev` (an optional service, an alternate entry point) belongs in the workspace's `package.json` under a distinct name — `dev:ekklipse`, `dev:studio` — not a root launcher script. Start it with `miso dev:ekklipse @<workspace>`. Bare `dev` stays the default set.
 
+`miso <script>` runs only the script named exactly `<script>`, in root and member scope alike — `miso lint` never runs `lint:fix`, and `miso docker` never runs `docker/up`. A sibling runs only when you name it, or when a task lists it in `concurrent` (see `miso-tui`).
+
 ---
 
 ## Workspace-Scoped Scripts (Monorepos)

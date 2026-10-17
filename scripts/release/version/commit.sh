@@ -8,7 +8,7 @@ VERSION="${VERSION:?VERSION is required}"
 
 git config user.name "github-actions[bot]"
 git config user.email "github-actions[bot]@users.noreply.github.com"
-git add apps/miso/package.json apps/miso/miso.schema.json "apps/docs/public/v$VERSION/miso.schema.json"
+git add apps/miso/package.json apps/miso/CHANGELOG.md apps/miso/miso.schema.json "apps/docs/public/v$VERSION/miso.schema.json" .changeset
 
 if git diff --staged --quiet; then
     echo "package.json already at $VERSION - nothing to commit"

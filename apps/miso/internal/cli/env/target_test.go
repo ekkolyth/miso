@@ -1,10 +1,15 @@
 package env
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/workspace"
@@ -255,5 +260,164 @@ func TestValidatedLine_SingularAndEmpty(t *testing.T) {
 	// nothing declared anywhere — no result to report
 	if line := ValidatedLine(root, config.Config{}, workspace.Target{Kind: workspace.TargetScript, Name: "dev"}); line != "" {
 		t.Errorf("ValidatedLine() = %q, want empty", line)
+	}
+}
+
+func TestBuildTargetEnv_ShellDefaultResolves(t *testing.T) {
+	unsetEnv(t, "TEST_DATABASE_URL", "TEST_REDIS_URL")
+	root := t.TempDir()
+	write(t, filepath.Join(root, "test.env"), shellDefaultEnv)
+	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: "test.env"}}}
+
+	target := workspace.Target{Kind: workspace.TargetScript, Name: "show"}
+	got := envSliceToMap(mustEnv(t, root, cfg, target))
+	expected := "postgres://test:test@localhost:55432/ekkolore_test?sslmode=disable"
+	if got["TEST_DATABASE_URL"] != expected {
+		t.Errorf("TEST_DATABASE_URL = %q, want %q", got["TEST_DATABASE_URL"], expected)
+	}
+}
+
+// BuildTargetEnv's failure must render exactly as `miso env` renders it
+func assertSameFailure(t *testing.T, root string, cfg config.Config, target workspace.Target) string {
+	t.Helper()
+	environ, buildErr := BuildTargetEnv(root, cfg, target)
+	if buildErr == nil {
+		t.Fatalf("BuildTargetEnv() = %v, nil; want an error", environ)
+	}
+	runErr := Run(root, cfg, log.New(io.Discard))
+	if runErr == nil {
+		t.Fatal("Run() = nil, want an error")
+	}
+	var built, ran *ValidationError
+	if !errors.As(buildErr, &built) || !errors.As(runErr, &ran) {
+		t.Fatalf("want *ValidationError from both; got %T and %T", buildErr, runErr)
+	}
+	var builtOut, ranOut bytes.Buffer
+	built.Render(&builtOut)
+	ran.Render(&ranOut)
+	if builtOut.String() != ranOut.String() {
+		t.Errorf("BuildTargetEnv renders\n%s\nmiso env renders\n%s", builtOut.String(), ranOut.String())
+	}
+	return builtOut.String()
+}
+
+func TestBuildTargetEnv_UnsupportedExpansionFailsRun(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "test.env"), "X=$(date)\n")
+	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: "test.env"}}}
+
+	out := assertSameFailure(t, root, cfg, workspace.Target{Kind: workspace.TargetScript, Name: "show"})
+	if !strings.Contains(out, "$(…)") {
+		t.Errorf("%q should name the unsupported form", out)
+	}
+}
+
+func TestBuildTargetEnv_DiscoveredFileParseErrorFails(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".env"), "X=${X:?boom}\n")
+
+	target := workspace.Target{Kind: workspace.TargetScript, Name: "show"}
+	if _, err := BuildTargetEnv(root, config.Config{}, target); err == nil {
+		t.Fatal("BuildTargetEnv() = nil error, want the parse failure")
+	}
+	if err := Run(root, config.Config{}, log.New(io.Discard)); err == nil {
+		t.Fatal("Run() = nil error in discovery mode, want the parse failure")
+	}
+}
+
+func TestBuildTargetEnv_MissingDeclaredFileFails(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: ".env.local"}}}
+
+	out := assertSameFailure(t, root, cfg, workspace.Target{Kind: workspace.TargetScript, Name: "show"})
+	if !strings.Contains(out, "env file not found") {
+		t.Errorf("%q should say the file is missing", out)
+	}
+}
+
+func TestBuildTargetEnv_ReportsEveryLoadFailure(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "a.env"), "X=${X:?boom}\n")
+	cfg := config.Config{Env: []*config.EnvEntry{
+		{Scope: "global", Path: "a.env"},
+		{Scope: "global", Path: "missing.env"},
+	}}
+
+	out := assertSameFailure(t, root, cfg, workspace.Target{Kind: workspace.TargetScript, Name: "show"})
+	if !strings.Contains(out, "a.env") || !strings.Contains(out, "missing.env") {
+		t.Errorf("%q should report both entries", out)
+	}
+}
+
+func TestBuildTargetEnv_BrokenMemberConfigFails(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "package.json"), `{"workspaces":["apps/*"]}`)
+	write(t, filepath.Join(root, ".env"), "X=1\n")
+	memberDir := filepath.Join(root, "apps", "web")
+	write(t, filepath.Join(memberDir, "miso.json"), "{not valid json")
+	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
+
+	target := workspace.Target{Kind: workspace.TargetMember, Name: "web", Dir: memberDir}
+	_, buildErr := BuildTargetEnv(root, cfg, target)
+	runErr := Run(root, cfg, log.New(io.Discard))
+	if buildErr == nil || runErr == nil {
+		t.Fatalf("both must fail; BuildTargetEnv: %v, Run: %v", buildErr, runErr)
+	}
+	if buildErr.Error() != runErr.Error() {
+		t.Errorf("BuildTargetEnv: %q\nmiso env: %q", buildErr.Error(), runErr.Error())
+	}
+}
+
+func TestBuildTargetEnv_MemberWithoutConfigStillRuns(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".env"), "X=1\n")
+	memberDir := filepath.Join(root, "apps", "web")
+	write(t, filepath.Join(memberDir, "index.js"), "")
+	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
+
+	target := workspace.Target{Kind: workspace.TargetMember, Name: "web", Dir: memberDir}
+	if got := envSliceToMap(mustEnv(t, root, cfg, target)); got["X"] != "1" {
+		t.Errorf("X = %q, want 1", got["X"])
+	}
+}
+
+func TestBuildTargetEnv_MemberDeclaredDiscoveredFileReportedOnce(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "package.json"), `{"workspaces":["apps/*"]}`)
+	memberDir := filepath.Join(root, "apps", "api")
+	write(t, filepath.Join(memberDir, "miso.json"), `{"env":[{"path":".env"}]}`)
+	write(t, filepath.Join(memberDir, ".env"), "X=${X:?boom}\n")
+
+	target := workspace.Target{Kind: workspace.TargetMember, Name: "api", Dir: memberDir}
+	out := assertSameFailure(t, root, config.Config{}, target)
+	if strings.Count(out, "unsupported expansion") != 1 {
+		t.Errorf("want the failure once, got\n%s", out)
+	}
+}
+
+func TestBuildTargetEnv_FailuresInMisoEnvOrder(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "package.json"), `{"workspaces":["apps/*"]}`)
+	memberDir := filepath.Join(root, "apps", "api")
+	write(t, filepath.Join(memberDir, "miso.json"), `{"env":[{"path":"member.env"}]}`)
+	cfg := config.Config{Env: []*config.EnvEntry{
+		{Scope: "global", Path: "global.env"},
+	}}
+
+	target := workspace.Target{Kind: workspace.TargetMember, Name: "api", Dir: memberDir}
+	out := assertSameFailure(t, root, cfg, target)
+	if strings.Index(out, "member.env") > strings.Index(out, "global.env") {
+		t.Errorf("want the member entry first, as miso env prints it; got\n%s", out)
+	}
+}
+
+func TestRun_AbsoluteEntryPath(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(t.TempDir(), "shared.env")
+	write(t, abs, "X=1\n")
+	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: abs, Variables: config.EnvVariables{Array: []string{"X"}}}}}
+
+	if err := Run(root, cfg, log.New(io.Discard)); err != nil {
+		t.Fatalf("Run() = %v, want nil for an absolute path", err)
 	}
 }

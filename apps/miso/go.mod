@@ -13,7 +13,6 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
 	github.com/go-playground/validator/v10 v10.30.1
-	github.com/joho/godotenv v1.5.1
 	golang.org/x/sys v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
 )

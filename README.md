@@ -22,7 +22,6 @@ curl -fsSL https://misojs.dev/install | bash
 ```
 
 Supported platforms: macOS (Intel & Apple Silicon), Linux (x86-64 & ARM64).
-Windows: Use the npm install method below, or download a binary from the [GitHub Releases](https://github.com/ekkolyth/miso/releases) page.
 
 #### Install via package manager
 

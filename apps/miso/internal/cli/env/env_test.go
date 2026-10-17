@@ -630,3 +630,79 @@ func TestRun_DistinctFilesPerScope_NoConflict(t *testing.T) {
 		t.Fatalf("distinct files must not conflict: %v", err)
 	}
 }
+
+// scripts/test.env from ekko-os, the MISO-3 scenario
+const shellDefaultEnv = `TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgres://test:test@localhost:55432/ekkolore_test?sslmode=disable}"
+TEST_REDIS_URL="${TEST_REDIS_URL:-redis://localhost:56379}"
+`
+
+// restored after the test by t.Setenv
+func unsetEnv(t *testing.T, keys ...string) {
+	t.Helper()
+	for _, key := range keys {
+		t.Setenv(key, "")
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func shellDefaultEntry(extra map[string]config.VarConfigOrString) *config.EnvEntry {
+	vars := map[string]config.VarConfigOrString{
+		"TEST_DATABASE_URL": {Config: config.VarConfig{Type: "pattern", Pattern: "^postgres"}},
+		"TEST_REDIS_URL":    {Config: config.VarConfig{Type: "pattern", Pattern: "^redis"}},
+	}
+	for name, v := range extra {
+		vars[name] = v
+	}
+	return &config.EnvEntry{
+		Label:     "test",
+		Path:      "test.env",
+		Scope:     "global",
+		Variables: config.EnvVariables{Object: vars},
+	}
+}
+
+func TestRun_ShellDefaultSatisfiesPattern(t *testing.T) {
+	unsetEnv(t, "TEST_DATABASE_URL", "TEST_REDIS_URL")
+	dir := writeTempEnv(t, "test.env", shellDefaultEnv)
+	cfg := config.Config{Env: []*config.EnvEntry{shellDefaultEntry(nil)}}
+
+	if err := Run(dir, cfg, log.New(io.Discard)); err != nil {
+		t.Fatalf("Run() = %v, want nil", err)
+	}
+}
+
+func TestRun_ProcessEnvWinsInsideExpansion(t *testing.T) {
+	unsetEnv(t, "TEST_REDIS_URL")
+	t.Setenv("TEST_DATABASE_URL", "postgres://ci:1/x")
+	dir := writeTempEnv(t, "test.env", shellDefaultEnv+`DERIVED="${TEST_DATABASE_URL}/sub"`+"\n")
+	cfg := config.Config{Env: []*config.EnvEntry{shellDefaultEntry(map[string]config.VarConfigOrString{
+		"DERIVED": {Config: config.VarConfig{Type: "pattern", Pattern: "^postgres://ci"}},
+	})}}
+
+	if err := Run(dir, cfg, log.New(io.Discard)); err != nil {
+		t.Fatalf("Run() = %v, want nil", err)
+	}
+}
+
+func TestRunEntry_UnsupportedExpansion_IsLoadError(t *testing.T) {
+	dir := writeTempEnv(t, "test.env", "X=${X:?s3cr3t}\n")
+	entry := &config.EnvEntry{
+		Label:     "test",
+		Path:      "test.env",
+		Variables: config.EnvVariables{Object: map[string]config.VarConfigOrString{"X": {IsShorthand: true, Type: "string"}}},
+	}
+
+	errs := runEntry(dir, entry, log.New(io.Discard))
+	if len(errs) != 1 {
+		t.Fatalf("got %d errors, want 1: %v", len(errs), errs)
+	}
+	text := errs[0].Error()
+	if !strings.Contains(text, "test.env:1") || !strings.Contains(text, "${X:?") {
+		t.Errorf("%q should name test.env:1 and ${X:?", text)
+	}
+	if strings.Contains(text, "s3cr3t") {
+		t.Errorf("%q leaks the value", text)
+	}
+}
