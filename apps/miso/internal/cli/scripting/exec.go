@@ -108,8 +108,12 @@ func ExecScriptFile(scriptPath string, args []string, workDir, defaultShell, man
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	var waitErr error
+	done := make(chan struct{})
+	go func() {
+		waitErr = cmd.Wait()
+		close(done)
+	}()
 
 	select {
 	case sig := <-sigCh:
@@ -119,8 +123,8 @@ func ExecScriptFile(scriptPath string, args []string, workDir, defaultShell, man
 		<-done
 		killTimer.Stop() // child already exited; don't SIGKILL a recycled pid
 		return fmt.Errorf("interrupted by signal %v", sig)
-	case err := <-done:
-		return err
+	case <-done:
+		return waitErr
 	}
 }
 

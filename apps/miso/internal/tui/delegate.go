@@ -357,8 +357,12 @@ func delegateRunPlain(mode, binary string, delegateArgs []string, root string, e
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	var waitErr error
+	done := make(chan struct{})
+	go func() {
+		waitErr = cmd.Wait()
+		close(done)
+	}()
 
 	select {
 	case <-sigCh:
@@ -368,7 +372,7 @@ func delegateRunPlain(mode, binary string, delegateArgs []string, root string, e
 		<-done
 		killTimer.Stop() // delegate already exited; don't SIGKILL a recycled pid
 		return true, nil
-	case err := <-done:
-		return true, err
+	case <-done:
+		return true, waitErr
 	}
 }
