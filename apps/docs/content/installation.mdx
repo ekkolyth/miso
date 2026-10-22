@@ -45,6 +45,23 @@ Once installed, upgrade miso to the latest version at any time:
 `miso upgrade` downloads the latest binary directly from GitHub and replaces
 the current binary in-place. No sudo required.
 
+### Shell completion
+
+Add the line for your shell to its config file, then restart your shell:
+
+```bash
+# ~/.bashrc
+eval "$(miso completion bash)"
+
+# ~/.zshrc (after compinit)
+eval "$(miso completion zsh)"
+
+# ~/.config/fish/config.fish
+miso completion fish | source
+```
+
+Completion needs `miso` on your `PATH`, so it applies to global installs, not project installs.
+
 ### Install in a project
 
 To install miso only in the project you're currently working on, add it as a dev dependency:

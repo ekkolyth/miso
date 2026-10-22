@@ -138,4 +138,16 @@ case ":${PATH}:" in
     ;;
 esac
 
+case "${SHELL##*/}" in
+  bash) COMPLETION_LINE='eval "$(miso completion bash)"' ;;
+  zsh)  COMPLETION_LINE='eval "$(miso completion zsh)"' ;;
+  fish) COMPLETION_LINE='miso completion fish | source' ;;
+  *)    COMPLETION_LINE='' ;;
+esac
+
+if [ -n "$COMPLETION_LINE" ]; then
+  info "For tab-completion, add this to your shell config:"
+  printf '    %s\n\n' "$COMPLETION_LINE"
+fi
+
 ok "Run 'miso --help' to get started."

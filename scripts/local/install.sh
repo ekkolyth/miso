@@ -23,6 +23,3 @@ install_atomic() {
 install_atomic apps/miso/bin/$BINARY "$GOBIN/$BINARY"
 install_atomic apps/miso/bin/$BINARY "$GOBIN/misox"
 echo "✓ Installed $BINARY and misox to $GOBIN"
-
-# Install shell completions
-node apps/miso/scripts/postinstall.mjs 2>/dev/null || true
