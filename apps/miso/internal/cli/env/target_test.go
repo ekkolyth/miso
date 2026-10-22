@@ -41,7 +41,7 @@ func TestBuildTargetEnv_RootScriptGetsGlobalOnly(t *testing.T) {
 	write(t, filepath.Join(root, "apps", "web", ".env.local"), "CONVEX_DEPLOYMENT=web-only\n")
 
 	target := workspace.Target{Kind: workspace.TargetScript, Name: "ekklipse"}
-	environ, err := BuildTargetEnv(root, rootCfg(), target)
+	environ, err := BuildTargetEnv(root, rootCfg(), target, false)
 	if err != nil {
 		t.Fatalf("BuildTargetEnv() error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestBuildTargetEnv_ZeroConfig_MemberDiscoversInMemberDir(t *testing.T) {
 
 func mustEnv(t *testing.T, root string, cfg config.Config, target workspace.Target) []string {
 	t.Helper()
-	environ, err := BuildTargetEnv(root, cfg, target)
+	environ, err := BuildTargetEnv(root, cfg, target, false)
 	if err != nil {
 		t.Fatalf("BuildTargetEnv() error: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestBuildTargetEnv_NoEnvFilesButBinsStillReturns(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := workspace.Target{Kind: workspace.TargetScript, Name: "dev"}
-	environ, err := BuildTargetEnv(root, config.Config{}, target)
+	environ, err := BuildTargetEnv(root, config.Config{}, target, false)
 	if err != nil {
 		t.Fatalf("BuildTargetEnv() error: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestBuildTargetEnv_NoEnvFilesButBinsStillReturns(t *testing.T) {
 
 func TestBuildTargetEnv_NoFilesNoBinsReturnsNil(t *testing.T) {
 	target := workspace.Target{Kind: workspace.TargetScript, Name: "dev"}
-	environ, err := BuildTargetEnv(t.TempDir(), config.Config{}, target)
+	environ, err := BuildTargetEnv(t.TempDir(), config.Config{}, target, false)
 	if err != nil {
 		t.Fatalf("BuildTargetEnv() error: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestBuildTargetEnv_DelegatedInjectsWhenMisoOrchestrates(t *testing.T) {
 		Tasks: map[string]config.TaskConfig{"dev": {}},
 		Env:   []*config.EnvEntry{{Scope: "global", Path: ".env"}},
 	}
-	got, err := BuildTargetEnv(root, cfg, workspace.Target{Kind: workspace.TargetScript, Name: "dev"})
+	got, err := BuildTargetEnv(root, cfg, workspace.Target{Kind: workspace.TargetScript, Name: "dev"}, false)
 	if err != nil {
 		t.Fatalf("BuildTargetEnv() error: %v", err)
 	}
@@ -280,11 +280,11 @@ func TestBuildTargetEnv_ShellDefaultResolves(t *testing.T) {
 // BuildTargetEnv's failure must render exactly as `miso env` renders it
 func assertSameFailure(t *testing.T, root string, cfg config.Config, target workspace.Target) string {
 	t.Helper()
-	environ, buildErr := BuildTargetEnv(root, cfg, target)
+	environ, buildErr := BuildTargetEnv(root, cfg, target, false)
 	if buildErr == nil {
 		t.Fatalf("BuildTargetEnv() = %v, nil; want an error", environ)
 	}
-	runErr := Run(root, cfg, log.New(io.Discard))
+	runErr := Run(root, cfg, log.New(io.Discard), false)
 	if runErr == nil {
 		t.Fatal("Run() = nil, want an error")
 	}
@@ -317,10 +317,10 @@ func TestBuildTargetEnv_DiscoveredFileParseErrorFails(t *testing.T) {
 	write(t, filepath.Join(root, ".env"), "X=${X:?boom}\n")
 
 	target := workspace.Target{Kind: workspace.TargetScript, Name: "show"}
-	if _, err := BuildTargetEnv(root, config.Config{}, target); err == nil {
+	if _, err := BuildTargetEnv(root, config.Config{}, target, false); err == nil {
 		t.Fatal("BuildTargetEnv() = nil error, want the parse failure")
 	}
-	if err := Run(root, config.Config{}, log.New(io.Discard)); err == nil {
+	if err := Run(root, config.Config{}, log.New(io.Discard), false); err == nil {
 		t.Fatal("Run() = nil error in discovery mode, want the parse failure")
 	}
 }
@@ -358,8 +358,8 @@ func TestBuildTargetEnv_BrokenMemberConfigFails(t *testing.T) {
 	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
 
 	target := workspace.Target{Kind: workspace.TargetMember, Name: "web", Dir: memberDir}
-	_, buildErr := BuildTargetEnv(root, cfg, target)
-	runErr := Run(root, cfg, log.New(io.Discard))
+	_, buildErr := BuildTargetEnv(root, cfg, target, false)
+	runErr := Run(root, cfg, log.New(io.Discard), false)
 	if buildErr == nil || runErr == nil {
 		t.Fatalf("both must fail; BuildTargetEnv: %v, Run: %v", buildErr, runErr)
 	}
@@ -417,7 +417,60 @@ func TestRun_AbsoluteEntryPath(t *testing.T) {
 	write(t, abs, "X=1\n")
 	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: abs, Variables: config.EnvVariables{Array: []string{"X"}}}}}
 
-	if err := Run(root, cfg, log.New(io.Discard)); err != nil {
+	if err := Run(root, cfg, log.New(io.Discard), false); err != nil {
 		t.Fatalf("Run() = %v, want nil for an absolute path", err)
+	}
+}
+
+func TestBuildTargetEnv_CIModeSkipsMissingDeclaredFile(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: ".env.local"}}}
+
+	target := workspace.Target{Kind: workspace.TargetScript, Name: "show"}
+	if _, err := BuildTargetEnv(root, cfg, target, true); err != nil {
+		t.Fatalf("BuildTargetEnv() error: %v, want the missing file skipped", err)
+	}
+}
+
+func TestBuildTargetEnv_CIModeLoadsPresentFiles(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "present.env"), "CI_MODE_PRESENT=1\n")
+	cfg := config.Config{Env: []*config.EnvEntry{
+		{Scope: "global", Path: "present.env"},
+		{Scope: "global", Path: ".env.local"},
+	}}
+
+	target := workspace.Target{Kind: workspace.TargetScript, Name: "show"}
+	environ, err := BuildTargetEnv(root, cfg, target, true)
+	if err != nil {
+		t.Fatalf("BuildTargetEnv() error: %v", err)
+	}
+	if got := envSliceToMap(environ)["CI_MODE_PRESENT"]; got != "1" {
+		t.Errorf("CI_MODE_PRESENT = %q, want 1 from the file that exists", got)
+	}
+}
+
+func TestBuildTargetEnv_CIModeSkipsMissingMemberFile(t *testing.T) {
+	root := t.TempDir()
+	memberDir := filepath.Join(root, "apps", "web")
+	write(t, filepath.Join(memberDir, "miso.json"), `{"env":[{"path":".env.local","variables":{"AUTH0_SECRET":"string"}}]}`)
+
+	target := workspace.Target{Kind: workspace.TargetMember, Name: "web", Dir: memberDir}
+	if _, err := BuildTargetEnv(root, config.Config{}, target, true); err != nil {
+		t.Fatalf("BuildTargetEnv() error: %v, want the missing member file skipped", err)
+	}
+	if _, err := BuildTargetEnv(root, config.Config{}, target, false); err == nil {
+		t.Fatal("BuildTargetEnv() outside CI mode = nil error, want env file not found")
+	}
+}
+
+func TestBuildTargetEnv_CIModeStillFailsOnUnloadableFile(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "test.env"), "X=$(date)\n")
+	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: "test.env"}}}
+
+	target := workspace.Target{Kind: workspace.TargetScript, Name: "show"}
+	if _, err := BuildTargetEnv(root, cfg, target, true); err == nil {
+		t.Fatal("BuildTargetEnv() = nil error, want the parse failure even in CI mode")
 	}
 }

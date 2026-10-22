@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -96,7 +97,7 @@ func (e *ValidationError) Render(w io.Writer) {
 // Run executes the miso env command: for each EnvEntry, resolve its path, load the file,
 // validate variables, and report results. When no env config is present, falls back to
 // discovery mode and reports which file was found.
-func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
+func Run(projectRoot string, cfg config.Config, logger *log.Logger, ci bool) error {
 	members, err := workspace.DiscoverMembers(projectRoot, cfg)
 	if err != nil {
 		return fmt.Errorf("discover members: %w", err)
@@ -113,6 +114,10 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 	if len(cfg.Env) == 0 && len(memberEntries) == 0 {
 		// No config: discovery mode
 		path, err := discoverEnvFile(projectRoot)
+		if ci && isMissingEnvFile(err) {
+			logger.Info("env file skipped", "dir", projectRoot)
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -152,7 +157,7 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 	var failures []entryErrors
 
 	for _, owned := range memberEntries {
-		errs := runEntry(owned.member.Dir, owned.entry, logger)
+		errs := runEntry(owned.member.Dir, owned.entry, logger, ci)
 		if len(errs) > 0 {
 			failures = append(failures, entryErrors{
 				label: owned.member.Name + ": " + entryLabel(owned.entry),
@@ -162,7 +167,7 @@ func Run(projectRoot string, cfg config.Config, logger *log.Logger) error {
 	}
 
 	for _, entry := range cfg.Env {
-		errs := runEntry(projectRoot, entry, logger)
+		errs := runEntry(projectRoot, entry, logger, ci)
 		if len(errs) > 0 {
 			failures = append(failures, entryErrors{
 				label: entryLabel(entry),
@@ -273,19 +278,33 @@ func checkScopeExclusivity(projectRoot string, cfg config.Config, memberEntries 
 
 // runEntry resolves, loads, and validates a single EnvEntry.
 // Returns a slice of validation errors (nil if all passed).
-func runEntry(projectRoot string, entry *config.EnvEntry, logger *log.Logger) []error {
+func runEntry(projectRoot string, entry *config.EnvEntry, logger *log.Logger, ci bool) []error {
 	label := entryLabel(entry)
 
 	// Resolve path
 	absPath, err := resolveEntryPath(projectRoot, entry)
-	if err != nil {
+	envMap := map[string]string{}
+	switch {
+	case ci && isMissingEnvFile(err):
+		// a clean CI checkout has no local env files; the shell can still supply the values
+		if entry.Path != "" {
+			logger.Info("env file skipped", "label", label, "path", resolveAgainst(projectRoot, entry.Path))
+		} else {
+			logger.Info("env file skipped", "label", label, "dir", projectRoot)
+		}
+		if len(entry.Variables.Object) == 0 && len(entry.Variables.Array) == 0 {
+			return nil
+		}
+	case err != nil:
 		return []error{err}
+	default:
+		envMap, err = loadEnvFile(absPath)
+		if err != nil {
+			return []error{err}
+		}
 	}
-
-	// Load env file
-	envMap, err := loadEnvFile(absPath)
-	if err != nil {
-		return []error{err}
+	if ci {
+		overlayShellEnv(envMap, entry.Variables)
 	}
 
 	// No variables defined: just report the load
@@ -344,10 +363,12 @@ func resolveEntryPath(projectRoot string, entry *config.EnvEntry) (string, error
 	return discoverEnvFile(projectRoot)
 }
 
+var errEnvFileNotFound = errors.New("env file not found")
+
 func checkEnvFile(abs string) error {
 	if _, err := os.Stat(abs); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("env file not found: %s", abs)
+			return fmt.Errorf("%w: %s", errEnvFileNotFound, abs)
 		}
 		return fmt.Errorf("env file %s: %w", abs, err)
 	}
@@ -370,7 +391,26 @@ func discoverEnvFile(projectRoot string) (string, error) {
 		}
 		tried += filepath.Join(projectRoot, n)
 	}
-	return "", fmt.Errorf("no .env file found (tried: %s)", tried)
+	return "", fmt.Errorf("%w (tried: %s)", errNoEnvFile, tried)
+}
+
+var errNoEnvFile = errors.New("no .env file found")
+
+func isMissingEnvFile(err error) bool {
+	return errors.Is(err, errEnvFileNotFound) || errors.Is(err, errNoEnvFile)
+}
+
+// the shell wins over the file, as it does when the process starts
+func overlayShellEnv(envMap map[string]string, variables config.EnvVariables) {
+	names := slices.Clone(variables.Array)
+	for name := range variables.Object {
+		names = append(names, name)
+	}
+	for _, name := range names {
+		if value, ok := os.LookupEnv(name); ok {
+			envMap[name] = value
+		}
+	}
 }
 
 // loadEnvFile reads a single .env file and returns its key-value map.

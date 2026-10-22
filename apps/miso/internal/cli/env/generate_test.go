@@ -190,7 +190,7 @@ func TestCommand_NoFlags_Validates(t *testing.T) {
 	// No env config => Run's discovery mode; a lone .env makes it succeed.
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, ".env"), "X=1\n")
-	if err := Command(root, config.Config{Repo: "miso"}, log.New(os.Stderr), nil); err != nil {
+	if err := Command(root, config.Config{Repo: "miso"}, log.New(os.Stderr), nil, false); err != nil {
 		t.Fatalf("command (validate) err: %v", err)
 	}
 }

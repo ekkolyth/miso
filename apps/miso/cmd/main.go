@@ -37,11 +37,14 @@ func init() {
 
 func main() {
 	args := os.Args[1:]
+	ci := false
 
 	// if misox prepend "misox"
 	invokedAsMisox := cli.InvokedAsMisox(os.Args[0])
 	if invokedAsMisox {
 		args = append([]string{"misox"}, args...)
+	} else {
+		ci, args = env.ResolveCI(args, os.LookupEnv)
 	}
 
 	styles := ui.Default()
@@ -205,7 +208,7 @@ func main() {
 		// (init, version, upgrade, completion already handled above)
 		switch cmd {
 		case "env":
-			if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
+			if err := env.Command(projectRoot, cfg, logger, args[1:], ci); err != nil {
 				cli.Fail(logger, err, false)
 			}
 			return
@@ -234,7 +237,7 @@ func main() {
 		// Handle --env flag: run env validation before script execution
 		envValidated := env.HasEnvFlag(scriptArgs)
 		if envValidated {
-			if err := env.Run(projectRoot, cfg, logger); err != nil {
+			if err := env.Run(projectRoot, cfg, logger, ci); err != nil {
 				cli.Fail(logger, err, false)
 			}
 			scriptArgs = env.StripEnvFlag(scriptArgs)
@@ -245,7 +248,7 @@ func main() {
 		// below only when nothing was orchestrated.
 		switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
 		case tui.RendererChrome:
-			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated)
+			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated, ci)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -253,7 +256,7 @@ func main() {
 				return
 			}
 		case tui.RendererPlain:
-			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated)
+			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated, ci)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -267,7 +270,7 @@ func main() {
 		}
 
 		target, _ := workspace.ResolveTarget(cmd, nil, projectRoot, cfg)
-		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target, ci)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
@@ -301,7 +304,7 @@ func main() {
 
 	// env does not need package manager
 	if parsed.Action == cli.ActionEnv {
-		if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
+		if err := env.Command(projectRoot, cfg, logger, args[1:], ci); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -318,7 +321,7 @@ func main() {
 	}
 
 	// --env flag: run env validation first, then strip from args before passing to command
-	cfg, parsed, envValidated := runEnvIfRequested(projectRoot, cfg, parsed, logger)
+	cfg, parsed, envValidated := runEnvIfRequested(projectRoot, cfg, parsed, logger, ci)
 
 	// Resolve explicit @scope filters up front so an unknown or ambiguous scope
 	// fails with a precise message regardless of TUI/root/action routing, and so
@@ -387,7 +390,7 @@ func main() {
 			}
 			switch renderer {
 			case tui.RendererChrome:
-				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated)
+				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated, ci)
 				if err != nil {
 					cli.Fail(logger, err, false)
 				}
@@ -395,7 +398,7 @@ func main() {
 					return
 				}
 			case tui.RendererPlain:
-				ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated)
+				ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated, ci)
 				if err != nil {
 					cli.Fail(logger, err, false)
 				}
@@ -441,7 +444,7 @@ func main() {
 		switch resolved.Source {
 		case scripting.ScriptSourceFolder:
 			target := workspace.Target{Kind: workspace.TargetMember, Name: parsed.WorkspaceName, Dir: workDir}
-			processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
+			processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target, ci)
 			if envErr != nil {
 				cli.Fail(logger, envErr, false)
 			}
@@ -468,7 +471,7 @@ func main() {
 		return
 	case cli.ActionScriptOverride:
 		target := workspace.Target{Kind: workspace.TargetScript, Name: parsed.ScriptName}
-		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target, ci)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
@@ -478,7 +481,7 @@ func main() {
 		return
 	case cli.ActionScriptFolder:
 		target := workspace.Target{Kind: workspace.TargetScript, Name: parsed.ScriptName}
-		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target, ci)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
@@ -556,7 +559,7 @@ func scopeFilterNames(scopes []string, projectRoot string, cfg config.Config, lo
 
 // runEnvIfRequested checks for --env in effective args (config flags + CLI args).
 // If present, runs env validation first; on success, strips --env from cfg and parsed.
-func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedCLI, logger *log.Logger) (config.Config, cli.ParsedCLI, bool) {
+func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedCLI, logger *log.Logger, ci bool) (config.Config, cli.ParsedCLI, bool) {
 	var effective []string
 	switch parsed.Action {
 	case cli.ActionAdd:
@@ -581,7 +584,7 @@ func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedC
 		return cfg, parsed, false
 	}
 
-	if err := env.Run(projectRoot, cfg, logger); err != nil {
+	if err := env.Run(projectRoot, cfg, logger, ci); err != nil {
 		cli.Fail(logger, err, false)
 	}
 

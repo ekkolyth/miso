@@ -43,9 +43,12 @@ func run(t *testing.T, workdir string, args ...string) (string, int) {
 	return runEnv(t, workdir, nil, args...)
 }
 
-// like run, with environ as the process env (nil inherits the test's)
+// like run, with environ as the process env (nil inherits the test's, minus CI)
 func runEnv(t *testing.T, workdir string, environ []string, args ...string) (string, int) {
 	t.Helper()
+	if environ == nil {
+		environ = environWithout(nil)
+	}
 	cmd := exec.Command(misoBin, args...)
 	cmd.Dir = workdir
 	cmd.Env = environ
@@ -269,12 +272,13 @@ func TestE2E_SimpleModeDependsOnOnlyTask(t *testing.T) {
 	}
 }
 
-// the test's env minus the named keys, plus extra
+// the test's env minus the named keys, plus extra. CI is always dropped so a
+// CI runner doesn't switch miso into CI mode — tests that want it pass it in extra
 func environWithout(keys []string, extra ...string) []string {
 	var environ []string
 	for _, kv := range os.Environ() {
 		key, _, _ := strings.Cut(kv, "=")
-		if !slices.Contains(keys, key) {
+		if key != "CI" && !slices.Contains(keys, key) {
 			environ = append(environ, kv)
 		}
 	}
@@ -356,4 +360,87 @@ func TestE2E_EnvFailuresRenderIdentically(t *testing.T) {
 // without --env nothing is validated, so a plain run matches on load failures only
 func TestE2E_LoadFailuresRenderIdenticallyWithoutEnvFlag(t *testing.T) {
 	assertSameEnvOutput(t, "testdata/env-render-load", []string{"env"}, []string{"show", "--env"}, []string{"show"})
+}
+
+// a clean checkout: member web declares .env.local, which isn't there
+func writeCleanCheckoutFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true,"workspaces":["apps/*"]}`)
+	writeFixtureFile(t, filepath.Join(root, "package-lock.json"), `{"name":"fx","lockfileVersion":3,"packages":{}}`)
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{}`)
+	web := filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(web, "package.json"), `{"name":"web","private":true}`)
+	writeFixtureFile(t, filepath.Join(web, "miso.json"), `{"env":[{"path":".env.local","variables":{"AUTH0_SECRET":"string"}}]}`)
+	writeFixtureFile(t, filepath.Join(web, "scripts", "format.sh"), "#!/bin/sh\necho formatter ran\n")
+	writeFixtureFile(t, filepath.Join(root, "scripts", "show.sh"), "#!/bin/sh\necho \"args: $*\"\n")
+	return root
+}
+
+func TestE2E_CleanCheckoutFailsOutsideCI(t *testing.T) {
+	out, code := run(t, writeCleanCheckoutFixture(t), "format", "@web")
+	if code == 0 {
+		t.Fatalf("format exit = 0, want non-zero (out: %s)", out)
+	}
+	if !strings.Contains(out, "env file not found") || strings.Contains(out, "formatter ran") {
+		t.Errorf("format output %q, want env file not found before the formatter starts", out)
+	}
+}
+
+func TestE2E_CleanCheckoutRunsWithCIFlag(t *testing.T) {
+	out, code := run(t, writeCleanCheckoutFixture(t), "--ci", "format", "@web")
+	if code != 0 || !strings.Contains(out, "formatter ran") {
+		t.Fatalf("--ci format exit = %d, out %q; want 0 and the formatter's output", code, out)
+	}
+}
+
+func TestE2E_CleanCheckoutRunsWithCIEnv(t *testing.T) {
+	out, code := runEnv(t, writeCleanCheckoutFixture(t), environWithout(nil, "CI=true"), "format", "@web")
+	if code != 0 || !strings.Contains(out, "formatter ran") {
+		t.Fatalf("CI=true format exit = %d, out %q; want 0 and the formatter's output", code, out)
+	}
+}
+
+func TestE2E_CIEnvValidatesShellVariables(t *testing.T) {
+	root := writeCleanCheckoutFixture(t)
+
+	environ := environWithout([]string{"AUTH0_SECRET"}, "CI=true", "AUTH0_SECRET=x")
+	if out, code := runEnv(t, root, environ, "env"); code != 0 {
+		t.Errorf("env with the secret in the shell exit = %d, want 0 (out: %s)", code, out)
+	}
+
+	environ = environWithout([]string{"AUTH0_SECRET"}, "CI=true")
+	out, code := runEnv(t, root, environ, "env")
+	if code == 0 {
+		t.Fatalf("env without the secret exit = 0, want non-zero (out: %s)", out)
+	}
+	if !strings.Contains(out, "AUTH0_SECRET:") || !strings.Contains(out, "missing required variable") {
+		t.Errorf("env output %q, want AUTH0_SECRET reported missing", out)
+	}
+}
+
+func TestE2E_CIFlagAfterCommandPassesThrough(t *testing.T) {
+	out, code := run(t, writeCleanCheckoutFixture(t), "--ci", "show", "--ci")
+	if code != 0 || !strings.Contains(out, "args: --ci") {
+		t.Fatalf("--ci show --ci exit = %d, out %q; want the trailing --ci passed to the script", code, out)
+	}
+}
+
+func TestE2E_CIEnvFlagValidatesShellVariables(t *testing.T) {
+	root := writeCleanCheckoutFixture(t)
+
+	environ := environWithout([]string{"AUTH0_SECRET"}, "CI=true", "AUTH0_SECRET=x")
+	out, code := runEnv(t, root, environ, "show", "--env")
+	if code != 0 || !strings.Contains(out, "args:") {
+		t.Errorf("show --env with the secret in the shell exit = %d, out %q; want 0 and the script's output", code, out)
+	}
+
+	environ = environWithout([]string{"AUTH0_SECRET"}, "CI=true")
+	out, code = runEnv(t, root, environ, "show", "--env")
+	if code == 0 || strings.Contains(out, "args:") {
+		t.Fatalf("show --env without the secret exit = %d, out %q; want non-zero before the script starts", code, out)
+	}
+	if !strings.Contains(out, "AUTH0_SECRET:") || !strings.Contains(out, "missing required variable") {
+		t.Errorf("show --env output %q, want AUTH0_SECRET reported missing", out)
+	}
 }

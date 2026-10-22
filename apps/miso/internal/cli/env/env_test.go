@@ -1,6 +1,8 @@
 package env
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -35,7 +37,7 @@ func TestRunEntry_ArrayMode_CollectsAllMissing(t *testing.T) {
 	}
 	logger := log.New(os.Stderr)
 
-	errs := runEntry(dir, entry, logger)
+	errs := runEntry(dir, entry, logger, false)
 	if len(errs) != 2 {
 		t.Fatalf("got %d errors, want 2: %v", len(errs), errs)
 	}
@@ -56,7 +58,7 @@ func TestRunEntry_ObjectMode_CollectsAllErrors(t *testing.T) {
 	}
 	logger := log.New(os.Stderr)
 
-	errs := runEntry(dir, entry, logger)
+	errs := runEntry(dir, entry, logger, false)
 	if len(errs) != 2 {
 		t.Fatalf("got %d errors, want 2: %v", len(errs), errs)
 	}
@@ -70,7 +72,7 @@ func TestRunEntry_FileNotFound_SingleError(t *testing.T) {
 	}
 	logger := log.New(os.Stderr)
 
-	errs := runEntry(dir, entry, logger)
+	errs := runEntry(dir, entry, logger, false)
 	if len(errs) != 1 {
 		t.Fatalf("got %d errors, want 1: %v", len(errs), errs)
 	}
@@ -87,7 +89,7 @@ func TestRunEntry_ArrayMode_VarErrorType(t *testing.T) {
 	}
 	logger := log.New(os.Stderr)
 
-	errs := runEntry(dir, entry, logger)
+	errs := runEntry(dir, entry, logger, false)
 	if len(errs) != 1 {
 		t.Fatalf("got %d errors, want 1: %v", len(errs), errs)
 	}
@@ -131,7 +133,7 @@ func TestRun_GroupedErrors_MultipleEntries(t *testing.T) {
 	}
 	logger := log.New(os.Stderr)
 
-	err := Run(dir, cfg, logger)
+	err := Run(dir, cfg, logger, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -161,7 +163,7 @@ func TestRun_SuccessfulEntries_StillPass(t *testing.T) {
 	}
 	logger := log.New(os.Stderr)
 
-	err := Run(dir, cfg, logger)
+	err := Run(dir, cfg, logger, false)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
@@ -201,7 +203,7 @@ func TestRun_PassingEntryLogsInfo_WhenSiblingFails(t *testing.T) {
 	var buf strings.Builder
 	logger := log.NewWithOptions(&buf, log.Options{})
 
-	err := Run(dir, cfg, logger)
+	err := Run(dir, cfg, logger, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -224,7 +226,7 @@ func TestRun_EmptyScopeIsError(t *testing.T) {
 		},
 	}
 	logger := log.New(io.Discard)
-	if err := Run(dir, cfg, logger); err == nil {
+	if err := Run(dir, cfg, logger, false); err == nil {
 		t.Error("expected error for entry with empty scope")
 	}
 }
@@ -241,7 +243,7 @@ func TestRun_DelegatedSkipsScopeRequirement(t *testing.T) {
 		},
 	}
 	logger := log.New(io.Discard)
-	if err := Run(dir, cfg, logger); err != nil {
+	if err := Run(dir, cfg, logger, false); err != nil {
 		t.Errorf("delegated mode should not require scope: %v", err)
 	}
 }
@@ -271,7 +273,7 @@ func TestRun_MemberLocalEnvEntry_MissingFileReported(t *testing.T) {
 	}
 	logger := log.New(io.Discard)
 
-	if err := Run(dir, cfg, logger); err == nil {
+	if err := Run(dir, cfg, logger, false); err == nil {
 		t.Fatal("expected error for member env entry pointing at a missing file")
 	}
 }
@@ -299,7 +301,7 @@ func TestRun_ReservedGlobalMemberName_IsError(t *testing.T) {
 	}
 	logger := log.New(io.Discard)
 
-	err := Run(dir, cfg, logger)
+	err := Run(dir, cfg, logger, false)
 	if err == nil {
 		t.Fatal(`expected error for member named "global"`)
 	}
@@ -331,7 +333,7 @@ func TestRun_UnknownScope_NotAnError(t *testing.T) {
 
 	// a scope may name a root script/task, so a non-member scope is neither an
 	// error nor a warning — the entry just validates as a root entry.
-	if err := Run(dir, cfg, logger); err != nil {
+	if err := Run(dir, cfg, logger, false); err != nil {
 		t.Fatalf("unknown scope must not error, got: %v", err)
 	}
 	if strings.Contains(buf.String(), "scope matches no known member") {
@@ -355,7 +357,7 @@ func TestRun_DiscoverMembersError_ReturnsWrappedError(t *testing.T) {
 	}
 	logger := log.New(io.Discard)
 
-	err := Run(dir, cfg, logger)
+	err := Run(dir, cfg, logger, false)
 	if err == nil {
 		t.Fatal("expected error for malformed package.json")
 	}
@@ -432,7 +434,7 @@ func TestRun_Delegated_ValidatesMemberSchemas(t *testing.T) {
 	}
 	logger := log.New(io.Discard)
 
-	if err := Run(dir, cfg, logger); err == nil {
+	if err := Run(dir, cfg, logger, false); err == nil {
 		t.Fatal("delegated mode must still validate member-local schemas")
 	}
 }
@@ -456,7 +458,7 @@ func TestRun_Delegated_MemberNamedGlobal_NotAnError(t *testing.T) {
 	cfg := config.Config{Repo: "turbo", Env: []*config.EnvEntry{{Label: "root", Path: ".env"}}}
 	logger := log.New(io.Discard)
 
-	if err := Run(dir, cfg, logger); err != nil {
+	if err := Run(dir, cfg, logger, false); err != nil {
 		t.Fatalf(`"global" is only reserved where scope has meaning: %v`, err)
 	}
 }
@@ -492,7 +494,7 @@ func TestRun_ScopeDeclaredInRootAndMember_IsError(t *testing.T) {
 	}
 	logger := log.New(io.Discard)
 
-	err := Run(dir, cfg, logger)
+	err := Run(dir, cfg, logger, false)
 	if err == nil {
 		t.Fatal("a scope declared in both the root and the member config must fail")
 	}
@@ -520,7 +522,7 @@ func TestRun_MalformedMemberConfig_IsError(t *testing.T) {
 	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
 	logger := log.New(io.Discard)
 
-	err := Run(dir, cfg, logger)
+	err := Run(dir, cfg, logger, false)
 	if err == nil {
 		t.Fatal("a member config that won't load must fail, not be skipped")
 	}
@@ -561,7 +563,7 @@ func TestRun_SameFileUnderDivergentScopeNames_IsError(t *testing.T) {
 	}
 	logger := log.New(io.Discard)
 
-	err := Run(dir, cfg, logger)
+	err := Run(dir, cfg, logger, false)
 	if err == nil {
 		t.Fatal("a root entry pointing at a member's env file must fail even when the scope name diverges")
 	}
@@ -595,7 +597,7 @@ func TestRun_GlobalEntryOverMemberFile_IsError(t *testing.T) {
 	}
 	logger := log.New(io.Discard)
 
-	if err := Run(dir, cfg, logger); err == nil {
+	if err := Run(dir, cfg, logger, false); err == nil {
 		t.Fatal("a global root entry over a member's own env file must fail")
 	}
 }
@@ -626,7 +628,7 @@ func TestRun_DistinctFilesPerScope_NoConflict(t *testing.T) {
 	cfg := config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
 	logger := log.New(io.Discard)
 
-	if err := Run(dir, cfg, logger); err != nil {
+	if err := Run(dir, cfg, logger, false); err != nil {
 		t.Fatalf("distinct files must not conflict: %v", err)
 	}
 }
@@ -668,7 +670,7 @@ func TestRun_ShellDefaultSatisfiesPattern(t *testing.T) {
 	dir := writeTempEnv(t, "test.env", shellDefaultEnv)
 	cfg := config.Config{Env: []*config.EnvEntry{shellDefaultEntry(nil)}}
 
-	if err := Run(dir, cfg, log.New(io.Discard)); err != nil {
+	if err := Run(dir, cfg, log.New(io.Discard), false); err != nil {
 		t.Fatalf("Run() = %v, want nil", err)
 	}
 }
@@ -681,7 +683,7 @@ func TestRun_ProcessEnvWinsInsideExpansion(t *testing.T) {
 		"DERIVED": {Config: config.VarConfig{Type: "pattern", Pattern: "^postgres://ci"}},
 	})}}
 
-	if err := Run(dir, cfg, log.New(io.Discard)); err != nil {
+	if err := Run(dir, cfg, log.New(io.Discard), false); err != nil {
 		t.Fatalf("Run() = %v, want nil", err)
 	}
 }
@@ -694,7 +696,7 @@ func TestRunEntry_UnsupportedExpansion_IsLoadError(t *testing.T) {
 		Variables: config.EnvVariables{Object: map[string]config.VarConfigOrString{"X": {IsShorthand: true, Type: "string"}}},
 	}
 
-	errs := runEntry(dir, entry, log.New(io.Discard))
+	errs := runEntry(dir, entry, log.New(io.Discard), false)
 	if len(errs) != 1 {
 		t.Fatalf("got %d errors, want 1: %v", len(errs), errs)
 	}
@@ -704,5 +706,99 @@ func TestRunEntry_UnsupportedExpansion_IsLoadError(t *testing.T) {
 	}
 	if strings.Contains(text, "s3cr3t") {
 		t.Errorf("%q leaks the value", text)
+	}
+}
+
+func ciSecretEntry(variables config.EnvVariables) config.Config {
+	return config.Config{Env: []*config.EnvEntry{{Scope: "global", Path: ".env.local", Variables: variables}}}
+}
+
+func renderFailure(t *testing.T, err error) string {
+	t.Helper()
+	var validation *ValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("error = %v (%T), want *ValidationError", err, err)
+	}
+	var out bytes.Buffer
+	validation.Render(&out)
+	return out.String()
+}
+
+func unsetForTest(t *testing.T, key string) {
+	t.Helper()
+	t.Setenv(key, "")
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRun_CIModeMissingFileVariablesFromShell(t *testing.T) {
+	t.Setenv("AUTH0_SECRET", "x")
+	cfg := ciSecretEntry(config.EnvVariables{Object: map[string]config.VarConfigOrString{
+		"AUTH0_SECRET": {IsShorthand: true, Type: "string"},
+	}})
+
+	if err := Run(t.TempDir(), cfg, log.New(io.Discard), true); err != nil {
+		t.Fatalf("Run() = %v, want the shell value to satisfy the schema", err)
+	}
+}
+
+func TestRun_CIModeMissingFileAndVariableFails(t *testing.T) {
+	unsetForTest(t, "AUTH0_SECRET")
+	cfg := ciSecretEntry(config.EnvVariables{Object: map[string]config.VarConfigOrString{
+		"AUTH0_SECRET": {IsShorthand: true, Type: "string"},
+	}})
+
+	out := renderFailure(t, Run(t.TempDir(), cfg, log.New(io.Discard), true))
+	if !strings.Contains(out, "AUTH0_SECRET:") || !strings.Contains(out, "missing required variable") {
+		t.Errorf("%q should name the missing variable", out)
+	}
+	if strings.Contains(out, "env file not found") {
+		t.Errorf("%q should not fail on the missing file in CI mode", out)
+	}
+}
+
+func TestRun_CIModeShellOverridesFile(t *testing.T) {
+	dir := writeTempEnv(t, ".env.local", "CI_MODE_PORT=abc\n")
+	t.Setenv("CI_MODE_PORT", "3000")
+	cfg := ciSecretEntry(config.EnvVariables{Object: map[string]config.VarConfigOrString{
+		"CI_MODE_PORT": {IsShorthand: true, Type: "port"},
+	}})
+
+	if err := Run(dir, cfg, log.New(io.Discard), true); err != nil {
+		t.Fatalf("Run() = %v, want the shell value to win as it does at spawn", err)
+	}
+}
+
+func TestRun_CIModeArrayPresence(t *testing.T) {
+	t.Setenv("AUTH0_SECRET", "x")
+	cfg := ciSecretEntry(config.EnvVariables{Array: []string{"AUTH0_SECRET"}})
+
+	if err := Run(t.TempDir(), cfg, log.New(io.Discard), true); err != nil {
+		t.Fatalf("Run() = %v, want the shell value to count as present", err)
+	}
+}
+
+func TestRun_CIModeMissingFileNoVariables(t *testing.T) {
+	if err := Run(t.TempDir(), ciSecretEntry(config.EnvVariables{}), log.New(io.Discard), true); err != nil {
+		t.Fatalf("Run() = %v, want the missing file skipped", err)
+	}
+}
+
+func TestRun_CIModeDiscoveryMissing(t *testing.T) {
+	if err := Run(t.TempDir(), config.Config{}, log.New(io.Discard), true); err != nil {
+		t.Fatalf("Run() = %v, want discovery to pass with no file in CI mode", err)
+	}
+}
+
+func TestRun_MissingFileFailsOutsideCI(t *testing.T) {
+	t.Setenv("AUTH0_SECRET", "x")
+	cfg := ciSecretEntry(config.EnvVariables{Object: map[string]config.VarConfigOrString{
+		"AUTH0_SECRET": {IsShorthand: true, Type: "string"},
+	}})
+
+	out := renderFailure(t, Run(t.TempDir(), cfg, log.New(io.Discard), false))
+	if !strings.Contains(out, "env file not found") {
+		t.Errorf("%q should still fail on the missing file outside CI mode", out)
 	}
 }
