@@ -37,15 +37,17 @@ func init() {
 
 func main() {
 	args := os.Args[1:]
-	ci := false
+	var leading env.LeadingFlags
 
 	// if misox prepend "misox"
 	invokedAsMisox := cli.InvokedAsMisox(os.Args[0])
 	if invokedAsMisox {
 		args = append([]string{"misox"}, args...)
 	} else {
-		ci, args = env.ResolveCI(args, os.LookupEnv)
+		leading, args = env.ParseLeadingFlags(args, os.LookupEnv)
 	}
+	ci := leading.CI
+	envValidated := leading.Validate
 
 	styles := ui.Default()
 	logger := log.NewWithOptions(os.Stderr, log.Options{
@@ -234,13 +236,10 @@ func main() {
 
 		scriptArgs := args[1:]
 
-		// Handle --env flag: run env validation before script execution
-		envValidated := env.HasEnvFlag(scriptArgs)
 		if envValidated {
 			if err := env.Run(projectRoot, cfg, logger, ci); err != nil {
 				cli.Fail(logger, err, false)
 			}
-			scriptArgs = env.StripEnvFlag(scriptArgs)
 		}
 
 		// Orchestrate the folder script (and any root-scope concurrent) — chrome on
@@ -320,8 +319,11 @@ func main() {
 		logger.Debug("resolved manager", "manager", managerName)
 	}
 
-	// --env flag: run env validation first, then strip from args before passing to command
-	cfg, parsed, envValidated := runEnvIfRequested(projectRoot, cfg, parsed, logger, ci)
+	if envValidated {
+		if err := env.Run(projectRoot, cfg, logger, ci); err != nil {
+			cli.Fail(logger, err, false)
+		}
+	}
 
 	// Resolve explicit @scope filters up front so an unknown or ambiguous scope
 	// fails with a precise message regardless of TUI/root/action routing, and so
@@ -351,7 +353,8 @@ func main() {
 				scriptName = "dev"
 			case cli.ActionPassthrough:
 				scriptName = parsed.Command
-				scriptArgs = parsed.Args
+				// a member script takes args the way a root script does; RunPassthrough keeps the raw --
+				scriptArgs = cli.ParseInlineArgs(parsed.Args)
 			}
 
 			filters := scopeFilters
@@ -370,7 +373,7 @@ func main() {
 									"%q is both a turbo task and a folder script — declare repo.tasks.%s to have miso own it, or rename the script so turbo owns it",
 									scriptName, scriptName), false)
 							}
-							_, turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
+							turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
 							ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
 							if err != nil {
 								cli.Fail(logger, err, false)
@@ -555,49 +558,4 @@ func scopeFilterNames(scopes []string, projectRoot string, cfg config.Config, lo
 		names = append(names, member.Name)
 	}
 	return names
-}
-
-// runEnvIfRequested checks for --env in effective args (config flags + CLI args).
-// If present, runs env validation first; on success, strips --env from cfg and parsed.
-func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedCLI, logger *log.Logger, ci bool) (config.Config, cli.ParsedCLI, bool) {
-	var effective []string
-	switch parsed.Action {
-	case cli.ActionAdd:
-		effective = append(cfg.Flags["add"], parsed.PackageNames...)
-	case cli.ActionRemove:
-		effective = append(cfg.Flags["remove"], parsed.PackageNames...)
-	case cli.ActionInstall:
-		effective = cfg.Flags["install"]
-	case cli.ActionDev:
-		effective = append(cfg.Flags["dev"], parsed.ScriptArgs...)
-	case cli.ActionRun, cli.ActionRunMultiple:
-		effective = parsed.ScriptArgs
-	case cli.ActionScriptOverride, cli.ActionScriptFolder, cli.ActionScriptPackageJSON:
-		// Script overrides can have flags by script name (e.g. flags["dev"] for dev script)
-		scriptFlags := cfg.Flags[parsed.ScriptName]
-		effective = append(scriptFlags, parsed.ScriptArgs...)
-	default:
-		return cfg, parsed, false
-	}
-
-	if !env.HasEnvFlag(effective) {
-		return cfg, parsed, false
-	}
-
-	if err := env.Run(projectRoot, cfg, logger, ci); err != nil {
-		cli.Fail(logger, err, false)
-	}
-
-	// Strip --env from cfg flags and parsed args
-	cfg = env.StripEnvFromFlags(cfg)
-	switch parsed.Action {
-	case cli.ActionAdd:
-		parsed.PackageNames = env.StripEnvFlag(parsed.PackageNames)
-	case cli.ActionRemove:
-		parsed.PackageNames = env.StripEnvFlag(parsed.PackageNames)
-	case cli.ActionDev, cli.ActionRun, cli.ActionRunMultiple,
-		cli.ActionScriptOverride, cli.ActionScriptFolder, cli.ActionScriptPackageJSON:
-		parsed.ScriptArgs = env.StripEnvFlag(parsed.ScriptArgs)
-	}
-	return cfg, parsed, true
 }

@@ -264,12 +264,12 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 		return discoverSingleRepo(cfg, scriptName, root, scriptArgs)
 	}
 
-	fanOut, err := discoverMemberFanOut(cfg, scriptName, root, members)
+	// args go to every member's main script, like turbo run x -- args;
+	// companions never get them
+	fanOut, err := discoverMemberFanOut(cfg, scriptName, root, members, scriptArgs)
 	if err != nil {
 		return nil, err
 	}
-	// args attach only to a single unambiguous main entry — fan-out is
-	// inherently one-or-more, so scriptArgs never reaches it
 	if len(fanOut) > 0 {
 		return appendRootCompanions(cfg, scriptName, root, fanOut, members)
 	}
@@ -456,7 +456,7 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 
 // one process per member that defines the script, plus each member's own
 // concurrent companions resolved within that same member
-func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []workspace.Member) ([]TuiScriptEntry, error) {
+func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []workspace.Member, scriptArgs []string) ([]TuiScriptEntry, error) {
 	var entries []TuiScriptEntry
 	for _, member := range members {
 		effective := workspace.EffectiveConfig(cfg, member)
@@ -472,6 +472,9 @@ func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []
 		}
 		if len(memberEntries) == 0 {
 			continue
+		}
+		for i := range memberEntries {
+			memberEntries[i].Args = scriptArgs
 		}
 		entries = append(entries, memberEntries...)
 

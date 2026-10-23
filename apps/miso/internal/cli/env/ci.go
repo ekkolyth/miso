@@ -2,20 +2,40 @@ package env
 
 import "strings"
 
-const CIFlag = "--ci"
+const (
+	CIFlag  = "--ci"
+	EnvFlag = "--env"
+)
 
-// only a leading --ci is miso's; after the command it belongs to the tool (jest --ci)
-func ResolveCI(args []string, lookup func(string) (string, bool)) (bool, []string) {
-	if len(args) > 0 && args[0] == CIFlag {
-		return true, args[1:]
+type LeadingFlags struct {
+	CI       bool
+	Validate bool
+}
+
+// only flags before the command are miso's; after it they belong to the tool
+// (jest --ci, wrangler --env)
+func ParseLeadingFlags(args []string, lookup func(string) (string, bool)) (LeadingFlags, []string) {
+	var flags LeadingFlags
+loop:
+	for len(args) > 0 {
+		switch args[0] {
+		case CIFlag:
+			flags.CI = true
+		case EnvFlag:
+			flags.Validate = true
+		default:
+			break loop
+		}
+		args = args[1:]
 	}
-	value, ok := lookup("CI")
-	if !ok {
-		return false, args
+	if !flags.CI {
+		if value, ok := lookup("CI"); ok {
+			switch strings.ToLower(value) {
+			case "", "0", "false":
+			default:
+				flags.CI = true
+			}
+		}
 	}
-	switch strings.ToLower(value) {
-	case "", "0", "false":
-		return false, args
-	}
-	return true, args
+	return flags, args
 }

@@ -65,8 +65,7 @@ miso init
     "flags": {
         "add": ["--dev"],
         "remove": [],
-        "install": ["--frozen-lockfile"],
-        "dev": ["--env"]
+        "install": ["--frozen-lockfile"]
     },
     "env": [
         {

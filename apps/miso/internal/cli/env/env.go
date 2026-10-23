@@ -17,39 +17,6 @@ import (
 	"github.com/ekkolyth/miso/internal/workspace"
 )
 
-const EnvFlag = "--env"
-
-func HasEnvFlag(args []string) bool {
-	for _, a := range args {
-		if a == EnvFlag {
-			return true
-		}
-	}
-	return false
-}
-
-func StripEnvFlag(args []string) []string {
-	out := make([]string, 0, len(args))
-	for _, a := range args {
-		if a != EnvFlag {
-			out = append(out, a)
-		}
-	}
-	return out
-}
-
-func StripEnvFromFlags(cfg config.Config) config.Config {
-	if cfg.Flags == nil {
-		return cfg
-	}
-	stripped := make(map[string][]string)
-	for k, v := range cfg.Flags {
-		stripped[k] = StripEnvFlag(v)
-	}
-	cfg.Flags = stripped
-	return cfg
-}
-
 // discoveryOrder is the default order to look for .env files when no env config is set
 var discoveryOrder = []string{
 	".env.local",

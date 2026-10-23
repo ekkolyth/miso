@@ -5,25 +5,28 @@ import (
 	"testing"
 )
 
-func TestResolveCI(t *testing.T) {
+func TestParseLeadingFlags(t *testing.T) {
 	tests := []struct {
 		name         string
 		args         []string
 		ciValue      string
 		ciSet        bool
-		expectedCI   bool
+		expected     LeadingFlags
 		expectedArgs []string
 	}{
-		{name: "leading flag", args: []string{"--ci", "format", "@web"}, expectedCI: true, expectedArgs: []string{"format", "@web"}},
-		{name: "flag after the command belongs to the tool", args: []string{"test", "--ci"}, expectedCI: false, expectedArgs: []string{"test", "--ci"}},
-		{name: "flag alone", args: []string{"--ci"}, expectedCI: true, expectedArgs: []string{}},
-		{name: "ci unset", args: []string{"format"}, expectedCI: false, expectedArgs: []string{"format"}},
-		{name: "ci empty", args: []string{"format"}, ciSet: true, ciValue: "", expectedCI: false, expectedArgs: []string{"format"}},
-		{name: "ci zero", args: []string{"format"}, ciSet: true, ciValue: "0", expectedCI: false, expectedArgs: []string{"format"}},
-		{name: "ci false", args: []string{"format"}, ciSet: true, ciValue: "false", expectedCI: false, expectedArgs: []string{"format"}},
-		{name: "ci false uppercase", args: []string{"format"}, ciSet: true, ciValue: "FALSE", expectedCI: false, expectedArgs: []string{"format"}},
-		{name: "ci true", args: []string{"format"}, ciSet: true, ciValue: "true", expectedCI: true, expectedArgs: []string{"format"}},
-		{name: "ci one", args: []string{"format", "--ci"}, ciSet: true, ciValue: "1", expectedCI: true, expectedArgs: []string{"format", "--ci"}},
+		{name: "leading ci", args: []string{"--ci", "format", "@web"}, expected: LeadingFlags{CI: true}, expectedArgs: []string{"format", "@web"}},
+		{name: "leading env", args: []string{"--env", "dev"}, expected: LeadingFlags{Validate: true}, expectedArgs: []string{"dev"}},
+		{name: "both in either order", args: []string{"--env", "--ci", "dev"}, expected: LeadingFlags{CI: true, Validate: true}, expectedArgs: []string{"dev"}},
+		{name: "ci after the command belongs to the tool", args: []string{"test", "--ci"}, expectedArgs: []string{"test", "--ci"}},
+		{name: "env after the command belongs to the tool", args: []string{"wrangler", "deploy", "--env", "production"}, expectedArgs: []string{"wrangler", "deploy", "--env", "production"}},
+		{name: "flags alone", args: []string{"--ci", "--env"}, expected: LeadingFlags{CI: true, Validate: true}, expectedArgs: []string{}},
+		{name: "ci unset", args: []string{"format"}, expectedArgs: []string{"format"}},
+		{name: "ci empty", args: []string{"format"}, ciSet: true, ciValue: "", expectedArgs: []string{"format"}},
+		{name: "ci zero", args: []string{"format"}, ciSet: true, ciValue: "0", expectedArgs: []string{"format"}},
+		{name: "ci false", args: []string{"format"}, ciSet: true, ciValue: "false", expectedArgs: []string{"format"}},
+		{name: "ci false uppercase", args: []string{"format"}, ciSet: true, ciValue: "FALSE", expectedArgs: []string{"format"}},
+		{name: "ci true", args: []string{"format"}, ciSet: true, ciValue: "true", expected: LeadingFlags{CI: true}, expectedArgs: []string{"format"}},
+		{name: "ci one", args: []string{"format", "--ci"}, ciSet: true, ciValue: "1", expected: LeadingFlags{CI: true}, expectedArgs: []string{"format", "--ci"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -33,9 +36,9 @@ func TestResolveCI(t *testing.T) {
 				}
 				return "", false
 			}
-			gotCI, gotArgs := ResolveCI(tt.args, lookup)
-			if gotCI != tt.expectedCI {
-				t.Errorf("ci = %v, want %v", gotCI, tt.expectedCI)
+			got, gotArgs := ParseLeadingFlags(tt.args, lookup)
+			if got != tt.expected {
+				t.Errorf("flags = %+v, want %+v", got, tt.expected)
 			}
 			if !slices.Equal(gotArgs, tt.expectedArgs) {
 				t.Errorf("args = %q, want %q", gotArgs, tt.expectedArgs)

@@ -16,12 +16,14 @@ title: Env Validation
 miso env
 ```
 
-Or use `--env` as a flag behind other commands to validate before running:
+Or put `--env` before another command to validate before running it:
 
 ```bash
-miso dev --env
-miso build --env
+miso --env dev
+miso --env build
 ```
+
+Like `--ci`, `--env` only counts before the command. After the command it belongs to the tool, so `miso wrangler deploy --env production` passes `--env production` to wrangler.
 
 ## Quick Start
 
