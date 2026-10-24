@@ -3,8 +3,9 @@ name: CI
 on:
     pull_request:
         branches: [dev, main]
+    # main is reached only through PRs, which this already checked
     push:
-        branches: [dev, main]
+        branches: [dev]
 
 jobs:
     lint:
