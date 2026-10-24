@@ -14,10 +14,13 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/manager"
 	"github.com/ekkolyth/miso/internal/ui"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 // find project root by walking up directories
-// priority: miso.json > lockfile > node_modules
+// priority: miso.json > lockfile > node_modules. A member's own miso.json
+// resolves to the workspace root that lists it, when that root has a miso.json
+// and isn't in simple mode
 func FindProjectRoot(startPath string) (string, error) {
 	absPath, err := filepath.Abs(startPath)
 	if err != nil {
@@ -38,7 +41,7 @@ func FindProjectRoot(startPath string) (string, error) {
 		// check for miso.json (highest priority)
 		misoPath := filepath.Join(current, config.FileName)
 		if st, err := os.Stat(misoPath); err == nil && !st.IsDir() {
-			return current, nil
+			return enclosingWorkspaceRoot(current), nil
 		}
 
 		// check for lockfiles
@@ -77,6 +80,28 @@ func FindProjectRoot(startPath string) (string, error) {
 
 	// nothing found
 	return "", errors.New("no project found. miso was not able to locate a miso.json, node_modules folder, or lockfile in the parent tree. run 'miso init' from the project root to get started")
+}
+
+// the nearest ancestor with a miso.json whose workspace has dir as a member,
+// else dir. Only the member's own directory counts: a project nested deeper
+// inside a member (a test fixture, say) keeps its own root
+func enclosingWorkspaceRoot(dir string) string {
+	for ancestor := filepath.Dir(dir); ancestor != filepath.Dir(ancestor); ancestor = filepath.Dir(ancestor) {
+		// simple mode has no workspace discovery, so it never claims a member
+		if ancestorCfg, err := config.Load(ancestor); err != nil || ancestorCfg.SimpleMode() {
+			continue
+		}
+		members, err := workspace.DiscoverMembers(ancestor, config.Config{})
+		if err != nil {
+			continue
+		}
+		for _, member := range members {
+			if filepath.Clean(member.Dir) == dir {
+				return ancestor
+			}
+		}
+	}
+	return dir
 }
 
 // load config from miso.json

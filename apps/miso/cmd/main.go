@@ -285,18 +285,53 @@ func main() {
 		cli.Fail(logger, err, true)
 	}
 
-	// CWD-aware workspace scoping: when inside a discovered member and the parsed
-	// action is a plain script (not already workspace-scoped), try to resolve the
-	// script from the current member's scripts folder first.
-	if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 &&
-		originalWorkDir != projectRoot && parsed.Action == cli.ActionScriptPackageJSON {
+	// inside a member, its own scripts come first, then the root's, then the
+	// package manager. A run with an explicit @scope is left as parsed
+	var cwdMember *workspace.Member
+	if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 && originalWorkDir != projectRoot {
 		if member, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
+			cwdMember = &member
+		}
+	}
+	if cwdMember != nil && len(parsed.Scopes) == 0 {
+		scriptName, scriptArgs, rewritable := parsed.ScriptName, parsed.ScriptArgs, true
+		// dev and run hand a member package.json script to the package manager,
+		// with the member's flags, whatever the root defines under that name
+		verb := args[0]
+		folderOnly := verb == "dev" || verb == "run"
+		switch parsed.Action {
+		case cli.ActionScriptPackageJSON, cli.ActionScriptFolder, cli.ActionRun:
+		case cli.ActionDev:
+			scriptName = "dev"
+		case cli.ActionPassthrough:
+			scriptName = parsed.Command
+			scriptArgs = cli.ParseInlineArgs(parsed.Args)
+		default:
+			rewritable = false
+		}
+		if rewritable {
+			member := *cwdMember
 			resolved, _, _, resolveErr := scripting.ResolveWorkspaceScript(
-				member.Name, parsed.ScriptName, projectRoot, cfg,
+				member.Name, scriptName, projectRoot, cfg,
 			)
-			if resolveErr == nil && (resolved.Source == scripting.ScriptSourceFolder || resolved.Source == scripting.ScriptSourcePackageJSON) {
+			// an ambiguous member script must not fall back to the root's
+			if resolveErr != nil {
+				cli.Fail(logger, resolveErr, false)
+			}
+			switch {
+			case resolved.Source == scripting.ScriptSourceFolder ||
+				(resolved.Source == scripting.ScriptSourcePackageJSON && !folderOnly):
 				parsed.Action = cli.ActionWorkspaceScript
 				parsed.WorkspaceName = member.Name
+				parsed.ScriptName = scriptName
+				parsed.ScriptArgs = scriptArgs
+			case resolved.Source == scripting.ScriptSourcePackageJSON && verb == "dev":
+				parsed.Action = cli.ActionDev
+				parsed.ScriptArgs = scriptArgs
+			case resolved.Source == scripting.ScriptSourcePackageJSON:
+				parsed.Action = cli.ActionRun
+				parsed.ScriptName = scriptName
+				parsed.ScriptArgs = scriptArgs
 			}
 		}
 	}
@@ -343,9 +378,13 @@ func main() {
 		}
 	}
 
-	if isRoot {
+	// a member's own script run from its directory launches like <script> @member
+	// from the root, so the member's companions and tasks apply
+	memberLaunch := parsed.Action == cli.ActionWorkspaceScript && cwdMember != nil
+
+	if isRoot || memberLaunch {
 		switch parsed.Action {
-		case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough, cli.ActionScriptFolder:
+		case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough, cli.ActionScriptFolder, cli.ActionWorkspaceScript:
 			scriptName := parsed.ScriptName
 			scriptArgs := parsed.ScriptArgs
 			switch parsed.Action {
@@ -358,6 +397,9 @@ func main() {
 			}
 
 			filters := scopeFilters
+			if memberLaunch {
+				filters = []string{cwdMember.Name}
+			}
 
 			renderer := tui.SelectRenderer(cfg, tui.InteractiveTTY())
 
@@ -434,6 +476,12 @@ func main() {
 		), false)
 	}
 
+	// the member's flags apply to the package manager commands run inside it
+	pmCfg := cfg
+	if cwdMember != nil {
+		pmCfg = workspace.EffectiveConfig(cfg, *cwdMember)
+	}
+
 	// Route to command handlers
 	switch parsed.Action {
 	case cli.ActionWorkspaceScript:
@@ -503,12 +551,12 @@ func main() {
 		}
 		return
 	case cli.ActionAdd:
-		if err := commands.Add(managerName, parsed.PackageNames, originalWorkDir, cfg); err != nil {
+		if err := commands.Add(managerName, parsed.PackageNames, originalWorkDir, pmCfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
 	case cli.ActionRemove:
-		if err := commands.Remove(managerName, parsed.PackageNames, originalWorkDir, cfg); err != nil {
+		if err := commands.Remove(managerName, parsed.PackageNames, originalWorkDir, pmCfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -518,7 +566,7 @@ func main() {
 		}
 		return
 	case cli.ActionDev:
-		if err := commands.Dev(managerName, parsed.ScriptArgs, originalWorkDir, cfg); err != nil {
+		if err := commands.Dev(managerName, parsed.ScriptArgs, originalWorkDir, pmCfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return

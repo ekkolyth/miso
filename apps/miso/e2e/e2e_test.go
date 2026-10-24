@@ -562,3 +562,131 @@ func TestE2E_TrailingEnvFlagReachesTool(t *testing.T) {
 		t.Errorf("exec -- tool deploy --env staging exit = %d, out %q; want --env staging passed to the tool", code, out)
 	}
 }
+
+func TestE2E_MemberDirWithConfigUsesWorkspaceRoot(t *testing.T) {
+	args := []string{"env"}
+	environ := environWithout([]string{"AUTH0_SECRET"})
+	out, code := runEnv(t, filepath.Join(writeScopedFixture(t, true), "apps", "web"), environ, args...)
+	if strings.Contains(out, "every root entry needs a scope") {
+		t.Fatalf("env from apps/web read the member config as the root: %q", out)
+	}
+	assertMissingSecret(t, args, out, code)
+}
+
+func TestE2E_MemberDirRunsMemberFolderScript(t *testing.T) {
+	out, code := run(t, filepath.Join(writeScopedFixture(t, true), "apps", "web"), "show", "foo")
+	if code != 0 || !strings.Contains(out, "web args: foo") || strings.Contains(out, "api args:") {
+		t.Errorf("show foo from apps/web exit = %d, out %q; want only web, with foo", code, out)
+	}
+}
+
+func TestE2E_MemberDirWithoutConfigRunsMemberScript(t *testing.T) {
+	out, code := run(t, filepath.Join(writeScopedFixture(t, true), "apps", "api"), "show")
+	if code != 0 || !strings.Contains(out, "api args: ") || strings.Contains(out, "web args:") {
+		t.Errorf("show from apps/api exit = %d, out %q; want only api", code, out)
+	}
+}
+
+func TestE2E_MemberDirScriptWinsOverRoot(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "scripts", "show.sh"), "#!/bin/sh\necho \"root args: $*\"\n")
+	out, code := run(t, filepath.Join(root, "apps", "web"), "show")
+	if code != 0 || !strings.Contains(out, "web args:") || strings.Contains(out, "root args:") {
+		t.Errorf("show from apps/web exit = %d, out %q; want the member's script, not the root's", code, out)
+	}
+}
+
+func TestE2E_MemberDirFallsBackToRootScript(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "scripts", "hello.sh"), "#!/bin/sh\necho \"root hello\"\n")
+	out, code := run(t, filepath.Join(root, "apps", "web"), "hello")
+	if code != 0 || !strings.Contains(out, "root hello") {
+		t.Errorf("hello from apps/web exit = %d, out %q; want the root script", code, out)
+	}
+}
+
+func TestE2E_MemberDirDevRunsMemberFolderScript(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "apps", "web", "scripts", "dev.sh"), "#!/bin/sh\necho \"web dev: $*\"\n")
+	out, code := run(t, filepath.Join(root, "apps", "web"), "dev", "foo")
+	if code != 0 || !strings.Contains(out, "web dev: foo") {
+		t.Errorf("dev foo from apps/web exit = %d, out %q; want web dev: foo", code, out)
+	}
+}
+
+func TestE2E_MemberDirRunRunsMemberFolderScript(t *testing.T) {
+	out, code := run(t, filepath.Join(writeScopedFixture(t, true), "apps", "web"), "run", "show", "--", "foo")
+	if code != 0 || !strings.Contains(out, "web args: foo") {
+		t.Errorf("run show -- foo from apps/web exit = %d, out %q; want web args: foo", code, out)
+	}
+}
+
+func TestE2E_MemberDirEnvFlagValidates(t *testing.T) {
+	args := []string{"--env", "show"}
+	environ := environWithout([]string{"AUTH0_SECRET"})
+	out, code := runEnv(t, filepath.Join(writeScopedFixture(t, true), "apps", "web"), environ, args...)
+	assertMissingSecret(t, args, out, code)
+	if strings.Contains(out, "web args:") {
+		t.Errorf("%v output %q: the script ran despite the failed validation", args, out)
+	}
+}
+
+// a member package.json dev still runs through the package manager with the configured dev flags
+func TestE2E_MemberDirPackageJSONDevKeepsFlags(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{"flags":{"dev":["--from-flags"]}}`)
+	writeFixtureFile(t, filepath.Join(root, "apps", "api", "package.json"), `{"name":"api","private":true,"scripts":{"dev":"echo api-dev"}}`)
+	out, code := run(t, filepath.Join(root, "apps", "api"), "dev")
+	if code != 0 || !strings.Contains(out, "api-dev --from-flags") {
+		t.Errorf("dev from apps/api exit = %d, out %q; want the dev flags passed", code, out)
+	}
+}
+
+// an ambiguous member script fails like an ambiguous root one, never falling back to the root
+func TestE2E_MemberDirAmbiguousScriptFails(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "apps", "web", "scripts", "show.ts"), "console.log('web ts')\n")
+	writeFixtureFile(t, filepath.Join(root, "scripts", "show.sh"), "#!/bin/sh\necho \"root args: $*\"\n")
+	out, code := run(t, filepath.Join(root, "apps", "web"), "show")
+	if code == 0 || !strings.Contains(out, "multiple scripts") || strings.Contains(out, "root args:") {
+		t.Errorf("show from apps/web exit = %d, out %q; want the ambiguity reported", code, out)
+	}
+}
+
+// inside a member, dev runs like dev @web from the root: the member's companions start too
+func TestE2E_MemberDirDevStartsMemberCompanions(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	web := filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(web, "miso.json"), `{"repo":{"tasks":{"dev":{"concurrent":["companion"]}}}}`)
+	writeFixtureFile(t, filepath.Join(web, "scripts", "dev.sh"), "#!/bin/sh\necho \"web dev: $*\"\n")
+	writeFixtureFile(t, filepath.Join(web, "scripts", "companion.sh"), "#!/bin/sh\necho \"web companion\"\n")
+	out, code := run(t, web, "dev", "foo")
+	if code != 0 || !strings.Contains(out, "web dev: foo") || !strings.Contains(out, "web companion") {
+		t.Errorf("dev foo from apps/web exit = %d, out %q; want web dev: foo and the companion", code, out)
+	}
+}
+
+func TestE2E_MemberDirDevUsesMemberFlags(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	web := filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{"flags":{"dev":["--from-root"]}}`)
+	writeFixtureFile(t, filepath.Join(web, "miso.json"), `{"flags":{"dev":["--from-member"]}}`)
+	writeFixtureFile(t, filepath.Join(web, "package.json"), `{"name":"web","private":true,"scripts":{"dev":"echo web-dev"}}`)
+	out, code := run(t, web, "dev")
+	if code != 0 || !strings.Contains(out, "web-dev --from-member") {
+		t.Errorf("dev from apps/web exit = %d, out %q; want the member's dev flags", code, out)
+	}
+}
+
+// a root package.json dev (often "turbo dev") must not pull a member's package.json dev onto the launch path
+func TestE2E_MemberDirPackageJSONDevKeepsFlagsWithRootDev(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	web := filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true,"workspaces":["apps/*"],"scripts":{"dev":"echo root-dev"}}`)
+	writeFixtureFile(t, filepath.Join(web, "miso.json"), `{"flags":{"dev":["--from-member"]}}`)
+	writeFixtureFile(t, filepath.Join(web, "package.json"), `{"name":"web","private":true,"scripts":{"dev":"echo web-dev"}}`)
+	out, code := run(t, web, "dev")
+	if code != 0 || !strings.Contains(out, "web-dev --from-member") || strings.Contains(out, "root-dev") {
+		t.Errorf("dev from apps/web exit = %d, out %q; want the member's dev with its flags", code, out)
+	}
+}

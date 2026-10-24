@@ -7,6 +7,7 @@ import (
 	"github.com/ekkolyth/miso/internal/cli"
 	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/scripts"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 // upgradeFlags are flags for the upgrade command.
@@ -51,24 +52,16 @@ func getCandidates(prev string, _ string, cwd string) []string {
 	if prev == "miso" || prev == "" {
 		candidates := cli.BuiltinNames()
 
-		// Add project scripts when in a project
-		if root, err := cli.FindProjectRoot(cwd); err == nil {
-			if cfg, err := cli.LoadConfig(root); err == nil {
-				if names, err := scripting.ListNames(root, cfg); err == nil {
-					seen := make(map[string]bool)
-					for _, c := range candidates {
-						seen[c] = true
-					}
-					for _, n := range names {
-						if !seen[n] {
-							seen[n] = true
-							candidates = append(candidates, n)
-						}
-					}
-				}
+		seen := make(map[string]bool)
+		for _, c := range candidates {
+			seen[c] = true
+		}
+		for _, n := range projectScriptNames(cwd) {
+			if !seen[n] {
+				seen[n] = true
+				candidates = append(candidates, n)
 			}
 		}
-
 		return candidates
 	}
 
@@ -83,6 +76,11 @@ func getCandidates(prev string, _ string, cwd string) []string {
 	}
 
 	// After "run" or "dev", or after a script name (run s1 s2): complete script names
+	return projectScriptNames(cwd)
+}
+
+// root scripts, plus the scripts of the member cwd is in, since those run from there
+func projectScriptNames(cwd string) []string {
 	root, err := cli.FindProjectRoot(cwd)
 	if err != nil {
 		return nil
@@ -94,6 +92,29 @@ func getCandidates(prev string, _ string, cwd string) []string {
 	names, err := scripting.ListNames(root, cfg)
 	if err != nil {
 		return nil
+	}
+	// simple mode has no workspaces
+	if cfg.SimpleMode() {
+		return names
+	}
+	members, _ := workspace.DiscoverMembers(root, cfg)
+	member, inMember := workspace.FromCWD(cwd, members)
+	if !inMember {
+		return names
+	}
+	memberNames, err := scripting.ListNames(member.Dir, workspace.EffectiveConfig(cfg, member))
+	if err != nil {
+		return names
+	}
+	seen := make(map[string]bool)
+	for _, n := range names {
+		seen[n] = true
+	}
+	for _, n := range memberNames {
+		if !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
 	}
 	return names
 }
