@@ -37,12 +37,17 @@ func init() {
 
 func main() {
 	args := os.Args[1:]
+	var leading env.LeadingFlags
 
 	// if misox prepend "misox"
 	invokedAsMisox := cli.InvokedAsMisox(os.Args[0])
 	if invokedAsMisox {
 		args = append([]string{"misox"}, args...)
+	} else {
+		leading, args = env.ParseLeadingFlags(args, os.LookupEnv)
 	}
+	ci := leading.CI
+	envValidated := leading.Validate
 
 	styles := ui.Default()
 	logger := log.NewWithOptions(os.Stderr, log.Options{
@@ -205,7 +210,7 @@ func main() {
 		// (init, version, upgrade, completion already handled above)
 		switch cmd {
 		case "env":
-			if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
+			if err := env.Command(projectRoot, cfg, logger, args[1:], ci); err != nil {
 				cli.Fail(logger, err, false)
 			}
 			return
@@ -231,13 +236,10 @@ func main() {
 
 		scriptArgs := args[1:]
 
-		// Handle --env flag: run env validation before script execution
-		envValidated := env.HasEnvFlag(scriptArgs)
 		if envValidated {
-			if err := env.Run(projectRoot, cfg, logger); err != nil {
+			if err := env.Run(projectRoot, cfg, logger, ci); err != nil {
 				cli.Fail(logger, err, false)
 			}
-			scriptArgs = env.StripEnvFlag(scriptArgs)
 		}
 
 		// Orchestrate the folder script (and any root-scope concurrent) — chrome on
@@ -245,7 +247,7 @@ func main() {
 		// below only when nothing was orchestrated.
 		switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
 		case tui.RendererChrome:
-			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated)
+			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated, ci)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -253,7 +255,7 @@ func main() {
 				return
 			}
 		case tui.RendererPlain:
-			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated)
+			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated, ci)
 			if err != nil {
 				cli.Fail(logger, err, false)
 			}
@@ -267,7 +269,7 @@ func main() {
 		}
 
 		target, _ := workspace.ResolveTarget(cmd, nil, projectRoot, cfg)
-		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target, ci)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
@@ -283,25 +285,60 @@ func main() {
 		cli.Fail(logger, err, true)
 	}
 
-	// CWD-aware workspace scoping: when inside a discovered member and the parsed
-	// action is a plain script (not already workspace-scoped), try to resolve the
-	// script from the current member's scripts folder first.
-	if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 &&
-		originalWorkDir != projectRoot && parsed.Action == cli.ActionScriptPackageJSON {
+	// inside a member, its own scripts come first, then the root's, then the
+	// package manager. A run with an explicit @scope is left as parsed
+	var cwdMember *workspace.Member
+	if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 && originalWorkDir != projectRoot {
 		if member, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
+			cwdMember = &member
+		}
+	}
+	if cwdMember != nil && len(parsed.Scopes) == 0 {
+		scriptName, scriptArgs, rewritable := parsed.ScriptName, parsed.ScriptArgs, true
+		// dev and run hand a member package.json script to the package manager,
+		// with the member's flags, whatever the root defines under that name
+		verb := args[0]
+		folderOnly := verb == "dev" || verb == "run"
+		switch parsed.Action {
+		case cli.ActionScriptPackageJSON, cli.ActionScriptFolder, cli.ActionRun:
+		case cli.ActionDev:
+			scriptName = "dev"
+		case cli.ActionPassthrough:
+			scriptName = parsed.Command
+			scriptArgs = cli.ParseInlineArgs(parsed.Args)
+		default:
+			rewritable = false
+		}
+		if rewritable {
+			member := *cwdMember
 			resolved, _, _, resolveErr := scripting.ResolveWorkspaceScript(
-				member.Name, parsed.ScriptName, projectRoot, cfg,
+				member.Name, scriptName, projectRoot, cfg,
 			)
-			if resolveErr == nil && (resolved.Source == scripting.ScriptSourceFolder || resolved.Source == scripting.ScriptSourcePackageJSON) {
+			// an ambiguous member script must not fall back to the root's
+			if resolveErr != nil {
+				cli.Fail(logger, resolveErr, false)
+			}
+			switch {
+			case resolved.Source == scripting.ScriptSourceFolder ||
+				(resolved.Source == scripting.ScriptSourcePackageJSON && !folderOnly):
 				parsed.Action = cli.ActionWorkspaceScript
 				parsed.WorkspaceName = member.Name
+				parsed.ScriptName = scriptName
+				parsed.ScriptArgs = scriptArgs
+			case resolved.Source == scripting.ScriptSourcePackageJSON && verb == "dev":
+				parsed.Action = cli.ActionDev
+				parsed.ScriptArgs = scriptArgs
+			case resolved.Source == scripting.ScriptSourcePackageJSON:
+				parsed.Action = cli.ActionRun
+				parsed.ScriptName = scriptName
+				parsed.ScriptArgs = scriptArgs
 			}
 		}
 	}
 
 	// env does not need package manager
 	if parsed.Action == cli.ActionEnv {
-		if err := env.Command(projectRoot, cfg, logger, args[1:]); err != nil {
+		if err := env.Command(projectRoot, cfg, logger, args[1:], ci); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -317,8 +354,11 @@ func main() {
 		logger.Debug("resolved manager", "manager", managerName)
 	}
 
-	// --env flag: run env validation first, then strip from args before passing to command
-	cfg, parsed, envValidated := runEnvIfRequested(projectRoot, cfg, parsed, logger)
+	if envValidated {
+		if err := env.Run(projectRoot, cfg, logger, ci); err != nil {
+			cli.Fail(logger, err, false)
+		}
+	}
 
 	// Resolve explicit @scope filters up front so an unknown or ambiguous scope
 	// fails with a precise message regardless of TUI/root/action routing, and so
@@ -338,20 +378,31 @@ func main() {
 		}
 	}
 
-	if isRoot {
+	// a member's own script run from its directory launches like <script> @member
+	// from the root, so the member's companions and tasks apply
+	memberLaunch := parsed.Action == cli.ActionWorkspaceScript && cwdMember != nil
+
+	if isRoot || memberLaunch {
 		switch parsed.Action {
-		case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough, cli.ActionScriptFolder:
+		case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough, cli.ActionScriptFolder, cli.ActionWorkspaceScript:
 			scriptName := parsed.ScriptName
 			scriptArgs := parsed.ScriptArgs
+			delegateArgs := scriptArgs
 			switch parsed.Action {
 			case cli.ActionDev:
 				scriptName = "dev"
 			case cli.ActionPassthrough:
 				scriptName = parsed.Command
-				scriptArgs = parsed.Args
+				// a member script takes args the way a root script does; turbo and
+				// RunPassthrough keep the raw args, flags and -- included
+				scriptArgs = cli.ParseInlineArgs(parsed.Args)
+				delegateArgs = parsed.Args
 			}
 
 			filters := scopeFilters
+			if memberLaunch {
+				filters = []string{cwdMember.Name}
+			}
 
 			renderer := tui.SelectRenderer(cfg, tui.InteractiveTTY())
 
@@ -367,7 +418,7 @@ func main() {
 									"%q is both a turbo task and a folder script — declare repo.tasks.%s to have miso own it, or rename the script so turbo owns it",
 									scriptName, scriptName), false)
 							}
-							_, turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
+							turboFlags := turbo.SplitFlags(delegateArgs, renderer == tui.RendererChrome)
 							ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
 							if err != nil {
 								cli.Fail(logger, err, false)
@@ -387,7 +438,7 @@ func main() {
 			}
 			switch renderer {
 			case tui.RendererChrome:
-				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated)
+				ran, err := tui.Launch(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated, ci)
 				if err != nil {
 					cli.Fail(logger, err, false)
 				}
@@ -395,7 +446,7 @@ func main() {
 					return
 				}
 			case tui.RendererPlain:
-				ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated)
+				ran, err := tui.LaunchPlain(cfg, scriptName, projectRoot, mgr, filters, scriptArgs, envValidated, ci)
 				if err != nil {
 					cli.Fail(logger, err, false)
 				}
@@ -428,6 +479,12 @@ func main() {
 		), false)
 	}
 
+	// the member's flags apply to the package manager commands run inside it
+	pmCfg := cfg
+	if cwdMember != nil {
+		pmCfg = workspace.EffectiveConfig(cfg, *cwdMember)
+	}
+
 	// Route to command handlers
 	switch parsed.Action {
 	case cli.ActionWorkspaceScript:
@@ -441,7 +498,7 @@ func main() {
 		switch resolved.Source {
 		case scripting.ScriptSourceFolder:
 			target := workspace.Target{Kind: workspace.TargetMember, Name: parsed.WorkspaceName, Dir: workDir}
-			processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
+			processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target, ci)
 			if envErr != nil {
 				cli.Fail(logger, envErr, false)
 			}
@@ -468,7 +525,7 @@ func main() {
 		return
 	case cli.ActionScriptOverride:
 		target := workspace.Target{Kind: workspace.TargetScript, Name: parsed.ScriptName}
-		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target, ci)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
@@ -478,7 +535,7 @@ func main() {
 		return
 	case cli.ActionScriptFolder:
 		target := workspace.Target{Kind: workspace.TargetScript, Name: parsed.ScriptName}
-		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target)
+		processEnv, envErr := env.BuildTargetEnv(projectRoot, cfg, target, ci)
 		if envErr != nil {
 			cli.Fail(logger, envErr, false)
 		}
@@ -497,12 +554,12 @@ func main() {
 		}
 		return
 	case cli.ActionAdd:
-		if err := commands.Add(managerName, parsed.PackageNames, originalWorkDir, cfg); err != nil {
+		if err := commands.Add(managerName, parsed.PackageNames, originalWorkDir, pmCfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
 	case cli.ActionRemove:
-		if err := commands.Remove(managerName, parsed.PackageNames, originalWorkDir, cfg); err != nil {
+		if err := commands.Remove(managerName, parsed.PackageNames, originalWorkDir, pmCfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -512,7 +569,7 @@ func main() {
 		}
 		return
 	case cli.ActionDev:
-		if err := commands.Dev(managerName, parsed.ScriptArgs, originalWorkDir, cfg); err != nil {
+		if err := commands.Dev(managerName, parsed.ScriptArgs, originalWorkDir, pmCfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
@@ -552,49 +609,4 @@ func scopeFilterNames(scopes []string, projectRoot string, cfg config.Config, lo
 		names = append(names, member.Name)
 	}
 	return names
-}
-
-// runEnvIfRequested checks for --env in effective args (config flags + CLI args).
-// If present, runs env validation first; on success, strips --env from cfg and parsed.
-func runEnvIfRequested(projectRoot string, cfg config.Config, parsed cli.ParsedCLI, logger *log.Logger) (config.Config, cli.ParsedCLI, bool) {
-	var effective []string
-	switch parsed.Action {
-	case cli.ActionAdd:
-		effective = append(cfg.Flags["add"], parsed.PackageNames...)
-	case cli.ActionRemove:
-		effective = append(cfg.Flags["remove"], parsed.PackageNames...)
-	case cli.ActionInstall:
-		effective = cfg.Flags["install"]
-	case cli.ActionDev:
-		effective = append(cfg.Flags["dev"], parsed.ScriptArgs...)
-	case cli.ActionRun, cli.ActionRunMultiple:
-		effective = parsed.ScriptArgs
-	case cli.ActionScriptOverride, cli.ActionScriptFolder, cli.ActionScriptPackageJSON:
-		// Script overrides can have flags by script name (e.g. flags["dev"] for dev script)
-		scriptFlags := cfg.Flags[parsed.ScriptName]
-		effective = append(scriptFlags, parsed.ScriptArgs...)
-	default:
-		return cfg, parsed, false
-	}
-
-	if !env.HasEnvFlag(effective) {
-		return cfg, parsed, false
-	}
-
-	if err := env.Run(projectRoot, cfg, logger); err != nil {
-		cli.Fail(logger, err, false)
-	}
-
-	// Strip --env from cfg flags and parsed args
-	cfg = env.StripEnvFromFlags(cfg)
-	switch parsed.Action {
-	case cli.ActionAdd:
-		parsed.PackageNames = env.StripEnvFlag(parsed.PackageNames)
-	case cli.ActionRemove:
-		parsed.PackageNames = env.StripEnvFlag(parsed.PackageNames)
-	case cli.ActionDev, cli.ActionRun, cli.ActionRunMultiple,
-		cli.ActionScriptOverride, cli.ActionScriptFolder, cli.ActionScriptPackageJSON:
-		parsed.ScriptArgs = env.StripEnvFlag(parsed.ScriptArgs)
-	}
-	return cfg, parsed, true
 }

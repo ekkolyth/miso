@@ -2,30 +2,19 @@ package turbo
 
 import "strings"
 
-// misoFlags is the canonical set of flags owned by miso and not passed to turbo.
-var misoFlags = map[string]bool{
-	"--env": true,
-}
-
-// SplitFlags partitions args into miso-owned flags and turbo passthrough flags.
+// SplitFlags returns the args to pass to turbo. miso's own flags go before the
+// command, so everything here belongs to turbo.
 //
 // When chromeActive is true, --log-order (both --log-order=value and
 // --log-order value forms) is stripped from the turbo args so the TUI can
 // manage log ordering itself.
-func SplitFlags(args []string, chromeActive bool) (miso []string, turbo []string) {
-	miso = make([]string, 0)
-	turbo = make([]string, 0)
+func SplitFlags(args []string, chromeActive bool) []string {
+	turbo := make([]string, 0)
 
 	skip := false
 	for i, arg := range args {
 		if skip {
 			skip = false
-			continue
-		}
-
-		// Check if this is a miso-owned flag.
-		if misoFlags[arg] {
-			miso = append(miso, arg)
 			continue
 		}
 
@@ -48,5 +37,5 @@ func SplitFlags(args []string, chromeActive bool) (miso []string, turbo []string
 		turbo = append(turbo, arg)
 	}
 
-	return miso, turbo
+	return turbo
 }

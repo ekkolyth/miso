@@ -16,12 +16,14 @@ title: Env Validation
 miso env
 ```
 
-Or use `--env` as a flag behind other commands to validate before running:
+Or put `--env` before another command to validate before running it:
 
 ```bash
-miso dev --env
-miso build --env
+miso --env dev
+miso --env build
 ```
+
+Like `--ci`, `--env` only counts before the command. After the command it belongs to the tool, so `miso wrangler deploy --env production` passes `--env production` to wrangler.
 
 ## Quick Start
 
@@ -83,6 +85,29 @@ Two consequences worth knowing:
     ```
 
 - **Membership is the package manager's.** Members come from `package.json` workspaces or `pnpm-workspace.yaml`. A `miso.json` in a directory that isn't a workspace member isn't traversed — if you keep schemas outside the workspace set, declare them at the root instead.
+
+## CI mode
+
+A clean checkout usually has no `.env.local`. In CI mode, miso skips env files that aren't there instead of failing, so `miso format`, `miso lint`, and other commands that don't need your app's config still run.
+
+CI mode turns on automatically when the `CI` environment variable is set, which GitHub Actions, GitLab CI, and CircleCI all do. To turn it on yourself, put `--ci` before the command:
+
+```bash
+miso --ci format @web
+```
+
+`--ci` only counts before the command. Anything after the command goes to the tool, so `miso test --ci` still passes `--ci` to Jest.
+
+In CI mode:
+
+- Env files that exist are still loaded. Missing ones are skipped.
+- `miso env` and `--env` check each declared variable against the file, if it's there, and against the shell environment. A CI secret satisfies the schema without a `.env` file:
+
+```bash
+AUTH0_SECRET=${{ secrets.AUTH0_SECRET }} miso env
+```
+
+- A variable that's in neither place still fails validation.
 
 ## Auto-Discovery
 

@@ -37,7 +37,7 @@
     },
     "apps/miso": {
       "name": "@ekkolyth/miso",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "bin": {
         "miso": "miso.mjs",
         "misox": "misox.mjs",

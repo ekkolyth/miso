@@ -237,12 +237,15 @@ Add `"optional": true` to any variable config to allow it to be absent without f
 
 ## `--env` Flag
 
-Triggers env validation **before** script execution. The flag is stripped before args reach the script:
+Triggers env validation **before** the command runs. It only counts **before** the command, like `--ci`:
 
 ```bash
-miso dev --env        # validates env, then runs dev
-miso build --env      # validates env, then runs build
+miso --env dev        # validates env, then runs dev
+miso --env build      # validates env, then runs build
+miso --ci --env lint  # flags combine, in either order
 ```
+
+After the command, `--env` belongs to the tool and is passed through untouched — `miso wrangler deploy --env production` hands `--env production` to wrangler, and `miso dev --env` passes `--env` to the dev script without validating. Don't put `--env` in `flags`: those land after the command, so they reach the tool too.
 
 Run `miso env` to validate without executing any script.
 
@@ -271,7 +274,18 @@ Entry field `override`: path to that scope's override file (root/global override
 - Shell environment variables take precedence over `.env` file values
 - `.env` files only fill in variables not already set in the shell environment
 - Each target receives only its resolved scopes (global + whichever config declares that target); root variables never bleed across workspaces. See **Env Scoping** above.
-- A file that fails to load stops the run before anything spawns, with the same message `miso env` prints. That covers a parse error, an unsupported expansion, a declared `path` that doesn't exist, and a member `miso.json` that won't parse. Auto-discovered files follow the same rule. Injection never type-checks values; only `miso env` and `--env` do.
+- A file that fails to load stops the run before anything spawns, with the same message `miso env` prints. That covers a parse error, an unsupported expansion, a declared `path` that doesn't exist, and a member `miso.json` that won't parse. Auto-discovered files follow the same rule. Injection never type-checks values; only `miso env` and `--env` do. The one exception is CI mode, below.
+
+---
+
+## CI mode
+
+A clean CI checkout usually has no `.env.local`. CI mode lets commands that don't need the app's config — format, lint, typecheck — run anyway.
+
+- **On** when `CI` is set and isn't empty, `0`, or `false` (GitHub Actions, GitLab CI, and CircleCI all set it), or with a leading `--ci`: `miso --ci format @web`. Like `--env`, `--ci` only counts before the command — `miso test --ci` passes `--ci` to jest.
+- **Injection:** declared files that exist still load; a declared `path` that's missing is skipped instead of failing the run. A file that exists but won't parse still fails.
+- **Validation** (`miso env`, `miso --env <cmd>`): a missing file isn't an error. Each declared variable is checked against the file's values (if the file exists) with the shell environment on top, so a CI secret satisfies the schema: `AUTH0_SECRET=${{ secrets.AUTH0_SECRET }} miso env`. A variable in neither place still fails.
+- miso never sets `CI` for the processes it starts.
 
 ---
 
@@ -280,6 +294,7 @@ Entry field `override`: path to that scope's override file (root/global override
 - **`"required": true`** — invalid; use `"required": "all"` or `"required": ["KEY1", "KEY2"]`
 - **`"type": "enum"` without `values`** — will fail validation; `values` array is required for enum type
 - **Expecting `--env` to inject variables** — `--env` only triggers validation; injection is automatic for every script miso runs
+- **Putting `--env` after the command** — `miso dev --env` passes `--env` to the script and validates nothing; write `miso --env dev`
 - **Assuming `.env` wins over shell** — shell-exported variables always win; `.env` only fills gaps
 - **Assuming turbo/nx mode means miso never injects** — it injects for any name a `repo.tasks` entry hands it, since miso spawns those processes. Only the names the delegate actually runs are the delegate's to fill.
 - **Assuming a clean `miso env` skips member schemas** — validation traverses every workspace member in every mode; a member `miso.json` that won't parse fails the run rather than being skipped

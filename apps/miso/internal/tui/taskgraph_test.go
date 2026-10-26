@@ -49,7 +49,7 @@ func levelLabels(levels [][]TuiScriptEntry) [][]string {
 
 func assertLevels(t *testing.T, cfg config.Config, cmd, root string, want [][]string) {
 	t.Helper()
-	_, levels, _, _, ran, err := buildRun(cfg, cmd, root, nil, nil, nil, false)
+	_, levels, _, _, ran, err := buildRun(cfg, cmd, root, nil, nil, nil, false, false)
 	if err != nil {
 		t.Fatalf("buildRun: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestBuildRunDependsOnUnresolvableRootRefErrors(t *testing.T) {
 		"dev": {DependsOn: []string{"#ghost"}},
 	}}
 
-	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
 	if err == nil {
 		t.Fatal("expected error for unresolvable dependsOn, got nil")
 	}
@@ -220,7 +220,7 @@ func TestBuildRunDependsOnCycleErrors(t *testing.T) {
 		"b": {DependsOn: []string{"a"}},
 	}}
 
-	_, _, _, _, _, err := buildRun(cfg, "a", root, nil, nil, nil, false)
+	_, _, _, _, _, err := buildRun(cfg, "a", root, nil, nil, nil, false, false)
 	if err == nil || !strings.Contains(err.Error(), "circular dependency") {
 		t.Fatalf("err = %v, want circular dependency", err)
 	}
@@ -233,7 +233,7 @@ func TestBuildRunDependsOnCompanionClashErrors(t *testing.T) {
 		"dev": {Concurrent: []string{"logs"}, DependsOn: []string{"logs"}},
 	}}
 
-	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
 	if err == nil || !strings.Contains(err.Error(), "both concurrent and dependsOn") {
 		t.Fatalf("err = %v, want a concurrent/dependsOn clash", err)
 	}
@@ -304,7 +304,7 @@ func TestBuildRunScriptlessDependencyCycleErrors(t *testing.T) {
 		"b":   {DependsOn: []string{"a"}},
 	}}
 
-	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
 	if err == nil || !strings.Contains(err.Error(), "circular dependency") {
 		t.Fatalf("err = %v, want circular dependency", err)
 	}
@@ -318,7 +318,7 @@ func TestBuildRunScriptlessDependencyCompanionClashNamesDeclaringTask(t *testing
 		"setup": {DependsOn: []string{"logs"}},
 	}}
 
-	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
 	if err == nil || !strings.Contains(err.Error(), "repo.tasks.setup:") {
 		t.Fatalf("err = %v, want the clash attributed to repo.tasks.setup", err)
 	}
@@ -333,7 +333,7 @@ func TestBuildRunPinnedDependencyLookupErrorSurfaces(t *testing.T) {
 		writePackageJSONRaw(t, root, `{"scripts":{"setup":"echo setup"}}`)
 		cfg := config.Config{Scripts: "./scripts", Tasks: scriptlessSetupTasks("#setup")}
 
-		_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+		_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
 		if !errors.Is(err, scripting.ErrAmbiguousScript) {
 			t.Fatalf("err = %v, want the ambiguous setup script error", err)
 		}
@@ -344,7 +344,7 @@ func TestBuildRunPinnedDependencyLookupErrorSurfaces(t *testing.T) {
 		writeFolderScripts(t, filepath.Join(root, "apps", "ui"), "setup", "build", "dev")
 		cfg := config.Config{Scripts: "./scripts", Tasks: scriptlessSetupTasks("@ui/setup")}
 
-		_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false)
+		_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
 		if err == nil || !strings.Contains(err.Error(), "ambiguous script") {
 			t.Fatalf("err = %v, want the ambiguous setup script error", err)
 		}

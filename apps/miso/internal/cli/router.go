@@ -81,14 +81,14 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	// check built-in commands (can be overridden)
 	switch cmd {
 	case "install", "i":
-		if override, ok, err := scriptOverride(cmd, parseInlineArgs(args[1:]), root, cfg); err != nil {
+		if override, ok, err := scriptOverride(cmd, ParseInlineArgs(args[1:]), root, cfg); err != nil {
 			return ParsedCLI{}, err
 		} else if ok {
 			return override, nil
 		}
 		return ParsedCLI{Action: ActionInstall}, nil
 	case "add":
-		if override, ok, err := scriptOverride(cmd, parseInlineArgs(args[1:]), root, cfg); err != nil {
+		if override, ok, err := scriptOverride(cmd, ParseInlineArgs(args[1:]), root, cfg); err != nil {
 			return ParsedCLI{}, err
 		} else if ok {
 			return override, nil
@@ -98,7 +98,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		}
 		return ParsedCLI{Action: ActionAdd, PackageNames: args[1:]}, nil
 	case "remove", "rm":
-		if override, ok, err := scriptOverride(cmd, parseInlineArgs(args[1:]), root, cfg); err != nil {
+		if override, ok, err := scriptOverride(cmd, ParseInlineArgs(args[1:]), root, cfg); err != nil {
 			return ParsedCLI{}, err
 		} else if ok {
 			return override, nil
@@ -131,7 +131,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		return ParsedCLI{Action: ActionRun, ScriptName: script, ScriptArgs: scriptArgs, Scopes: scopes}, nil
 	case "dev":
 		scopes, rest := extractScopes(args[1:])
-		inlineArgs := parseInlineArgs(rest)
+		inlineArgs := ParseInlineArgs(rest)
 		if override, ok, err := scriptOverride("dev", inlineArgs, root, cfg); err != nil {
 			return ParsedCLI{}, err
 		} else if ok {
@@ -149,7 +149,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	case "version", "v":
 		return ParsedCLI{Action: ActionVersion}, nil
 	case "upgrade":
-		if override, ok, err := scriptOverride("upgrade", parseInlineArgs(args[1:]), root, cfg); err != nil {
+		if override, ok, err := scriptOverride("upgrade", ParseInlineArgs(args[1:]), root, cfg); err != nil {
 			return ParsedCLI{}, err
 		} else if ok {
 			return override, nil
@@ -166,7 +166,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	}
 
 	scopes, rest := extractScopes(args[1:])
-	if override, ok, err := scriptOverride(cmd, parseInlineArgs(rest), root, cfg); err != nil {
+	if override, ok, err := scriptOverride(cmd, ParseInlineArgs(rest), root, cfg); err != nil {
 		return ParsedCLI{}, err
 	} else if ok {
 		override.Scopes = scopes
@@ -175,7 +175,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 	return ParsedCLI{Action: ActionPassthrough, Command: cmd, Args: rest, Scopes: scopes}, nil
 }
 
-func parseInlineArgs(rest []string) []string {
+func ParseInlineArgs(rest []string) []string {
 	for i, a := range rest {
 		if a == "--" {
 			return rest[i+1:]

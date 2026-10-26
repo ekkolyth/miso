@@ -51,8 +51,8 @@ func filterEntriesByWorkspace(entries []TuiScriptEntry, names []string) []TuiScr
 // there. Returns (true, nil) on a clean run, (true, err) when the program
 // errored or a child exited non-zero, (false, nil) when nothing resolved so
 // the caller falls through to normal execution
-func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (bool, error) {
-	pm, levels, deps, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated)
+func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool, ci bool) (bool, error) {
+	pm, levels, deps, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated, ci)
 	if err != nil {
 		return false, err
 	}
@@ -111,8 +111,8 @@ func Launch(cfg config.Config, scriptName string, root string, mgr manager.Manag
 // the plain sibling of Launch: shares buildRun's discovery + process setup,
 // then streams "[label] line" to stdout instead of rendering bubbletea chrome.
 // Same (ran, err) contract as Launch
-func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (bool, error) {
-	pm, levels, deps, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated)
+func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool, ci bool) (bool, error) {
+	pm, levels, deps, concurrentProcs, ran, err := buildRun(cfg, scriptName, root, mgr, filterNames, scriptArgs, envValidated, ci)
 	if err != nil {
 		return false, err
 	}
@@ -144,7 +144,7 @@ func markPlain(procs []*Process) {
 // process per entry with scoped env, and pre-computes dependency levels and
 // each task's dependency labels. ran is false when no entries resolve — the
 // caller falls through to normal execution
-func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool) (*ProcessManager, [][]TuiScriptEntry, map[string][]string, []*Process, bool, error) {
+func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Manager, filterNames []string, scriptArgs []string, envValidated bool, ci bool) (*ProcessManager, [][]TuiScriptEntry, map[string][]string, []*Process, bool, error) {
 	entries, err := discoverEntries(cfg, scriptName, root, scriptArgs)
 	if err != nil {
 		return nil, nil, nil, nil, false, err
@@ -210,7 +210,7 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		if entry.WorkspaceName != "" {
 			target = workspace.Target{Kind: workspace.TargetMember, Name: entry.WorkspaceName, Dir: dir}
 		}
-		processEnv, envErr := env.BuildTargetEnv(root, cfg, target)
+		processEnv, envErr := env.BuildTargetEnv(root, cfg, target, ci)
 		if envErr != nil {
 			return nil, nil, nil, nil, false, envErr
 		}
@@ -264,12 +264,12 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 		return discoverSingleRepo(cfg, scriptName, root, scriptArgs)
 	}
 
-	fanOut, err := discoverMemberFanOut(cfg, scriptName, root, members)
+	// args go to every member's main script, like turbo run x -- args;
+	// companions never get them
+	fanOut, err := discoverMemberFanOut(cfg, scriptName, root, members, scriptArgs)
 	if err != nil {
 		return nil, err
 	}
-	// args attach only to a single unambiguous main entry — fan-out is
-	// inherently one-or-more, so scriptArgs never reaches it
 	if len(fanOut) > 0 {
 		return appendRootCompanions(cfg, scriptName, root, fanOut, members)
 	}
@@ -456,7 +456,7 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 
 // one process per member that defines the script, plus each member's own
 // concurrent companions resolved within that same member
-func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []workspace.Member) ([]TuiScriptEntry, error) {
+func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []workspace.Member, scriptArgs []string) ([]TuiScriptEntry, error) {
 	var entries []TuiScriptEntry
 	for _, member := range members {
 		effective := workspace.EffectiveConfig(cfg, member)
@@ -472,6 +472,9 @@ func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []
 		}
 		if len(memberEntries) == 0 {
 			continue
+		}
+		for i := range memberEntries {
+			memberEntries[i].Args = scriptArgs
 		}
 		entries = append(entries, memberEntries...)
 

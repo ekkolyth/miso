@@ -1,6 +1,6 @@
 # Migration
 
-Two hops are documented: **0.6.x → 0.7.0** first, then **0.5.x → 0.6.0** below. Coming from 0.5.x, read both — and note that 0.7.0 reverses one 0.6.0 rule (root-vs-fan-out precedence), flagged inline where it appears.
+Three hops are documented, newest first: **0.7.x → 0.8.0**, **0.6.x → 0.7.0**, then **0.5.x → 0.6.0**. Coming from an older version, read every hop down to yours — and note that 0.7.0 reverses one 0.6.0 rule (root-vs-fan-out precedence), flagged inline where it appears.
 
 ## Upgrade the binary
 
@@ -21,6 +21,66 @@ miso skills --add
 ```
 
 The binary and the skill aren't version-locked, so an upgraded binary can sit next to a stale skill until you re-add. Make `miso upgrade` → `miso skills --add` a habit — run the pair whenever a new miso ships to stay current.
+
+# 0.7.x → 0.8.0
+
+`--env` moves in front of the command, the same way `--ci` works. Most projects need an edit: any `miso.json` `flags` entry carrying `--env`, and any script or CI step that writes `miso <cmd> --env`. Workspace runs now get their arguments, and CI runs no longer fail on env files a clean checkout doesn't have.
+
+## Breaking changes
+
+### `--env` only counts before the command
+
+miso's flags go before the command; everything after it belongs to the tool. `--env` used to be picked out of the arguments wherever it appeared, which took the flag away from tools that have their own `--env` (wrangler, serverless) and silently skipped validation on `@scope` runs.
+
+```bash
+# before (0.7.x)
+miso dev --env
+miso build @web --env
+
+# after (0.8.0)
+miso --env dev
+miso --env build @web
+```
+
+After the command, `--env` now reaches the tool untouched: `miso wrangler deploy --env production` passes `--env production` to wrangler, and `miso dev --env` passes `--env` to the dev script **without validating**. A CI step still written the old way keeps running but stops checking env — move the flag.
+
+Remove `--env` from `flags` in `miso.json`. Configured flags land after the command, so they now reach the tool too:
+
+```jsonc
+// before (0.7.x)
+{ "flags": { "dev": ["--env"] } }
+
+// after (0.8.0) — drop the entry, and invoke validation explicitly
+{ "flags": {} }
+```
+
+```jsonc
+// package.json
+// before
+{ "scripts": { "dev": "miso dev --env" } }
+// after
+{ "scripts": { "dev": "miso --env dev" } }
+```
+
+In turbo/nx repos, a trailing `--env` used to be held back from turbo. It's now passed to turbo like any other flag.
+
+### Arguments reach every workspace member
+
+Arguments on a fan-out or `@scope` run used to be dropped — `miso test @web --watch` ran `test` with no arguments. They now reach every member's script that runs, and only the scoped members under `@scope`. `--` is handled the same way as for a root script. Concurrent companions and `dependsOn` tasks still run without arguments.
+
+Audit root `package.json` scripts and CI steps that pass arguments to a fan-out name. Those arguments used to be ignored and now take effect in every member.
+
+## Behavior changes (no edit required)
+
+- **CI mode.** When `CI` is set (or with a leading `--ci`), a declared env file that doesn't exist is skipped instead of failing the run, and `miso env` / `miso --env <cmd>` check declared variables against the shell environment too. A CI job that relied on the missing-file error to catch an unprovisioned env now passes — declare `variables` so validation catches what's actually missing. See `miso-env`.
+- **`--env` validates on every run it precedes.** `@scope` runs, commands forwarded to the package manager, and runs from inside a member directory used to skip validation silently. A run that was passing can now fail on variables that were never being checked.
+
+## Repository audit checklist
+
+1. Move every `--env` in front of the command — package.json scripts, CI workflows, docs.
+2. Remove `--env` from `flags` in every `miso.json`, root and member.
+3. Check fan-out and `@scope` invocations that pass arguments.
+4. Run `CI=true miso --env <cmd>` once, the way CI will.
 
 # 0.6.x → 0.7.0
 

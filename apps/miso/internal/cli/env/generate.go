@@ -252,7 +252,7 @@ func validateEntryValues(values map[string]string, entry *config.EnvEntry) []err
 }
 
 // miso env entry point: parse flags, then generate or validate
-func Command(projectRoot string, cfg config.Config, logger *log.Logger, args []string) error {
+func Command(projectRoot string, cfg config.Config, logger *log.Logger, args []string, ci bool) error {
 	generate, opts, err := ParseGenerateFlags(args)
 	if err != nil {
 		return err
@@ -260,7 +260,7 @@ func Command(projectRoot string, cfg config.Config, logger *log.Logger, args []s
 	if generate {
 		return Generate(projectRoot, cfg, logger, opts)
 	}
-	return Run(projectRoot, cfg, logger)
+	return Run(projectRoot, cfg, logger, ci)
 }
 
 // one .env.generated per destination dir — root-level scopes (global + any

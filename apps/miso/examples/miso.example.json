@@ -8,8 +8,7 @@
 		}
 	},
 	"flags": {
-		"install": ["--frozen-lockfile"],
-		"dev": ["--env"]
+		"install": ["--frozen-lockfile"]
 	},
 	"env": [
 		{

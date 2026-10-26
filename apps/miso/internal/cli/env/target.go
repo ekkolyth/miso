@@ -85,7 +85,7 @@ func plural(count int, noun string) string {
 }
 
 // a file that won't load fails the run, labelled as `miso env` labels it
-func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Target) ([]string, error) {
+func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Target, ci bool) ([]string, error) {
 	entries, err := targetEntries(projectRoot, cfg, target)
 	if err != nil {
 		return nil, err
@@ -126,6 +126,10 @@ func BuildTargetEnv(projectRoot string, cfg config.Config, target workspace.Targ
 		}
 		var fileVars map[string]string
 		err := checkEnvFile(abs)
+		// a clean CI checkout has no local env files, and the shell may still carry the values
+		if ci && errors.Is(err, errEnvFileNotFound) {
+			continue
+		}
 		if err == nil {
 			fileVars, err = loadEnvFile(abs)
 		}

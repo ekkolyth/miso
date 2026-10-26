@@ -98,15 +98,15 @@ An explicit `@scope` is always honored or Miso fails — if it doesn't resolve t
 
 ### From Inside a Workspace
 
-Miso resolves scripts against the nearest `miso.json`, walking up from your current directory. So when a workspace carries its own [`miso.json`](#per-workspace-misojson), running Miso from inside it targets that member — no `@scope` needed:
+Running Miso from inside a workspace member targets that member, whether or not it has its own [`miso.json`](#per-workspace-misojson). No `@scope` needed:
 
 ```bash
-cd apps/api          # apps/api has its own miso.json
+cd apps/api
 miso build           # runs apps/api/scripts/build.sh
 miso deploy          # runs apps/api/scripts/deploy.sh
 ```
 
-A member without its own `miso.json` resolves against the repo root instead — target it from the root with `miso build @api`.
+Miso looks for the script in the member first, then at the root, then hands the command to your package manager. `miso dev` and `miso run <script>` follow the same order.
 
 ## Root Is the Orchestrator
 

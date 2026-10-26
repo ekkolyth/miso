@@ -43,9 +43,12 @@ func run(t *testing.T, workdir string, args ...string) (string, int) {
 	return runEnv(t, workdir, nil, args...)
 }
 
-// like run, with environ as the process env (nil inherits the test's)
+// like run, with environ as the process env (nil inherits the test's, minus CI)
 func runEnv(t *testing.T, workdir string, environ []string, args ...string) (string, int) {
 	t.Helper()
+	if environ == nil {
+		environ = environWithout(nil)
+	}
 	cmd := exec.Command(misoBin, args...)
 	cmd.Dir = workdir
 	cmd.Env = environ
@@ -269,12 +272,13 @@ func TestE2E_SimpleModeDependsOnOnlyTask(t *testing.T) {
 	}
 }
 
-// the test's env minus the named keys, plus extra
+// the test's env minus the named keys, plus extra. CI is always dropped so a
+// CI runner doesn't switch miso into CI mode — tests that want it pass it in extra
 func environWithout(keys []string, extra ...string) []string {
 	var environ []string
 	for _, kv := range os.Environ() {
 		key, _, _ := strings.Cut(kv, "=")
-		if !slices.Contains(keys, key) {
+		if key != "CI" && !slices.Contains(keys, key) {
 			environ = append(environ, kv)
 		}
 	}
@@ -350,10 +354,355 @@ func assertSameEnvOutput(t *testing.T, dir string, commands ...[]string) {
 }
 
 func TestE2E_EnvFailuresRenderIdentically(t *testing.T) {
-	assertSameEnvOutput(t, "testdata/env-render-full", []string{"env"}, []string{"show", "--env"})
+	assertSameEnvOutput(t, "testdata/env-render-full", []string{"env"}, []string{"--env", "show"})
 }
 
 // without --env nothing is validated, so a plain run matches on load failures only
 func TestE2E_LoadFailuresRenderIdenticallyWithoutEnvFlag(t *testing.T) {
-	assertSameEnvOutput(t, "testdata/env-render-load", []string{"env"}, []string{"show", "--env"}, []string{"show"})
+	assertSameEnvOutput(t, "testdata/env-render-load", []string{"env"}, []string{"--env", "show"}, []string{"show"})
+}
+
+// a clean checkout: member web declares .env.local, which isn't there
+func writeCleanCheckoutFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true,"workspaces":["apps/*"]}`)
+	writeFixtureFile(t, filepath.Join(root, "package-lock.json"), `{"name":"fx","lockfileVersion":3,"packages":{}}`)
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{}`)
+	web := filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(web, "package.json"), `{"name":"web","private":true}`)
+	writeFixtureFile(t, filepath.Join(web, "miso.json"), `{"env":[{"path":".env.local","variables":{"AUTH0_SECRET":"string"}}]}`)
+	writeFixtureFile(t, filepath.Join(web, "scripts", "format.sh"), "#!/bin/sh\necho formatter ran\n")
+	writeFixtureFile(t, filepath.Join(root, "scripts", "show.sh"), "#!/bin/sh\necho \"args: $*\"\n")
+	return root
+}
+
+func TestE2E_CleanCheckoutFailsOutsideCI(t *testing.T) {
+	out, code := run(t, writeCleanCheckoutFixture(t), "format", "@web")
+	if code == 0 {
+		t.Fatalf("format exit = 0, want non-zero (out: %s)", out)
+	}
+	if !strings.Contains(out, "env file not found") || strings.Contains(out, "formatter ran") {
+		t.Errorf("format output %q, want env file not found before the formatter starts", out)
+	}
+}
+
+func TestE2E_CleanCheckoutRunsWithCIFlag(t *testing.T) {
+	out, code := run(t, writeCleanCheckoutFixture(t), "--ci", "format", "@web")
+	if code != 0 || !strings.Contains(out, "formatter ran") {
+		t.Fatalf("--ci format exit = %d, out %q; want 0 and the formatter's output", code, out)
+	}
+}
+
+func TestE2E_CleanCheckoutRunsWithCIEnv(t *testing.T) {
+	out, code := runEnv(t, writeCleanCheckoutFixture(t), environWithout(nil, "CI=true"), "format", "@web")
+	if code != 0 || !strings.Contains(out, "formatter ran") {
+		t.Fatalf("CI=true format exit = %d, out %q; want 0 and the formatter's output", code, out)
+	}
+}
+
+func TestE2E_CIEnvValidatesShellVariables(t *testing.T) {
+	root := writeCleanCheckoutFixture(t)
+
+	environ := environWithout([]string{"AUTH0_SECRET"}, "CI=true", "AUTH0_SECRET=x")
+	if out, code := runEnv(t, root, environ, "env"); code != 0 {
+		t.Errorf("env with the secret in the shell exit = %d, want 0 (out: %s)", code, out)
+	}
+
+	environ = environWithout([]string{"AUTH0_SECRET"}, "CI=true")
+	out, code := runEnv(t, root, environ, "env")
+	if code == 0 {
+		t.Fatalf("env without the secret exit = 0, want non-zero (out: %s)", out)
+	}
+	if !strings.Contains(out, "AUTH0_SECRET:") || !strings.Contains(out, "missing required variable") {
+		t.Errorf("env output %q, want AUTH0_SECRET reported missing", out)
+	}
+}
+
+func TestE2E_CIFlagAfterCommandPassesThrough(t *testing.T) {
+	out, code := run(t, writeCleanCheckoutFixture(t), "--ci", "show", "--ci")
+	if code != 0 || !strings.Contains(out, "args: --ci") {
+		t.Fatalf("--ci show --ci exit = %d, out %q; want the trailing --ci passed to the script", code, out)
+	}
+}
+
+func TestE2E_CIEnvFlagValidatesShellVariables(t *testing.T) {
+	root := writeCleanCheckoutFixture(t)
+
+	environ := environWithout([]string{"AUTH0_SECRET"}, "CI=true", "AUTH0_SECRET=x")
+	out, code := runEnv(t, root, environ, "--env", "show")
+	if code != 0 || !strings.Contains(out, "args:") {
+		t.Errorf("--env show with the secret in the shell exit = %d, out %q; want 0 and the script's output", code, out)
+	}
+
+	environ = environWithout([]string{"AUTH0_SECRET"}, "CI=true")
+	out, code = runEnv(t, root, environ, "--env", "show")
+	if code == 0 || strings.Contains(out, "args:") {
+		t.Fatalf("--env show without the secret exit = %d, out %q; want non-zero before the script starts", code, out)
+	}
+	if !strings.Contains(out, "AUTH0_SECRET:") || !strings.Contains(out, "missing required variable") {
+		t.Errorf("--env show output %q, want AUTH0_SECRET reported missing", out)
+	}
+}
+
+// members web and api each define show; web declares AUTH0_SECRET, which its
+// .env.local doesn't have. memberConfig false moves web's schema to the root
+func writeScopedFixture(t *testing.T, memberConfig bool) string {
+	t.Helper()
+	root := t.TempDir()
+	rootPackage := `{"name":"fx","private":true,"workspaces":["apps/*"]}`
+	rootConfig := `{}`
+	if !memberConfig {
+		rootPackage = `{"name":"fx","private":true,"workspaces":["apps/*"],"scripts":{"show":"echo root-pkg"}}`
+		rootConfig = `{"env":[{"scope":"web","path":"apps/web/.env.local","variables":{"AUTH0_SECRET":"string"}}]}`
+	}
+	writeFixtureFile(t, filepath.Join(root, "package.json"), rootPackage)
+	writeFixtureFile(t, filepath.Join(root, "package-lock.json"), `{"name":"fx","lockfileVersion":3,"packages":{}}`)
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), rootConfig)
+	for _, member := range []string{"web", "api"} {
+		dir := filepath.Join(root, "apps", member)
+		writeFixtureFile(t, filepath.Join(dir, "package.json"), `{"name":"`+member+`","private":true}`)
+		writeFixtureFile(t, filepath.Join(dir, "scripts", "show.sh"), "#!/bin/sh\necho \""+member+" args: $*\"\n")
+	}
+	if memberConfig {
+		writeFixtureFile(t, filepath.Join(root, "apps", "web", "miso.json"), `{"env":[{"path":".env.local","variables":{"AUTH0_SECRET":"string"}}]}`)
+	}
+	writeFixtureFile(t, filepath.Join(root, "apps", "web", ".env.local"), "OTHER=1\n")
+	return root
+}
+
+func assertMissingSecret(t *testing.T, args []string, out string, code int) {
+	t.Helper()
+	if code == 0 {
+		t.Errorf("%v exit = 0, want non-zero (out: %s)", args, out)
+	}
+	if !strings.Contains(out, "AUTH0_SECRET:") || !strings.Contains(out, "missing required variable") {
+		t.Errorf("%v output %q, want AUTH0_SECRET reported missing", args, out)
+	}
+}
+
+func TestE2E_ScopedEnvFlagValidates(t *testing.T) {
+	args := []string{"--env", "show", "@web"}
+	environ := environWithout([]string{"AUTH0_SECRET"})
+	out, code := runEnv(t, writeScopedFixture(t, true), environ, args...)
+	assertMissingSecret(t, args, out, code)
+	if strings.Contains(out, "web args:") {
+		t.Errorf("%v output %q: the script ran despite the failed validation", args, out)
+	}
+}
+
+func TestE2E_PassthroughEnvFlagValidates(t *testing.T) {
+	args := []string{"--env", "outdated"}
+	environ := environWithout([]string{"AUTH0_SECRET"})
+	out, code := runEnv(t, writeScopedFixture(t, true), environ, args...)
+	assertMissingSecret(t, args, out, code)
+	if strings.Contains(out, "forwarding to") {
+		t.Errorf("%v output %q: forwarded to the package manager despite the failed validation", args, out)
+	}
+}
+
+func TestE2E_WorkspaceScriptEnvFlagValidates(t *testing.T) {
+	args := []string{"--env", "show"}
+	environ := environWithout([]string{"AUTH0_SECRET"})
+	out, code := runEnv(t, filepath.Join(writeScopedFixture(t, false), "apps", "web"), environ, args...)
+	assertMissingSecret(t, args, out, code)
+	if strings.Contains(out, "web args:") {
+		t.Errorf("%v output %q: the script ran despite the failed validation", args, out)
+	}
+}
+
+func TestE2E_ScopedRunPassesArgs(t *testing.T) {
+	root := writeScopedFixture(t, true)
+
+	out, code := run(t, root, "show", "@web", "foo")
+	if code != 0 || !strings.Contains(out, "web args: foo") || strings.Contains(out, "api args:") {
+		t.Errorf("show @web foo exit = %d, out %q; want only web, with foo", code, out)
+	}
+
+	out, code = run(t, root, "show", "foo")
+	if code != 0 || !strings.Contains(out, "web args: foo") || !strings.Contains(out, "api args: foo") {
+		t.Errorf("show foo exit = %d, out %q; want both members with foo", code, out)
+	}
+}
+
+func TestE2E_ScopedRunDoubleDashArgs(t *testing.T) {
+	out, code := run(t, writeScopedFixture(t, true), "show", "@web", "--", "foo")
+	if code != 0 || !strings.Contains(out, "web args: foo") {
+		t.Errorf("show @web -- foo exit = %d, out %q; want web args: foo", code, out)
+	}
+}
+
+func TestE2E_LeadingEnvFlagValidatesThenRuns(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "apps", "web", ".env.local"), "AUTH0_SECRET=x\n")
+	out, code := run(t, root, "--env", "show", "@web", "foo")
+	if code != 0 || !strings.Contains(out, "web args: foo") || strings.Contains(out, "--env") {
+		t.Errorf("--env show @web foo exit = %d, out %q; want web args: foo", code, out)
+	}
+}
+
+// after the command --env belongs to the script, like --ci
+func TestE2E_TrailingEnvFlagReachesScript(t *testing.T) {
+	out, code := run(t, writeScopedFixture(t, true), "show", "@web", "--env", "foo")
+	if code != 0 || !strings.Contains(out, "web args: --env foo") {
+		t.Errorf("show @web --env foo exit = %d, out %q; want the script to get --env foo unvalidated", code, out)
+	}
+
+	out, code = run(t, filepath.Join(writeScopedFixture(t, false), "apps", "web"), "show", "--env", "foo")
+	if code != 0 || !strings.Contains(out, "web args: --env foo") {
+		t.Errorf("show --env foo from apps/web exit = %d, out %q; want the script to get --env foo unvalidated", code, out)
+	}
+}
+
+func TestE2E_TrailingEnvFlagReachesTool(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "node_modules", ".bin", "tool"), "#!/bin/sh\necho \"tool args: $*\"\n")
+	out, code := run(t, root, "exec", "--", "tool", "deploy", "--env", "staging")
+	if code != 0 || !strings.Contains(out, "tool args: deploy --env staging") {
+		t.Errorf("exec -- tool deploy --env staging exit = %d, out %q; want --env staging passed to the tool", code, out)
+	}
+}
+
+func TestE2E_MemberDirWithConfigUsesWorkspaceRoot(t *testing.T) {
+	args := []string{"env"}
+	environ := environWithout([]string{"AUTH0_SECRET"})
+	out, code := runEnv(t, filepath.Join(writeScopedFixture(t, true), "apps", "web"), environ, args...)
+	if strings.Contains(out, "every root entry needs a scope") {
+		t.Fatalf("env from apps/web read the member config as the root: %q", out)
+	}
+	assertMissingSecret(t, args, out, code)
+}
+
+func TestE2E_MemberDirRunsMemberFolderScript(t *testing.T) {
+	out, code := run(t, filepath.Join(writeScopedFixture(t, true), "apps", "web"), "show", "foo")
+	if code != 0 || !strings.Contains(out, "web args: foo") || strings.Contains(out, "api args:") {
+		t.Errorf("show foo from apps/web exit = %d, out %q; want only web, with foo", code, out)
+	}
+}
+
+func TestE2E_MemberDirWithoutConfigRunsMemberScript(t *testing.T) {
+	out, code := run(t, filepath.Join(writeScopedFixture(t, true), "apps", "api"), "show")
+	if code != 0 || !strings.Contains(out, "api args: ") || strings.Contains(out, "web args:") {
+		t.Errorf("show from apps/api exit = %d, out %q; want only api", code, out)
+	}
+}
+
+func TestE2E_MemberDirScriptWinsOverRoot(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "scripts", "show.sh"), "#!/bin/sh\necho \"root args: $*\"\n")
+	out, code := run(t, filepath.Join(root, "apps", "web"), "show")
+	if code != 0 || !strings.Contains(out, "web args:") || strings.Contains(out, "root args:") {
+		t.Errorf("show from apps/web exit = %d, out %q; want the member's script, not the root's", code, out)
+	}
+}
+
+func TestE2E_MemberDirFallsBackToRootScript(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "scripts", "hello.sh"), "#!/bin/sh\necho \"root hello\"\n")
+	out, code := run(t, filepath.Join(root, "apps", "web"), "hello")
+	if code != 0 || !strings.Contains(out, "root hello") {
+		t.Errorf("hello from apps/web exit = %d, out %q; want the root script", code, out)
+	}
+}
+
+func TestE2E_MemberDirDevRunsMemberFolderScript(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "apps", "web", "scripts", "dev.sh"), "#!/bin/sh\necho \"web dev: $*\"\n")
+	out, code := run(t, filepath.Join(root, "apps", "web"), "dev", "foo")
+	if code != 0 || !strings.Contains(out, "web dev: foo") {
+		t.Errorf("dev foo from apps/web exit = %d, out %q; want web dev: foo", code, out)
+	}
+}
+
+func TestE2E_MemberDirRunRunsMemberFolderScript(t *testing.T) {
+	out, code := run(t, filepath.Join(writeScopedFixture(t, true), "apps", "web"), "run", "show", "--", "foo")
+	if code != 0 || !strings.Contains(out, "web args: foo") {
+		t.Errorf("run show -- foo from apps/web exit = %d, out %q; want web args: foo", code, out)
+	}
+}
+
+func TestE2E_MemberDirEnvFlagValidates(t *testing.T) {
+	args := []string{"--env", "show"}
+	environ := environWithout([]string{"AUTH0_SECRET"})
+	out, code := runEnv(t, filepath.Join(writeScopedFixture(t, true), "apps", "web"), environ, args...)
+	assertMissingSecret(t, args, out, code)
+	if strings.Contains(out, "web args:") {
+		t.Errorf("%v output %q: the script ran despite the failed validation", args, out)
+	}
+}
+
+// a member package.json dev still runs through the package manager with the configured dev flags
+func TestE2E_MemberDirPackageJSONDevKeepsFlags(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{"flags":{"dev":["--from-flags"]}}`)
+	writeFixtureFile(t, filepath.Join(root, "apps", "api", "package.json"), `{"name":"api","private":true,"scripts":{"dev":"echo api-dev"}}`)
+	out, code := run(t, filepath.Join(root, "apps", "api"), "dev")
+	if code != 0 || !strings.Contains(out, "api-dev --from-flags") {
+		t.Errorf("dev from apps/api exit = %d, out %q; want the dev flags passed", code, out)
+	}
+}
+
+// an ambiguous member script fails like an ambiguous root one, never falling back to the root
+func TestE2E_MemberDirAmbiguousScriptFails(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	writeFixtureFile(t, filepath.Join(root, "apps", "web", "scripts", "show.ts"), "console.log('web ts')\n")
+	writeFixtureFile(t, filepath.Join(root, "scripts", "show.sh"), "#!/bin/sh\necho \"root args: $*\"\n")
+	out, code := run(t, filepath.Join(root, "apps", "web"), "show")
+	if code == 0 || !strings.Contains(out, "multiple scripts") || strings.Contains(out, "root args:") {
+		t.Errorf("show from apps/web exit = %d, out %q; want the ambiguity reported", code, out)
+	}
+}
+
+// inside a member, dev runs like dev @web from the root: the member's companions start too
+func TestE2E_MemberDirDevStartsMemberCompanions(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	web := filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(web, "miso.json"), `{"repo":{"tasks":{"dev":{"concurrent":["companion"]}}}}`)
+	writeFixtureFile(t, filepath.Join(web, "scripts", "dev.sh"), "#!/bin/sh\necho \"web dev: $*\"\n")
+	writeFixtureFile(t, filepath.Join(web, "scripts", "companion.sh"), "#!/bin/sh\necho \"web companion\"\n")
+	out, code := run(t, web, "dev", "foo")
+	if code != 0 || !strings.Contains(out, "web dev: foo") || !strings.Contains(out, "web companion") {
+		t.Errorf("dev foo from apps/web exit = %d, out %q; want web dev: foo and the companion", code, out)
+	}
+}
+
+func TestE2E_MemberDirDevUsesMemberFlags(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	web := filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{"flags":{"dev":["--from-root"]}}`)
+	writeFixtureFile(t, filepath.Join(web, "miso.json"), `{"flags":{"dev":["--from-member"]}}`)
+	writeFixtureFile(t, filepath.Join(web, "package.json"), `{"name":"web","private":true,"scripts":{"dev":"echo web-dev"}}`)
+	out, code := run(t, web, "dev")
+	if code != 0 || !strings.Contains(out, "web-dev --from-member") {
+		t.Errorf("dev from apps/web exit = %d, out %q; want the member's dev flags", code, out)
+	}
+}
+
+// a root package.json dev (often "turbo dev") must not pull a member's package.json dev onto the launch path
+func TestE2E_MemberDirPackageJSONDevKeepsFlagsWithRootDev(t *testing.T) {
+	root := writeScopedFixture(t, true)
+	web := filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true,"workspaces":["apps/*"],"scripts":{"dev":"echo root-dev"}}`)
+	writeFixtureFile(t, filepath.Join(web, "miso.json"), `{"flags":{"dev":["--from-member"]}}`)
+	writeFixtureFile(t, filepath.Join(web, "package.json"), `{"name":"web","private":true,"scripts":{"dev":"echo web-dev"}}`)
+	out, code := run(t, web, "dev")
+	if code != 0 || !strings.Contains(out, "web-dev --from-member") || strings.Contains(out, "root-dev") {
+		t.Errorf("dev from apps/web exit = %d, out %q; want the member's dev with its flags", code, out)
+	}
+}
+
+// a turbo task with no root script keeps its turbo flags and the -- before the task's args
+func TestE2E_DelegatedPassthroughKeepsTurboArgs(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{"repo":"turbo"}`)
+	writeFixtureFile(t, filepath.Join(root, "turbo.json"), `{"tasks":{"build":{}}}`)
+	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true}`)
+	writeFixtureFile(t, filepath.Join(root, "package-lock.json"), `{"name":"fx","lockfileVersion":3,"packages":{}}`)
+	bin := filepath.Join(root, "bin")
+	writeFixtureFile(t, filepath.Join(bin, "turbo"), "#!/bin/sh\necho \"turbo args: $*\"\n")
+	environ := environWithout([]string{"PATH"}, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, code := runEnv(t, root, environ, "build", "--filter=web", "--", "--watch")
+	if code != 0 || !strings.Contains(out, "--filter=web -- --watch") {
+		t.Errorf("build --filter=web -- --watch exit = %d, out %q; want turbo to get --filter=web -- --watch", code, out)
+	}
 }
