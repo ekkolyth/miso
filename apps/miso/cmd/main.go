@@ -387,13 +387,16 @@ func main() {
 		case cli.ActionDev, cli.ActionRun, cli.ActionScriptPackageJSON, cli.ActionPassthrough, cli.ActionScriptFolder, cli.ActionWorkspaceScript:
 			scriptName := parsed.ScriptName
 			scriptArgs := parsed.ScriptArgs
+			delegateArgs := scriptArgs
 			switch parsed.Action {
 			case cli.ActionDev:
 				scriptName = "dev"
 			case cli.ActionPassthrough:
 				scriptName = parsed.Command
-				// a member script takes args the way a root script does; RunPassthrough keeps the raw --
+				// a member script takes args the way a root script does; turbo and
+				// RunPassthrough keep the raw args, flags and -- included
 				scriptArgs = cli.ParseInlineArgs(parsed.Args)
+				delegateArgs = parsed.Args
 			}
 
 			filters := scopeFilters
@@ -415,7 +418,7 @@ func main() {
 									"%q is both a turbo task and a folder script — declare repo.tasks.%s to have miso own it, or rename the script so turbo owns it",
 									scriptName, scriptName), false)
 							}
-							turboFlags := turbo.SplitFlags(scriptArgs, renderer == tui.RendererChrome)
+							turboFlags := turbo.SplitFlags(delegateArgs, renderer == tui.RendererChrome)
 							ran, err := tui.DelegateLaunch(cfg, scriptName, projectRoot, turboFlags, filters)
 							if err != nil {
 								cli.Fail(logger, err, false)

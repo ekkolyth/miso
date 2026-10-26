@@ -690,3 +690,19 @@ func TestE2E_MemberDirPackageJSONDevKeepsFlagsWithRootDev(t *testing.T) {
 		t.Errorf("dev from apps/web exit = %d, out %q; want the member's dev with its flags", code, out)
 	}
 }
+
+// a turbo task with no root script keeps its turbo flags and the -- before the task's args
+func TestE2E_DelegatedPassthroughKeepsTurboArgs(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{"repo":"turbo"}`)
+	writeFixtureFile(t, filepath.Join(root, "turbo.json"), `{"tasks":{"build":{}}}`)
+	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true}`)
+	writeFixtureFile(t, filepath.Join(root, "package-lock.json"), `{"name":"fx","lockfileVersion":3,"packages":{}}`)
+	bin := filepath.Join(root, "bin")
+	writeFixtureFile(t, filepath.Join(bin, "turbo"), "#!/bin/sh\necho \"turbo args: $*\"\n")
+	environ := environWithout([]string{"PATH"}, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, code := runEnv(t, root, environ, "build", "--filter=web", "--", "--watch")
+	if code != 0 || !strings.Contains(out, "--filter=web -- --watch") {
+		t.Errorf("build --filter=web -- --watch exit = %d, out %q; want turbo to get --filter=web -- --watch", code, out)
+	}
+}
