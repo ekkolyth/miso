@@ -4,4 +4,7 @@ var (
 	BuildSkillsArgsForTest         = buildSkillsArgs
 	HasNpmOverridesConflictForTest = hasNpmOverridesConflict
 	ResolveSkillsRunnerForTest     = resolveSkillsRunner
+	WriteConfigsForTest            = writeConfigs
+	FallbackTitleForTest           = fallbackTitle
+	AppLineForTest                 = appLine
 )
