@@ -65,7 +65,10 @@ func ResolveWorkspaceScript(workspaceName string, scriptName string, root string
 		}, workspaceDir, effective.Shell, nil
 	}
 
-	// 2. fall back to workspace package.json scripts
+	// 2. fall back to workspace package.json scripts; a standalone member has none
+	if effective.StandaloneMode() {
+		return ResolvedScript{Source: ScriptSourceNone}, workspaceDir, effective.Shell, nil
+	}
 	pkgScripts, err := ReadPackageJSONScripts(workspaceDir)
 	if err != nil {
 		return ResolvedScript{}, "", "", fmt.Errorf("read workspace package.json scripts: %w", err)

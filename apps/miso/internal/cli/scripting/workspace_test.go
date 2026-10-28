@@ -137,3 +137,30 @@ func TestResolveWorkspaceScriptByPackageName(t *testing.T) {
 		t.Errorf("Source = %v, want ScriptSourcePackageJSON", resolved.Source)
 	}
 }
+
+func TestResolveWorkspaceScriptStandaloneMemberSkipsPackageJSON(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"miso.json":             `{}`,
+		"package.json":          `{"workspaces":["apps/*"]}`,
+		"apps/api/miso.json":    `{"packageManager":false}`,
+		"apps/api/package.json": `{"name":"api","scripts":{"seed":"x"}}`,
+	}
+	for rel, content := range files {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resolved, _, _, err := ResolveWorkspaceScript("api", "seed", root, config.Config{Scripts: "./scripts"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.Source != ScriptSourceNone {
+		t.Errorf("source = %v, want ScriptSourceNone: a standalone member ignores package.json", resolved.Source)
+	}
+}

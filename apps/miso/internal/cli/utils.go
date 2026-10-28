@@ -86,8 +86,8 @@ func FindProjectRoot(startPath string) (string, error) {
 // root, but one within two levels with its own miso.json is claimed by the member
 func enclosingWorkspaceRoot(dir string) string {
 	for ancestor := filepath.Dir(dir); ancestor != filepath.Dir(ancestor); ancestor = filepath.Dir(ancestor) {
-		// standalone mode has no workspace discovery, so it never claims a member
-		if ancestorCfg, err := config.Load(ancestor); err != nil || ancestorCfg.StandaloneMode() {
+		// members are found whatever the ancestor's mode, so a standalone ancestor claims them too
+		if _, err := config.Load(ancestor); err != nil {
 			continue
 		}
 		members, err := workspace.DiscoverMembers(ancestor, config.Config{})

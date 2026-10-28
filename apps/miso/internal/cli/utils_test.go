@@ -137,12 +137,12 @@ func TestFindProjectRoot_ProjectNestedInsideMemberStaysRoot(t *testing.T) {
 	assertSameDir(t, got, nested)
 }
 
-// standalone mode turns workspace discovery off, so the root doesn't claim the member
-func TestFindProjectRoot_StandaloneModeRootDoesNotClaimMember(t *testing.T) {
+// a standalone root still finds members, so it claims the member
+func TestFindProjectRoot_StandaloneRootClaimsMember(t *testing.T) {
 	root := writeMemberConfigLayout(t, true, true)
 	writeFile(t, filepath.Join(root, config.FileName), `{"packageManager":false}`)
 	member := filepath.Join(root, "apps", "web")
 	got, err := FindProjectRoot(member)
 	testutil.NoError(t, err)
-	assertSameDir(t, got, member)
+	assertSameDir(t, got, root)
 }

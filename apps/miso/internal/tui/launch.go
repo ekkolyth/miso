@@ -248,16 +248,12 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 
 // members ≥ 1: fan out over members (root is the orchestrator, never a
 // fan-out member); root script is the body only when no member defines the
-// name. Root task companions attach exactly once either way. Zero members /
-// standalone mode: root script is the body, as always.
+// name. Root task companions attach exactly once either way. Zero members:
+// root script is the body, as always. Members are found whatever the root's mode.
 func discoverEntries(cfg config.Config, scriptName string, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
-	var members []workspace.Member
-	if !cfg.StandaloneMode() {
-		var err error
-		members, err = workspace.DiscoverMembersCached(root, cfg)
-		if err != nil {
-			return nil, fmt.Errorf("discover members: %w", err)
-		}
+	members, err := workspace.DiscoverMembersCached(root, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("discover members: %w", err)
 	}
 
 	if len(members) == 0 {
@@ -275,7 +271,12 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 	}
 
 	// no member defines the name — root script as the body (single pane)
-	rootResolved, err := ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+	var rootResolved []TuiScriptEntry
+	if cfg.StandaloneMode() {
+		rootResolved, err = ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
+	} else {
+		rootResolved, err = ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +374,7 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 		}
 		member := resolved[0]
 		effective := workspace.EffectiveConfig(cfg, member)
-		memberInfo := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
+		memberInfo := newWorkspaceInfo(member, effective)
 		scopeDesc = memberScopeDesc(member.Name, effective.Scripts)
 		entries, err = DiscoverTuiScripts(script, []WorkspaceInfo{memberInfo}, cfg.Scripts)
 	case local == nil:
@@ -460,12 +461,7 @@ func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []
 	var entries []TuiScriptEntry
 	for _, member := range members {
 		effective := workspace.EffectiveConfig(cfg, member)
-		ws := WorkspaceInfo{
-			Name:          member.Name,
-			Dir:           member.Dir,
-			ScriptsFolder: effective.Scripts,
-			Shell:         effective.Shell,
-		}
+		ws := newWorkspaceInfo(member, effective)
 		memberEntries, err := DiscoverTuiScripts(scriptName, []WorkspaceInfo{ws}, cfg.Scripts)
 		if err != nil {
 			return nil, err

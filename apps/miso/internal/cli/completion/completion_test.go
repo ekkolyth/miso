@@ -3,6 +3,7 @@ package completion
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -60,7 +61,7 @@ func TestGetCandidates_MemberDirIncludesMemberScripts(t *testing.T) {
 	}
 }
 
-func TestGetCandidates_StandaloneModeSkipsMemberScripts(t *testing.T) {
+func TestGetCandidates_StandaloneRootOffersMemberScripts(t *testing.T) {
 	root := t.TempDir()
 	files := map[string]string{
 		"package.json":                 `{"name":"fx","private":true,"workspaces":["apps/*"]}`,
@@ -77,9 +78,7 @@ func TestGetCandidates_StandaloneModeSkipsMemberScripts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, c := range getCandidates("miso", "", filepath.Join(root, "apps", "web")) {
-		if c == "web-show" {
-			t.Error("standalone mode has no workspaces, so completion must not offer member scripts")
-		}
+	if !slices.Contains(getCandidates("miso", "", filepath.Join(root, "apps", "web")), "web-show") {
+		t.Error("a standalone root still finds members, so completion must offer member scripts")
 	}
 }

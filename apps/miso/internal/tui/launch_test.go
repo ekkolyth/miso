@@ -942,3 +942,79 @@ func listFiles(t *testing.T, dir string) []string {
 	}
 	return files
 }
+
+func writeTestFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestDiscoverEntriesStandaloneRootFansOutToMembers(t *testing.T) {
+	root := t.TempDir()
+	writeTestFiles(t, root, map[string]string{
+		"web/miso.json":    `{}`,
+		"web/package.json": `{"name":"web","packageManager":"bun@1.4.2","scripts":{"dev":"ng serve"}}`,
+		"api/miso.json":    `{"packageManager":false}`,
+	})
+	writeEchoScript(t, filepath.Join(root, "api", "scripts", "dev.sh"), "api")
+	standalone := false
+	cfg := config.Config{Scripts: "./scripts", PackageManager: &standalone}
+
+	entries, err := discoverEntries(cfg, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %v, want api and web", labelsOf(entries))
+	}
+	sources := map[string]string{}
+	for _, entry := range entries {
+		sources[entry.WorkspaceName] = entry.ScriptSource
+	}
+	if sources["api"] != "folder" || sources["web"] != "packagejson" {
+		t.Errorf("sources = %v, want api=folder web=packagejson", sources)
+	}
+}
+
+func TestDiscoverEntriesStandaloneMemberIgnoresPackageJSON(t *testing.T) {
+	root := t.TempDir()
+	writeTestFiles(t, root, map[string]string{
+		"api/miso.json":    `{"packageManager":false}`,
+		"api/package.json": `{"scripts":{"dev":"x"}}`,
+	})
+	entries, err := discoverEntries(config.Config{Scripts: "./scripts"}, "dev", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.WorkspaceName == "api" {
+			t.Errorf("api entry = %+v, want none: a standalone member has folder scripts only", entry)
+		}
+	}
+}
+
+func TestDiscoverEntriesStandaloneRootFallbackIsFolderOnly(t *testing.T) {
+	root := t.TempDir()
+	writeTestFiles(t, root, map[string]string{
+		"package.json":  `{"scripts":{"lint":"x"}}`,
+		"api/miso.json": `{}`,
+	})
+	writeEchoScript(t, filepath.Join(root, "api", "scripts", "dev.sh"), "api")
+	standalone := false
+	cfg := config.Config{Scripts: "./scripts", PackageManager: &standalone}
+
+	entries, err := discoverEntries(cfg, "lint", root, nil)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("entries = %v, want none: root package.json scripts are off in standalone mode", labelsOf(entries))
+	}
+}
