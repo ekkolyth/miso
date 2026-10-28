@@ -217,12 +217,12 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		if entry.WorkspaceName != "" {
 			target = workspace.Target{Kind: workspace.TargetMember, Name: entry.WorkspaceName, Dir: dir}
 		}
-		processEnv, envErr := env.BuildTargetEnv(root, cfg, target, ci)
-		if envErr != nil {
+		// fails the launch early; BuildEnv rebuilds it on every start
+		if _, envErr := env.BuildTargetEnv(root, cfg, target, ci); envErr != nil {
 			return nil, nil, nil, nil, false, envErr
 		}
 
-		proc := pm.Add(entry, cmd, args, dir, processEnv)
+		proc := pm.Add(entry, cmd, args, dir, nil)
 		proc.BuildEnv = func() ([]string, []string, error) {
 			environ, buildErr := env.BuildTargetEnv(root, cfg, target, ci)
 			if buildErr != nil {

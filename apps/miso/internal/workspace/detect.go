@@ -26,18 +26,13 @@ type DetectedApp struct {
 
 // workspace apps first, then the rest, each sorted by RelPath
 func Detect(root string) ([]DetectedApp, error) {
-	globDirs, excludes, err := globMemberDirs(root)
+	globDirs, excludes, declaresWorkspaces, err := globMemberDirs(root)
 	if err != nil {
 		return nil, err
 	}
-	patterns, err := workspacePatterns(root)
-	if err != nil {
-		return nil, err
-	}
-	declaresWorkspaces := len(patterns) > 0
 
 	var apps []DetectedApp
-	candidates := append([]string{root}, scanDirs(root)...)
+	candidates := append([]string{root}, detectCandidates(root, globDirs)...)
 	for _, dir := range candidates {
 		isRoot := dir == root
 		if !isRoot && excluded(dir, root, excludes) {
@@ -92,6 +87,19 @@ func Detect(root string) ([]DetectedApp, error) {
 		return apps[i].RelPath < apps[j].RelPath
 	})
 	return apps, nil
+}
+
+// the scan's directories plus glob members of any depth, parents before children
+func detectCandidates(root string, globDirs []string) []string {
+	candidates := scanDirs(root)
+	for _, dir := range globDirs {
+		if !slices.Contains(candidates, dir) {
+			candidates = append(candidates, dir)
+		}
+	}
+	depth := func(dir string) int { return strings.Count(dir, string(filepath.Separator)) }
+	sort.SliceStable(candidates, func(i, j int) bool { return depth(candidates[i]) < depth(candidates[j]) })
+	return candidates
 }
 
 func insideApp(dir string, apps []DetectedApp) bool {

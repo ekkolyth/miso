@@ -132,6 +132,15 @@ func TestDetect(t *testing.T) {
 			},
 			want: []DetectedApp{{RelPath: "apps/api", Label: "Go", InWorkspace: true}},
 		},
+		{
+			name: "glob member deeper than the scan",
+			files: map[string]string{
+				"package.json":              `{"workspaces":["packages/*/*"]}`,
+				"packages/a/b/package.json": `{}`,
+				"packages/a/b/go.mod":       ``,
+			},
+			want: []DetectedApp{{RelPath: "packages/a/b", Label: "Go", HasPackageJSON: true, NoManager: true, InWorkspace: true}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

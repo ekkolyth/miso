@@ -19,7 +19,7 @@ type Member struct {
 // glob members first (pnpm-workspace.yaml wins over package.json "workspaces"),
 // then directories with their own miso.json. Independent of repo mode.
 func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
-	globDirs, excludes, err := globMemberDirs(root)
+	globDirs, excludes, _, err := globMemberDirs(root)
 	if err != nil {
 		return nil, err
 	}
@@ -45,11 +45,12 @@ func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
 }
 
 // expands the workspace globs minus the "!" exclusions, and returns those
-// exclusions so callers apply the same rule to their own scans
-func globMemberDirs(root string) (dirs, excludes []string, err error) {
+// exclusions so callers apply the same rule to their own scans, and whether the
+// root declares any workspace pattern at all
+func globMemberDirs(root string) (dirs, excludes []string, declared bool, err error) {
 	patterns, err := workspacePatterns(root)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
 	var includes []string
@@ -69,7 +70,7 @@ func globMemberDirs(root string) (dirs, excludes []string, err error) {
 		}
 		matches, err := filepath.Glob(glob)
 		if err != nil {
-			return nil, nil, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
+			return nil, nil, false, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
 		}
 		for _, match := range matches {
 			info, err := os.Stat(match)
@@ -83,7 +84,7 @@ func globMemberDirs(root string) (dirs, excludes []string, err error) {
 			dirs = append(dirs, match)
 		}
 	}
-	return dirs, excludes, nil
+	return dirs, excludes, len(patterns) > 0, nil
 }
 
 func insideMember(dir string, members []Member) bool {

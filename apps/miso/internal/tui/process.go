@@ -94,11 +94,15 @@ type Process struct {
 	StartedAt time.Time
 	Buffer    *RingBuffer
 
-	cmd    *exec.Cmd
-	stdin  io.Writer // writable child stdin (pty master on unix, pipe on Windows)
-	resize func(rows, cols int)
-	done   chan struct{}
-	mu     sync.Mutex
+	cmd *exec.Cmd
+	// Start is between its first lock and spawning the child; Skip and Stop
+	// leave the process to Start then
+	starting      bool
+	stopRequested bool
+	stdin         io.Writer // writable child stdin (pty master on unix, pipe on Windows)
+	resize        func(rows, cols int)
+	done          chan struct{}
+	mu            sync.Mutex
 }
 
 // ProcessManager owns the set of managed processes and dispatches output/state to a sink.
@@ -165,6 +169,9 @@ func (pm *ProcessManager) Start(p *Process) error {
 	p.mu.Lock()
 	p.State = StateStarting
 	p.ExitCode = 0
+	p.cmd = nil
+	p.starting = true
+	p.stopRequested = false
 	done := make(chan struct{})
 	p.done = done
 	buildEnv := p.BuildEnv
@@ -194,6 +201,16 @@ func (pm *ProcessManager) Start(p *Process) error {
 	}
 
 	p.mu.Lock()
+	p.starting = false
+	if p.stopRequested {
+		// stopped while the env was building: no child, no restart
+		p.State = StateExited
+		p.ExitCode = -1
+		p.mu.Unlock()
+		pm.sendState(p, StateExited, -1)
+		close(done)
+		return nil
+	}
 	p.cmd = exec.Command(command, args...)
 	if dir != "" {
 		p.cmd.Dir = dir
@@ -309,6 +326,11 @@ func (pm *ProcessManager) Stop(p *Process) {
 	cmd := p.cmd
 	state := p.State
 	done := p.done
+	if p.starting {
+		p.stopRequested = true
+		p.mu.Unlock()
+		return
+	}
 	p.mu.Unlock()
 
 	if state == StateExited || cmd == nil || cmd.Process == nil {
@@ -354,7 +376,7 @@ func (p *Process) Resize(rows, cols int) {
 // no-op once the process has spawned
 func (pm *ProcessManager) Skip(p *Process) {
 	p.mu.Lock()
-	if p.State != StateStarting || p.cmd != nil {
+	if p.State != StateStarting || p.cmd != nil || p.starting {
 		p.mu.Unlock()
 		return
 	}

@@ -1097,3 +1097,98 @@ func TestStartCallsBuildEnvEachTime(t *testing.T) {
 		t.Fatalf("buffer = %q, want n=2", p.Buffer.Lines())
 	}
 }
+
+// blockingBuildEnv holds a Start inside its env-build window until released.
+func blockingBuildEnv() (build func() ([]string, []string, error), entered, release chan struct{}) {
+	entered = make(chan struct{})
+	release = make(chan struct{})
+	build = func() ([]string, []string, error) {
+		close(entered)
+		<-release
+		return nil, nil, nil
+	}
+	return build, entered, release
+}
+
+func TestProcessManager_StopDuringRestartEnvBuildStartsNoChild(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "restart-stop", ScriptName: "sleep"}, "sleep", []string{"10"}, "", nil)
+	t.Cleanup(pm.StopAll)
+
+	// a previous run leaves an exited cmd behind, as in a real restart
+	first := pm.Add(TuiScriptEntry{Label: "first", ScriptName: "true"}, "true", nil, "", nil)
+	if err := pm.Start(first); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	<-first.done
+	p.cmd = first.cmd
+	p.State = StateExited
+
+	build, entered, release := blockingBuildEnv()
+	p.BuildEnv = build
+
+	startReturned := make(chan error, 1)
+	go func() { startReturned <- pm.Start(p) }()
+	<-entered
+
+	stopReturned := make(chan struct{})
+	go func() {
+		pm.Stop(p)
+		close(stopReturned)
+	}()
+	select {
+	case <-stopReturned:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("Stop hung while Start was building env")
+	}
+
+	close(release)
+	if err := <-startReturned; err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-p.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("done never closed after a stop during env build")
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.State != StateExited {
+		t.Errorf("State = %v, want StateExited", p.State)
+	}
+	if p.cmd != nil {
+		t.Error("a child was started after Stop")
+	}
+}
+
+func TestProcessManager_SkipDuringEnvBuildClosesDoneOnce(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "skip-race", ScriptName: "true"}, "true", nil, "", nil)
+
+	build, entered, release := blockingBuildEnv()
+	p.BuildEnv = build
+
+	startReturned := make(chan error, 1)
+	go func() { startReturned <- pm.Start(p) }()
+	<-entered
+
+	pm.Skip(p)
+	close(release)
+
+	if err := <-startReturned; err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-p.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("done never closed")
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.State != StateExited {
+		t.Errorf("State = %v, want StateExited", p.State)
+	}
+}
