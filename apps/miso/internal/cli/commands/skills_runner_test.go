@@ -4,19 +4,10 @@ import (
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/cli/commands"
-	"github.com/ekkolyth/miso/internal/manager"
-	"github.com/ekkolyth/miso/internal/manager/bun"
-	"github.com/ekkolyth/miso/internal/manager/npm"
-	"github.com/ekkolyth/miso/internal/manager/pnpm"
-	"github.com/ekkolyth/miso/internal/manager/yarn"
+	"github.com/ekkolyth/miso/internal/manager/drivers"
 )
 
-func init() {
-	manager.RegisterManager("bun", bun.Bun{})
-	manager.RegisterManager("npm", npm.Npm{})
-	manager.RegisterManager("pnpm", pnpm.Pnpm{})
-	manager.RegisterManager("yarn", yarn.Yarn{})
-}
+func init() { drivers.Register() }
 
 func TestResolveSkillsRunner(t *testing.T) {
 	none := func(string) bool { return false }

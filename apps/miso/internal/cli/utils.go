@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -119,40 +118,14 @@ func LoadConfig(projectRoot string) (config.Config, error) {
 //  1. package.json packageManager field
 //  2. lockfile detection
 func EnsureManager(root string, cfg config.Config) (string, config.Config, error) {
-	// 1. package.json packageManager field
-	pkgJSONPath := filepath.Join(root, "package.json")
-	data, readErr := os.ReadFile(pkgJSONPath)
-	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-		return "", cfg, fmt.Errorf("read package.json: %w", readErr)
+	name, err := manager.Resolve(root)
+	if errors.Is(err, manager.ErrNoLockfile) || errors.Is(err, manager.ErrMultipleLockfiles) {
+		return "", cfg, errors.New("could not determine package manager: add a packageManager field to package.json, or run 'miso init'")
 	}
-	if readErr == nil {
-		var pkg struct {
-			PackageManager string `json:"packageManager"`
-		}
-		if err := json.Unmarshal(data, &pkg); err != nil {
-			return "", cfg, fmt.Errorf("parse package.json: %w", err)
-		}
-		if pkg.PackageManager != "" {
-			name := strings.SplitN(pkg.PackageManager, "@", 2)[0]
-			if name != "" {
-				if _, ok := manager.GetManager(name); !ok {
-					return "", cfg, fmt.Errorf(
-						"unsupported package manager %q in package.json (supported: %s)",
-						name,
-						strings.Join(manager.GetRegisteredManagers(), ", "),
-					)
-				}
-				return name, cfg, nil
-			}
-		}
+	if err != nil {
+		return "", cfg, err
 	}
-
-	// 2. lockfile detection
-	if detected, err := manager.DetectManager(root); err == nil {
-		return detected, cfg, nil
-	}
-
-	return "", cfg, errors.New("could not determine package manager: add a packageManager field to package.json, or run 'miso init'")
+	return name, cfg, nil
 }
 
 // print styled error and exit with code 1

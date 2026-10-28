@@ -18,6 +18,8 @@ var lockfileMap = map[string]string{
 
 var ErrNoLockfile = errors.New("no lockfile detected")
 
+var ErrMultipleLockfiles = errors.New("multiple lockfiles detected")
+
 func LockfileNames() []string {
 	names := make([]string, 0, len(lockfileMap))
 	for k := range lockfileMap {
@@ -46,10 +48,10 @@ func DetectManager(directoryPath string) (string, error) {
 		}
 		return "", errors.New("unreachable")
 	default:
-		s := "multiple lockfiles detected; resolve conflict:\n"
+		s := ""
 		for k, files := range found {
 			s += fmt.Sprintf("  %s: %v\n", k, files)
 		}
-		return "", errors.New(s)
+		return "", fmt.Errorf("%w; resolve conflict:\n%s", ErrMultipleLockfiles, s)
 	}
 }

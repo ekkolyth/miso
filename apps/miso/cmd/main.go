@@ -17,10 +17,7 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/harness"
 	"github.com/ekkolyth/miso/internal/manager"
-	"github.com/ekkolyth/miso/internal/manager/bun"
-	"github.com/ekkolyth/miso/internal/manager/npm"
-	"github.com/ekkolyth/miso/internal/manager/pnpm"
-	"github.com/ekkolyth/miso/internal/manager/yarn"
+	"github.com/ekkolyth/miso/internal/manager/drivers"
 	"github.com/ekkolyth/miso/internal/tui"
 	"github.com/ekkolyth/miso/internal/turbo"
 	"github.com/ekkolyth/miso/internal/ui"
@@ -28,11 +25,7 @@ import (
 )
 
 func init() {
-	// Register manager drivers
-	manager.RegisterManager("bun", bun.Bun{})
-	manager.RegisterManager("npm", npm.Npm{})
-	manager.RegisterManager("pnpm", pnpm.Pnpm{})
-	manager.RegisterManager("yarn", yarn.Yarn{})
+	drivers.Register()
 }
 
 func main() {

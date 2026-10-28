@@ -3,11 +3,47 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/manager/drivers"
 	"github.com/ekkolyth/miso/internal/testutil"
 )
+
+func init() { drivers.Register() }
+
+func ensureManagerIn(t *testing.T, packageJSON string) (string, error) {
+	t.Helper()
+	root := t.TempDir()
+	if packageJSON != "" {
+		if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(packageJSON), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	name, _, err := EnsureManager(root, config.Config{})
+	return name, err
+}
+
+func TestEnsureManager_NoSourceMessage(t *testing.T) {
+	_, err := ensureManagerIn(t, "")
+	if err == nil || !strings.Contains(err.Error(), "could not determine package manager: add a packageManager field to package.json, or run 'miso init'") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestEnsureManager_Field(t *testing.T) {
+	name, err := ensureManagerIn(t, `{"packageManager":"pnpm@9"}`)
+	testutil.NoError(t, err)
+	testutil.Equal(t, name, "pnpm")
+}
+
+func TestEnsureManager_Unsupported(t *testing.T) {
+	_, err := ensureManagerIn(t, `{"packageManager":"deno@2"}`)
+	if err == nil || !strings.Contains(err.Error(), `unsupported package manager "deno"`) {
+		t.Fatalf("err = %v", err)
+	}
+}
 
 func TestFindProjectRoot_FindsMisoJson(t *testing.T) {
 	root := t.TempDir()
