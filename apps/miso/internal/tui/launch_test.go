@@ -1133,7 +1133,7 @@ func TestBuildRunStandaloneMemberEntryIsMarkedStandalone(t *testing.T) {
 	if api == nil {
 		t.Fatal("no process for label \"api\"")
 	}
-	if !api.Entry.Standalone {
+	if !api.Entry.IsStandalone {
 		t.Errorf("api Entry.Standalone = false, want true")
 	}
 	if api.Entry.ScriptSource != "folder" {
@@ -1167,7 +1167,7 @@ func TestEntryManager(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
 			writeTestFiles(t, root, tt.files)
-			entry := TuiScriptEntry{Standalone: tt.standalone}
+			entry := TuiScriptEntry{IsStandalone: tt.standalone}
 			if tt.member {
 				entry.WorkspaceName = "web"
 				entry.WorkspaceDir = filepath.Join(root, "apps", "web")
@@ -1267,5 +1267,14 @@ func TestRestartEnvFailureStaysInPane(t *testing.T) {
 	}
 	if other.State != StateRunning {
 		t.Errorf("other state = %v, want running", other.State)
+	}
+}
+
+func TestMemberScopeDesc(t *testing.T) {
+	if got, want := memberScopeDesc("web", "./scripts", false), `member "web" (scripts folder "./scripts" and its package.json)`; got != want {
+		t.Errorf("non-standalone = %q, want %q", got, want)
+	}
+	if got, want := memberScopeDesc("web", "./scripts", true), `member "web" (scripts folder "./scripts")`; got != want {
+		t.Errorf("standalone = %q, want %q", got, want)
 	}
 }

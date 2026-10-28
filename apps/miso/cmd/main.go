@@ -195,7 +195,8 @@ func main() {
 	}
 
 	// Standalone mode: bypass ParseCLI and EnsureManager entirely.
-	// Only meta-commands are handled; everything else is folder script resolution.
+	// Only meta-commands are handled; everything else resolves folder scripts at
+	// the root only (no package.json scripts), and members still fan out.
 	if cfg.StandaloneMode() {
 		cmd := args[0]
 

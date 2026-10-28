@@ -996,7 +996,9 @@ func TestStartEmitsPreambleBeforeChildOutput(t *testing.T) {
 	pm := NewProcessManager()
 	p := pm.Add(TuiScriptEntry{Label: "web"}, "sh",
 		[]string{"-c", `printf 'next dev booting\n'`}, "", nil)
-	p.Preamble = []string{"env validated — 2 scopes, 3 variables"}
+	p.BuildEnv = func() ([]string, []string, error) {
+		return nil, []string{"env validated — 2 scopes, 3 variables"}, nil
+	}
 
 	if err := pm.Start(p); err != nil {
 		t.Fatalf("Start() error: %v", err)

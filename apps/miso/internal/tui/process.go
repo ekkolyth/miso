@@ -88,7 +88,6 @@ type Process struct {
 	Dir       string                                                  // working directory for the process
 	BuildEnv  func() (environ []string, preamble []string, err error) // runs on every Start; a nil environ inherits
 	NoPTY     bool                                                    // plain mode: pipe stdio (no pty) so a tool self-formats for a non-tty
-	Preamble  []string                                                // miso's own lines, emitted into the pane before the child starts
 	State     ProcessState
 	ExitCode  int
 	StartedAt time.Time
@@ -192,7 +191,6 @@ func (pm *ProcessManager) start(p *Process) error {
 	args := p.Args
 	dir := p.Dir
 	noPTY := p.NoPTY
-	preamble := append([]string(nil), p.Preamble...)
 	p.mu.Unlock()
 
 	// file I/O, so it runs outside the lock
@@ -227,7 +225,7 @@ func (pm *ProcessManager) start(p *Process) error {
 	// Emitted before the child's first byte so a pane opens with what miso did
 	// on its behalf. Buffer write mirrors captureOutput so every renderer — the
 	// buffer-rendering ones and the op-streaming plain sink — sees it the same.
-	for _, line := range append(preamble, envPreamble...) {
+	for _, line := range envPreamble {
 		p.Buffer.Write(line)
 		pm.sendLine(p, OpAppend{Text: line})
 	}

@@ -228,7 +228,7 @@ func appLine(app workspace.DetectedApp, styles ui.Styles) string {
 	return line
 }
 
-// askApps returns the chosen apps in the order Detect listed them
+// prompts for which detected apps to write a miso.json for; keeps Detect's order
 func askApps(apps []workspace.DetectedApp, styles ui.Styles) ([]workspace.DetectedApp, error) {
 	var workspaceOptions, otherOptions []huh.Option[int]
 	for index, app := range apps {

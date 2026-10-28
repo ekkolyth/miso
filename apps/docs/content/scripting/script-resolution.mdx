@@ -24,7 +24,7 @@ After built-in commands, `miso <name>` resolves in this order — identical in e
 4. **Root script** — root `package.json` script or scripts-folder file, run in a single Miso pane.
 5. **Passthrough** — forwarded to the package manager.
 
-> In [standalone mode](/working-with-miso/simple-mode) (`"packageManager": false`), the ladder doesn't apply — there's no package manager to delegate to or fan out through. Miso resolves core commands and scripts-folder files only, and ignores tasks, turbo/nx, and `package.json` entirely.
+> In [standalone mode](/working-with-miso/simple-mode) (`"packageManager": false`), the root has no package manager, so delegation and root `package.json` scripts don't apply. The root resolves core commands and scripts-folder files only. Members with their own `miso.json` are still found and fan out with their own package manager.
 
 ### Scripts Folder
 

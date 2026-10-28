@@ -261,7 +261,7 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	return pm, levels, graph, concurrentProcs, true, nil
 }
 
-// entryManager picks an entry's manager; a member falls back to mgr only when it sets none
+// a member falls back to mgr only when it sets none; a standalone member gets no manager
 func entryManager(entry TuiScriptEntry, root string, mgr manager.Manager) (manager.Manager, string, error) {
 	if entry.WorkspaceName == "" {
 		if mgr != nil {
@@ -272,15 +272,13 @@ func entryManager(entry TuiScriptEntry, root string, mgr manager.Manager) (manag
 		}
 		return nil, "", nil
 	}
-	if entry.Standalone {
+	if entry.IsStandalone {
 		return nil, "", nil
 	}
 	name, err := manager.Resolve(entry.WorkspaceDir)
 	if err == nil {
-		if driver, ok := manager.GetManager(name); ok {
-			return driver, name, nil
-		}
-		return nil, "", fmt.Errorf("unsupported package manager %q", name)
+		driver, _ := manager.GetManager(name)
+		return driver, name, nil
 	}
 	if !errors.Is(err, manager.ErrNoLockfile) {
 		return nil, "", err
@@ -420,7 +418,7 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 		member := resolved[0]
 		effective := workspace.EffectiveConfig(cfg, member)
 		memberInfo := newWorkspaceInfo(member, effective)
-		scopeDesc = memberScopeDesc(member.Name, effective.Scripts)
+		scopeDesc = memberScopeDesc(member.Name, effective.Scripts, memberInfo.Standalone)
 		entries, err = DiscoverTuiScripts(script, []WorkspaceInfo{memberInfo}, cfg.Scripts)
 	case local == nil:
 		scopeDesc = rootScopeDesc(cfg)
@@ -430,7 +428,7 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 			entries, err = ResolveSingleRepoScripts([]string{concName}, root, cfg)
 		}
 	default:
-		scopeDesc = memberScopeDesc(local.Name, local.ScriptsFolder)
+		scopeDesc = memberScopeDesc(local.Name, local.ScriptsFolder, local.Standalone)
 		entries, err = DiscoverTuiScripts(concName, []WorkspaceInfo{*local}, cfg.Scripts)
 	}
 
@@ -452,7 +450,10 @@ func rootScopeDesc(cfg config.Config) string {
 }
 
 // member-scope search-location description for an unresolvable concurrent entry
-func memberScopeDesc(name, scriptsFolder string) string {
+func memberScopeDesc(name, scriptsFolder string, standalone bool) string {
+	if standalone {
+		return fmt.Sprintf("member %q (scripts folder %q)", name, scriptsFolder)
+	}
 	return fmt.Sprintf("member %q (scripts folder %q and its package.json)", name, scriptsFolder)
 }
 
@@ -477,7 +478,7 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 	concurrent := cfg.TaskConcurrent(scriptName)
 
 	// members may already be cached from discoverEntries's own fan-out fetch;
-	// this guard only spares the zero-member / simple-mode path a fetch when
+	// this guard only spares the zero-member path a fetch when
 	// no @-ref is present (bare names resolve at root)
 	var members []workspace.Member
 	if concurrentNeedsMembers(concurrent) {

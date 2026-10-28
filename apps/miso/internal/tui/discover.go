@@ -48,7 +48,7 @@ type TuiScriptEntry struct {
 	// member-injected companion into the dependency levels
 	IsConcurrent bool
 	// member runs in standalone mode: its scripts come from the folder only
-	Standalone bool
+	IsStandalone bool
 }
 
 // DiscoverTuiScripts finds the script named exactly command in each of the
@@ -126,7 +126,7 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 		WorkspaceDir:  ws.Dir,
 		ScriptSource:  "packagejson",
 		Shell:         ws.Shell,
-		Standalone:    ws.Standalone,
+		IsStandalone:  ws.Standalone,
 	}
 	if inFolder {
 		entry.ScriptSource = "folder"
