@@ -493,7 +493,7 @@ func TestDiscoverEntriesConcurrentOnlyLaunchesAlone(t *testing.T) {
 }
 
 // TestMarkPlain verifies LaunchPlain's pre-run marking: every process flips to
-// pipe-mode and gains FORCE_COLOR (unless NO_COLOR), and a nil Environ is seeded
+// pipe-mode and gains FORCE_COLOR (unless NO_COLOR), and a nil env is seeded
 // from os.Environ rather than clobbered down to FORCE_COLOR alone.
 func TestMarkPlain(t *testing.T) {
 	pm := NewProcessManager()
@@ -508,17 +508,20 @@ func TestMarkPlain(t *testing.T) {
 			t.Errorf("%s: NoPTY not set", p.Entry.Label)
 		}
 	}
-	if !slices.Contains(withEnv.Environ, "FORCE_COLOR=1") {
-		t.Errorf("explicit env: FORCE_COLOR not added: %v", withEnv.Environ)
+	withEnvVars, _, _ := withEnv.BuildEnv()
+	noColorVars, _, _ := noColor.BuildEnv()
+	inheritVars, _, _ := inherit.BuildEnv()
+	if !slices.Contains(withEnvVars, "FORCE_COLOR=1") {
+		t.Errorf("explicit env: FORCE_COLOR not added: %v", withEnvVars)
 	}
-	if slices.Contains(noColor.Environ, "FORCE_COLOR=1") {
-		t.Errorf("NO_COLOR env: FORCE_COLOR must not be added: %v", noColor.Environ)
+	if slices.Contains(noColorVars, "FORCE_COLOR=1") {
+		t.Errorf("NO_COLOR env: FORCE_COLOR must not be added: %v", noColorVars)
 	}
-	// A nil Environ must be seeded from os.Environ (kept as a superset), not
+	// A nil env must be seeded from os.Environ (kept as a superset), not
 	// replaced by a lone FORCE_COLOR that would strip PATH/HOME from the child.
 	for _, kv := range os.Environ() {
-		if !slices.Contains(inherit.Environ, kv) {
-			t.Fatalf("nil Environ was clobbered, not seeded from os.Environ (missing %q)", kv)
+		if !slices.Contains(inheritVars, kv) {
+			t.Fatalf("nil env was clobbered, not seeded from os.Environ (missing %q)", kv)
 		}
 	}
 }
@@ -1186,5 +1189,83 @@ func TestEntryManager(t *testing.T) {
 				t.Errorf("entryManager = (%v, %q), want (%v, %q)", gotMgr, gotManager, tt.wantMgr, tt.wantManager)
 			}
 		})
+	}
+}
+
+func restartEnvFixture(t *testing.T) (string, config.Config) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("FOO=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scripts", "dev.sh"), []byte("echo \"FOO=$FOO\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Scripts: "./scripts", Env: []*config.EnvEntry{{Scope: "global", Path: ".env"}}}
+	return root, cfg
+}
+
+func TestRestartRereadsEnvFile(t *testing.T) {
+	root, cfg := restartEnvFixture(t)
+	pm, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proc := pm.findProc("dev")
+	if err := pm.Start(proc); err != nil {
+		t.Fatal(err)
+	}
+	pm.WaitAllExited([]*Process{proc})
+	if !slices.Contains(proc.Buffer.Lines(), "FOO=1") {
+		t.Fatalf("first run lines = %q, want FOO=1", proc.Buffer.Lines())
+	}
+
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("FOO=2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := pm.Restart(proc); err != nil {
+		t.Fatal(err)
+	}
+	pm.WaitAllExited([]*Process{proc})
+	lines := proc.Buffer.Lines()
+	if !slices.Contains(lines, "FOO=2") || slices.Contains(lines, "FOO=1") {
+		t.Fatalf("after restart lines = %q, want FOO=2 only", lines)
+	}
+}
+
+func TestRestartEnvFailureStaysInPane(t *testing.T) {
+	root, cfg := restartEnvFixture(t)
+	pm, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proc := pm.findProc("dev")
+	other := pm.Add(TuiScriptEntry{Label: "other"}, "sh", []string{"-c", "sleep 5"}, "", nil)
+	if err := pm.Start(other); err != nil {
+		t.Fatal(err)
+	}
+	defer pm.StopAll()
+	if err := pm.Start(proc); err != nil {
+		t.Fatal(err)
+	}
+	pm.WaitAllExited([]*Process{proc})
+
+	if err := os.Remove(filepath.Join(root, ".env")); err != nil {
+		t.Fatal(err)
+	}
+	if err := pm.Restart(proc); err == nil {
+		t.Fatal("Restart error = nil, want env failure")
+	}
+	if proc.State != StateExited || proc.ExitCode != -1 {
+		t.Errorf("state = %v, exit = %d, want exited with -1", proc.State, proc.ExitCode)
+	}
+	if !strings.Contains(strings.Join(proc.Buffer.Lines(), "\n"), "env file not found") {
+		t.Errorf("buffer = %q, want an \"env file not found\" line", proc.Buffer.Lines())
+	}
+	if other.State != StateRunning {
+		t.Errorf("other state = %v, want running", other.State)
 	}
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"os/exec"
 	"regexp"
@@ -14,7 +15,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/ekkolyth/miso/internal/cli/env"
 	"github.com/ekkolyth/miso/internal/proc"
+	"github.com/ekkolyth/miso/internal/ui"
 )
 
 type ProcessState int
@@ -82,10 +85,10 @@ type Process struct {
 	Entry     TuiScriptEntry
 	Command   string
 	Args      []string
-	Dir       string   // working directory for the process
-	Environ   []string // environment variables for the process (nil = inherit)
-	NoPTY     bool     // plain mode: pipe stdio (no pty) so a tool self-formats for a non-tty
-	Preamble  []string // miso's own lines, emitted into the pane before the child starts
+	Dir       string                                                  // working directory for the process
+	BuildEnv  func() (environ []string, preamble []string, err error) // runs on every Start; a nil environ inherits
+	NoPTY     bool                                                    // plain mode: pipe stdio (no pty) so a tool self-formats for a non-tty
+	Preamble  []string                                                // miso's own lines, emitted into the pane before the child starts
 	State     ProcessState
 	ExitCode  int
 	StartedAt time.Time
@@ -118,14 +121,14 @@ func (pm *ProcessManager) SetSink(sink OutputSink) {
 
 func (pm *ProcessManager) Add(entry TuiScriptEntry, command string, args []string, dir string, environ []string) *Process {
 	p := &Process{
-		Entry:   entry,
-		Command: command,
-		Args:    args,
-		Dir:     dir,
-		Environ: environ,
-		State:   StateStarting,
-		Buffer:  NewRingBuffer(DefaultBufferSize),
-		done:    make(chan struct{}),
+		Entry:    entry,
+		Command:  command,
+		Args:     args,
+		Dir:      dir,
+		BuildEnv: func() ([]string, []string, error) { return environ, nil, nil },
+		State:    StateStarting,
+		Buffer:   NewRingBuffer(DefaultBufferSize),
+		done:     make(chan struct{}),
 	}
 
 	pm.mu.Lock()
@@ -162,24 +165,49 @@ func (pm *ProcessManager) Start(p *Process) error {
 	p.mu.Lock()
 	p.State = StateStarting
 	p.ExitCode = 0
-	p.done = make(chan struct{})
-	p.cmd = exec.Command(p.Command, p.Args...)
-	if p.Dir != "" {
-		p.cmd.Dir = p.Dir
-	}
-	if p.Environ != nil {
-		p.cmd.Env = p.Environ
-	}
-	cmd := p.cmd
-	done := p.done
+	done := make(chan struct{})
+	p.done = done
+	buildEnv := p.BuildEnv
+	command := p.Command
+	args := p.Args
+	dir := p.Dir
 	noPTY := p.NoPTY
 	preamble := append([]string(nil), p.Preamble...)
+	p.mu.Unlock()
+
+	// file I/O, so it runs outside the lock
+	environ, envPreamble, envErr := buildEnv()
+	if envErr != nil {
+		lines := envErrorLines(envErr)
+		lines[0] = ui.Default().MisoLine(lines[0])
+		for _, line := range lines {
+			p.Buffer.Write(line)
+			pm.sendLine(p, OpAppend{Text: line})
+		}
+		p.mu.Lock()
+		p.State = StateExited
+		p.ExitCode = -1
+		p.mu.Unlock()
+		pm.sendState(p, StateExited, -1)
+		close(done)
+		return envErr
+	}
+
+	p.mu.Lock()
+	p.cmd = exec.Command(command, args...)
+	if dir != "" {
+		p.cmd.Dir = dir
+	}
+	if environ != nil {
+		p.cmd.Env = environ
+	}
+	cmd := p.cmd
 	p.mu.Unlock()
 
 	// Emitted before the child's first byte so a pane opens with what miso did
 	// on its behalf. Buffer write mirrors captureOutput so every renderer — the
 	// buffer-rendering ones and the op-streaming plain sink — sees it the same.
-	for _, line := range preamble {
+	for _, line := range append(preamble, envPreamble...) {
 		p.Buffer.Write(line)
 		pm.sendLine(p, OpAppend{Text: line})
 	}
@@ -251,6 +279,27 @@ func (pm *ProcessManager) Start(p *Process) error {
 	}()
 
 	return nil
+}
+
+// renders a BuildEnv failure as pane lines: a validation error expands to its
+// full report, anything else is a single line
+func envErrorLines(err error) []string {
+	var validationErr *env.ValidationError
+	if !errors.As(err, &validationErr) {
+		return []string{err.Error()}
+	}
+	var rendered bytes.Buffer
+	validationErr.Render(&rendered)
+	var lines []string
+	for _, line := range strings.Split(rendered.String(), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return []string{err.Error()}
+	}
+	return lines
 }
 
 // Stop sends SIGTERM to the process, waits up to 5 seconds, then SIGKILLs.

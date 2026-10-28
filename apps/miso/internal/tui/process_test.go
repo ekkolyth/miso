@@ -3,7 +3,9 @@ package tui
 import (
 	"fmt"
 	"io"
+	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1073,4 +1075,25 @@ func TestCaptureOutputBubbleteaRedrawSkipsUnchangedRows(t *testing.T) {
 		[]string{"┃ framework?", "┃   Next.js", "┃ > TanStack", "enter select"})
 	writeAndWaitFor(t, p, w, "\r\x1b[2KINFO setup cancelled\r\n",
 		[]string{"┃ framework?", "┃   Next.js", "┃ > TanStack", "INFO setup cancelled"})
+}
+
+func TestStartCallsBuildEnvEachTime(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "n"}, "sh", []string{"-c", "echo n=$N"}, "", nil)
+	calls := 0
+	p.BuildEnv = func() ([]string, []string, error) {
+		calls++
+		return []string{"N=" + strconv.Itoa(calls), "PATH=" + os.Getenv("PATH")}, nil, nil
+	}
+	if err := pm.Start(p); err != nil {
+		t.Fatal(err)
+	}
+	pm.WaitAllExited([]*Process{p})
+	if err := pm.Restart(p); err != nil {
+		t.Fatal(err)
+	}
+	pm.WaitAllExited([]*Process{p})
+	if !strings.Contains(strings.Join(p.Buffer.Lines(), "\n"), "n=2") {
+		t.Fatalf("buffer = %q, want n=2", p.Buffer.Lines())
+	}
 }

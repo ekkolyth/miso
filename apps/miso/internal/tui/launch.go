@@ -126,17 +126,23 @@ func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.
 
 // markPlain switches every process to pipe-mode (no pty) and adds FORCE_COLOR,
 // so a tool detects a non-tty — emitting plain line output instead of cursor
-// redraws — yet still prints color. NO_COLOR still wins. A nil Environ is seeded
+// redraws — yet still prints color. NO_COLOR still wins. A nil env is seeded
 // from os.Environ so the augmented env inherits the ambient shell instead of
 // collapsing to FORCE_COLOR alone. Chrome (Launch) skips this and keeps the pty.
 func markPlain(procs []*Process) {
 	for _, proc := range procs {
 		proc.NoPTY = true
-		base := proc.Environ
-		if base == nil {
-			base = os.Environ()
+		inner := proc.BuildEnv
+		proc.BuildEnv = func() ([]string, []string, error) {
+			environ, preamble, err := inner()
+			if err != nil {
+				return nil, nil, err
+			}
+			if environ == nil {
+				environ = os.Environ()
+			}
+			return forceColorEnv(environ), preamble, nil
 		}
-		proc.Environ = forceColorEnv(base)
 	}
 }
 
@@ -217,10 +223,18 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		}
 
 		proc := pm.Add(entry, cmd, args, dir, processEnv)
-		if envValidated {
-			if line := env.ValidatedLine(root, cfg, target); line != "" {
-				proc.Preamble = append(proc.Preamble, styles.MisoLine(line))
+		proc.BuildEnv = func() ([]string, []string, error) {
+			environ, buildErr := env.BuildTargetEnv(root, cfg, target, ci)
+			if buildErr != nil {
+				return nil, nil, buildErr
 			}
+			var preamble []string
+			if envValidated {
+				if line := env.ValidatedLine(root, cfg, target); line != "" {
+					preamble = append(preamble, styles.MisoLine(line))
+				}
+			}
+			return environ, preamble, nil
 		}
 	}
 
