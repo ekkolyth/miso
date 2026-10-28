@@ -111,7 +111,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		if len(args) < 2 {
 			return ParsedCLI{}, errors.New("usage: miso run <script> [<script>...] [-- <args...>]")
 		}
-		scopes, rest := extractScopes(args[1:])
+		scopes, rest := ExtractScopes(args[1:])
 		// check for multiple scripts
 		scriptNames, scriptArgs := splitMultipleScripts(rest)
 		if len(scriptNames) > 1 {
@@ -130,7 +130,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		// fall back to package manager
 		return ParsedCLI{Action: ActionRun, ScriptName: script, ScriptArgs: scriptArgs, Scopes: scopes}, nil
 	case "dev":
-		scopes, rest := extractScopes(args[1:])
+		scopes, rest := ExtractScopes(args[1:])
 		inlineArgs := ParseInlineArgs(rest)
 		if override, ok, err := scriptOverride("dev", inlineArgs, root, cfg); err != nil {
 			return ParsedCLI{}, err
@@ -165,7 +165,7 @@ func ParseCLI(args []string, cfg config.Config, root string) (ParsedCLI, error) 
 		return ParsedCLI{}, fmt.Errorf("run a workspace script as `miso <script> %s` (e.g. `miso dev %s`)", cmd, cmd)
 	}
 
-	scopes, rest := extractScopes(args[1:])
+	scopes, rest := ExtractScopes(args[1:])
 	if override, ok, err := scriptOverride(cmd, ParseInlineArgs(rest), root, cfg); err != nil {
 		return ParsedCLI{}, err
 	} else if ok {
@@ -184,10 +184,10 @@ func ParseInlineArgs(rest []string) []string {
 	return rest
 }
 
-// extractScopes pulls @-prefixed workspace filters that appear before "--" out
+// ExtractScopes pulls @-prefixed workspace filters that appear before "--" out
 // of args. Filters keep their @ (matched later against the package name). Tokens
 // after "--" are passthrough and never scopes; original order is preserved.
-func extractScopes(args []string) (scopes, rest []string) {
+func ExtractScopes(args []string) (scopes, rest []string) {
 	past := false
 	for _, a := range args {
 		switch {

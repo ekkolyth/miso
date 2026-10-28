@@ -148,7 +148,7 @@ If a root script was deliberately shadowing fan-out, declare it as a task or add
 { "repo": { "tasks": { "dev": { "concurrent": ["#dev"] } } } }
 ```
 
-Single repos and standalone mode are unaffected — no members means no fan-out set, so the root script is the body as always.
+Single repos are unaffected — no members means no fan-out set, so the root script is the body as always. A standalone root still runs members found through their own `miso.json`.
 
 ### Duplicate workspace commands now fan out together
 

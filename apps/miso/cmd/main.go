@@ -220,14 +220,29 @@ func main() {
 			cli.Fail(logger, err, false)
 		}
 
-		// a task entry may have no script of its own and still orchestrate
-		// companions or dependencies
-		_, isTask := cfg.Tasks[cmd]
-		if resolved.Source == scripting.ScriptSourceNone && !isTask {
-			cli.Fail(logger, fmt.Errorf("script '%s' not found in %s", cmd, cfg.Scripts), false)
-		}
+		scopes, rest := cli.ExtractScopes(args[1:])
+		scriptArgs := cli.ParseInlineArgs(rest)
+		filters := scopeFilterNames(scopes, projectRoot, cfg, logger)
 
-		scriptArgs := args[1:]
+		// inside a member without an @scope, the member's own script runs when
+		// it defines one; otherwise the root's script runs, as in the
+		// package manager path
+		launch := true
+		if len(scopes) == 0 {
+			if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 && originalWorkDir != projectRoot {
+				if member, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
+					memberResolved, _, _, resolveErr := scripting.ResolveWorkspaceScript(member.Name, cmd, projectRoot, cfg)
+					if resolveErr != nil {
+						cli.Fail(logger, resolveErr, false)
+					}
+					if memberResolved.Source == scripting.ScriptSourceNone {
+						launch = false
+					} else {
+						filters = []string{member.Name}
+					}
+				}
+			}
+		}
 
 		if envValidated {
 			if err := env.Run(projectRoot, cfg, logger, ci); err != nil {
@@ -238,23 +253,32 @@ func main() {
 		// Orchestrate the folder script (and any root-scope concurrent) — chrome on
 		// a TTY with tui != off, plain otherwise. Falls through to the literal exec
 		// below only when nothing was orchestrated.
-		switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
-		case tui.RendererChrome:
-			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated, ci)
-			if err != nil {
-				cli.Fail(logger, err, false)
+		if launch {
+			switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
+			case tui.RendererChrome:
+				ran, err := tui.Launch(cfg, cmd, projectRoot, nil, filters, scriptArgs, envValidated, ci)
+				if err != nil {
+					cli.Fail(logger, err, false)
+				}
+				if ran {
+					return
+				}
+			case tui.RendererPlain:
+				ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, filters, scriptArgs, envValidated, ci)
+				if err != nil {
+					cli.Fail(logger, err, false)
+				}
+				if ran {
+					return
+				}
 			}
-			if ran {
-				return
-			}
-		case tui.RendererPlain:
-			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated, ci)
-			if err != nil {
-				cli.Fail(logger, err, false)
-			}
-			if ran {
-				return
-			}
+		}
+
+		if len(scopes) > 0 {
+			cli.Fail(logger, fmt.Errorf(
+				"cannot scope %q to %s — scoped runs need an interactive terminal and a workspace-aware target (a turbo/nx task or a script defined in the target workspace)",
+				cmd, strings.Join(scopes, " "),
+			), false)
 		}
 
 		if resolved.Source == scripting.ScriptSourceNone {

@@ -78,7 +78,7 @@ Only when **no member** defines the name does the root's own `scripts/`
 folder + `package.json` become the body, run as a single process. A root
 task's `concurrent` companions attach exactly once per run either way — they
 never re-broadcast per fan-out member. Standalone mode (`packageManager: false`)
-never fans out — there's no workspace concept without a package manager.
+still runs members found through their own `miso.json`.
 
 Positional args (`miso dev --inspect`) reach the spawned process only when
 the run resolves to a single root entry — a member fan-out drops them, since

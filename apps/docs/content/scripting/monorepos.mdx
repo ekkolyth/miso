@@ -94,7 +94,7 @@ An explicit `@scope` is always honored or Miso fails — if it doesn't resolve t
 
 > The old prefixed form, `miso @workspace/script`, has been removed in favor of `miso <script> @scope`.
 
-> Scoping needs a package manager. In [standalone mode](/working-with-miso/simple-mode) (`"packageManager": false`), workspace discovery is disabled and `@scope` is passed through to the script as a literal argument instead of being resolved.
+> Scoping needs a package manager. In [standalone mode](/working-with-miso/simple-mode) (`"packageManager": false`), a standalone root still runs members found through their own `miso.json`, and `@scope` selects them.
 
 ### From Inside a Workspace
 

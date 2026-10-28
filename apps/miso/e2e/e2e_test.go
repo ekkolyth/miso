@@ -706,3 +706,66 @@ func TestE2E_DelegatedPassthroughKeepsTurboArgs(t *testing.T) {
 		t.Errorf("build --filter=web -- --watch exit = %d, out %q; want turbo to get --filter=web -- --watch", code, out)
 	}
 }
+
+func writeStandaloneMembersFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{"packageManager":false}`)
+	for _, name := range []string{"web", "api"} {
+		writeFixtureFile(t, filepath.Join(root, name, "miso.json"), `{"packageManager":false}`)
+		writeFixtureFile(t, filepath.Join(root, name, "scripts", "dev.sh"),
+			"#!/bin/sh\ntouch \""+root+"/"+name+"-ran\"\n")
+	}
+	return root
+}
+
+func assertMarkers(t *testing.T, root string, want map[string]bool) {
+	t.Helper()
+	for name, exists := range want {
+		_, err := os.Stat(filepath.Join(root, name))
+		if exists && err != nil {
+			t.Errorf("%s missing: %v", name, err)
+		}
+		if !exists && err == nil {
+			t.Errorf("%s exists, want absent", name)
+		}
+	}
+}
+
+func TestE2E_StandaloneRootRunsMembers(t *testing.T) {
+	root := writeStandaloneMembersFixture(t)
+	out, code := runTimeout(t, root, 30*time.Second, "dev")
+	if code != 0 {
+		t.Fatalf("miso dev exit = %d, want 0 (out: %s)", code, out)
+	}
+	assertMarkers(t, root, map[string]bool{"web-ran": true, "api-ran": true})
+}
+
+func TestE2E_StandaloneRootScopedRun(t *testing.T) {
+	root := writeStandaloneMembersFixture(t)
+	out, code := runTimeout(t, root, 30*time.Second, "dev", "@api")
+	if code != 0 {
+		t.Fatalf("miso dev @api exit = %d, want 0 (out: %s)", code, out)
+	}
+	assertMarkers(t, root, map[string]bool{"api-ran": true, "web-ran": false})
+}
+
+func TestE2E_StandaloneRootFromMemberDir(t *testing.T) {
+	root := writeStandaloneMembersFixture(t)
+	out, code := runTimeout(t, filepath.Join(root, "api"), 30*time.Second, "dev")
+	if code != 0 {
+		t.Fatalf("miso dev exit = %d, want 0 (out: %s)", code, out)
+	}
+	assertMarkers(t, root, map[string]bool{"api-ran": true, "web-ran": false})
+}
+
+func TestE2E_StandaloneRootFromMemberDirFallsBackToRoot(t *testing.T) {
+	root := writeStandaloneMembersFixture(t)
+	writeFixtureFile(t, filepath.Join(root, "scripts", "lint.sh"),
+		"#!/bin/sh\ntouch \""+root+"/root-lint-ran\"\n")
+	out, code := runTimeout(t, filepath.Join(root, "api"), 30*time.Second, "lint")
+	if code != 0 {
+		t.Fatalf("miso lint exit = %d, want 0 (out: %s)", code, out)
+	}
+	assertMarkers(t, root, map[string]bool{"root-lint-ran": true})
+}
