@@ -94,15 +94,14 @@ type Process struct {
 	StartedAt time.Time
 	Buffer    *RingBuffer
 
-	cmd *exec.Cmd
-	// Start is between its first lock and spawning the child; Skip and Stop
-	// leave the process to Start then
-	starting      bool
-	stopRequested bool
-	stdin         io.Writer // writable child stdin (pty master on unix, pipe on Windows)
-	resize        func(rows, cols int)
-	done          chan struct{}
-	mu            sync.Mutex
+	cmd    *exec.Cmd
+	stdin  io.Writer // writable child stdin (pty master on unix, pipe on Windows)
+	resize func(rows, cols int)
+	done   chan struct{}
+	mu     sync.Mutex
+	// one Start, Stop, Skip or Restart at a time, so a Stop waits for a Start
+	// still building env instead of missing the child it is about to spawn
+	lifecycle sync.Mutex
 }
 
 // ProcessManager owns the set of managed processes and dispatches output/state to a sink.
@@ -166,12 +165,15 @@ func (pm *ProcessManager) PinLast(label string) {
 // Start spawns the process, captures stdout and stderr in separate goroutines,
 // and manages the process lifecycle.
 func (pm *ProcessManager) Start(p *Process) error {
+	p.lifecycle.Lock()
+	defer p.lifecycle.Unlock()
+	return pm.start(p)
+}
+
+func (pm *ProcessManager) start(p *Process) error {
 	p.mu.Lock()
 	p.State = StateStarting
 	p.ExitCode = 0
-	p.cmd = nil
-	p.starting = true
-	p.stopRequested = false
 	done := make(chan struct{})
 	p.done = done
 	buildEnv := p.BuildEnv
@@ -201,16 +203,6 @@ func (pm *ProcessManager) Start(p *Process) error {
 	}
 
 	p.mu.Lock()
-	p.starting = false
-	if p.stopRequested {
-		// stopped while the env was building: no child, no restart
-		p.State = StateExited
-		p.ExitCode = -1
-		p.mu.Unlock()
-		pm.sendState(p, StateExited, -1)
-		close(done)
-		return nil
-	}
 	p.cmd = exec.Command(command, args...)
 	if dir != "" {
 		p.cmd.Dir = dir
@@ -322,15 +314,16 @@ func envErrorLines(err error) []string {
 // Stop sends SIGTERM to the process, waits up to 5 seconds, then SIGKILLs.
 // It does NOT call cmd.Wait() — the goroutine started in Start() handles that.
 func (pm *ProcessManager) Stop(p *Process) {
+	p.lifecycle.Lock()
+	defer p.lifecycle.Unlock()
+	pm.stop(p)
+}
+
+func (pm *ProcessManager) stop(p *Process) {
 	p.mu.Lock()
 	cmd := p.cmd
 	state := p.State
 	done := p.done
-	if p.starting {
-		p.stopRequested = true
-		p.mu.Unlock()
-		return
-	}
 	p.mu.Unlock()
 
 	if state == StateExited || cmd == nil || cmd.Process == nil {
@@ -375,8 +368,10 @@ func (p *Process) Resize(rows, cols int) {
 
 // no-op once the process has spawned
 func (pm *ProcessManager) Skip(p *Process) {
+	p.lifecycle.Lock()
+	defer p.lifecycle.Unlock()
 	p.mu.Lock()
-	if p.State != StateStarting || p.cmd != nil || p.starting {
+	if p.State != StateStarting || p.cmd != nil {
 		p.mu.Unlock()
 		return
 	}
@@ -388,9 +383,11 @@ func (pm *ProcessManager) Skip(p *Process) {
 
 // Restart stops the process and starts it again.
 func (pm *ProcessManager) Restart(p *Process) error {
-	pm.Stop(p)
+	p.lifecycle.Lock()
+	defer p.lifecycle.Unlock()
+	pm.stop(p)
 	p.Buffer.Clear()
-	return pm.Start(p)
+	return pm.start(p)
 }
 
 // RestartAll restarts every process in the manager.

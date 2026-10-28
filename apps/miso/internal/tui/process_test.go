@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -1110,7 +1112,7 @@ func blockingBuildEnv() (build func() ([]string, []string, error), entered, rele
 	return build, entered, release
 }
 
-func TestProcessManager_StopDuringRestartEnvBuildStartsNoChild(t *testing.T) {
+func TestProcessManager_StopDuringRestartEnvBuildStopsSpawnedChild(t *testing.T) {
 	pm := NewProcessManager()
 	p := pm.Add(TuiScriptEntry{Label: "restart-stop", ScriptName: "sleep"}, "sleep", []string{"10"}, "", nil)
 	t.Cleanup(pm.StopAll)
@@ -1138,9 +1140,8 @@ func TestProcessManager_StopDuringRestartEnvBuildStartsNoChild(t *testing.T) {
 	}()
 	select {
 	case <-stopReturned:
-	case <-time.After(2 * time.Second):
-		close(release)
-		t.Fatal("Stop hung while Start was building env")
+		t.Fatal("Stop returned before the Start spawned its child")
+	case <-time.After(100 * time.Millisecond):
 	}
 
 	close(release)
@@ -1148,9 +1149,9 @@ func TestProcessManager_StopDuringRestartEnvBuildStartsNoChild(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	select {
-	case <-p.done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("done never closed after a stop during env build")
+	case <-stopReturned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop hung after Start spawned")
 	}
 
 	p.mu.Lock()
@@ -1158,8 +1159,11 @@ func TestProcessManager_StopDuringRestartEnvBuildStartsNoChild(t *testing.T) {
 	if p.State != StateExited {
 		t.Errorf("State = %v, want StateExited", p.State)
 	}
-	if p.cmd != nil {
-		t.Error("a child was started after Stop")
+	if p.cmd == nil || p.cmd == first.cmd {
+		t.Fatal("Start did not spawn a new child")
+	}
+	if syscall.Kill(p.cmd.Process.Pid, 0) == nil {
+		t.Error("the spawned child is still alive after Stop")
 	}
 }
 
@@ -1174,9 +1178,14 @@ func TestProcessManager_SkipDuringEnvBuildClosesDoneOnce(t *testing.T) {
 	go func() { startReturned <- pm.Start(p) }()
 	<-entered
 
-	pm.Skip(p)
+	skipReturned := make(chan struct{})
+	go func() {
+		pm.Skip(p)
+		close(skipReturned)
+	}()
 	close(release)
 
+	<-skipReturned
 	if err := <-startReturned; err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -1190,5 +1199,75 @@ func TestProcessManager_SkipDuringEnvBuildClosesDoneOnce(t *testing.T) {
 	defer p.mu.Unlock()
 	if p.State != StateExited {
 		t.Errorf("State = %v, want StateExited", p.State)
+	}
+}
+
+func TestProcessManager_OverlappingRestartsLeaveNoOrphan(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "pids")
+	script := fmt.Sprintf("echo $$ >> %s; exec sleep 30", pidFile)
+
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "double-restart", ScriptName: "sleep"}, "sh", []string{"-c", script}, "", nil)
+
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	p.BuildEnv = func() ([]string, []string, error) {
+		entered <- struct{}{}
+		<-release
+		return nil, nil, nil
+	}
+
+	readPids := func() []int {
+		data, _ := os.ReadFile(pidFile)
+		var pids []int
+		for _, field := range strings.Fields(string(data)) {
+			if pid, err := strconv.Atoi(field); err == nil {
+				pids = append(pids, pid)
+			}
+		}
+		return pids
+	}
+	t.Cleanup(func() {
+		for _, pid := range readPids() {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	})
+
+	var restarts sync.WaitGroup
+	restart := func() {
+		restarts.Add(1)
+		go func() {
+			defer restarts.Done()
+			_ = pm.Restart(p)
+		}()
+	}
+	restart()
+	<-entered
+	restart()
+	time.Sleep(100 * time.Millisecond) // let the second restart reach the overlap
+	close(release)
+	restarts.Wait()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for len(readPids()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	stopped := make(chan struct{})
+	go func() {
+		pm.StopAll()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(8 * time.Second):
+		t.Fatal("StopAll hung")
+	}
+
+	for _, pid := range readPids() {
+		if syscall.Kill(pid, 0) == nil {
+			t.Errorf("child %d survived StopAll", pid)
+		}
 	}
 }
