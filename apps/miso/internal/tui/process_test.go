@@ -1271,3 +1271,129 @@ func TestProcessManager_OverlappingRestartsLeaveNoOrphan(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessManager_StartOnRunningProcessStopsPreviousChild(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "double-start", ScriptName: "sleep"}, "sleep", []string{"30"}, "", nil)
+	t.Cleanup(pm.StopAll)
+
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	p.mu.Lock()
+	firstPid := p.cmd.Process.Pid
+	p.mu.Unlock()
+	t.Cleanup(func() { _ = syscall.Kill(firstPid, syscall.SIGKILL) })
+
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("second Start: %v", err)
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		pm.StopAll()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(8 * time.Second):
+		t.Fatal("StopAll hung")
+	}
+	if syscall.Kill(firstPid, 0) == nil {
+		t.Errorf("first child %d survived", firstPid)
+	}
+}
+
+func TestProcessManager_StartAfterStopAllSpawnsNothing(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "after-quit", ScriptName: "sleep"}, "sleep", []string{"30"}, "", nil)
+	t.Cleanup(pm.StopAll)
+
+	pm.StopAll()
+
+	if err := pm.Restart(p); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pm.RestartAll()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd != nil {
+		t.Error("a child was spawned after StopAll")
+	}
+}
+
+func TestProcessManager_StopAllDuringRestartAllLeavesNoChild(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "pids")
+	script := fmt.Sprintf("echo $$ >> %s; exec sleep 30", pidFile)
+
+	pm := NewProcessManager()
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var procs []*Process
+	for _, label := range []string{"a", "b"} {
+		p := pm.Add(TuiScriptEntry{Label: label, ScriptName: "sleep"}, "sh", []string{"-c", script}, "", nil)
+		p.BuildEnv = func() ([]string, []string, error) {
+			entered <- struct{}{}
+			<-release
+			return nil, nil, nil
+		}
+		procs = append(procs, p)
+	}
+	t.Cleanup(func() {
+		data, _ := os.ReadFile(pidFile)
+		for _, field := range strings.Fields(string(data)) {
+			if pid, err := strconv.Atoi(field); err == nil {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	})
+
+	restarted := make(chan struct{})
+	go func() {
+		pm.RestartAll()
+		close(restarted)
+	}()
+	<-entered
+
+	stopReturned := make(chan struct{})
+	go func() {
+		pm.StopAll()
+		close(stopReturned)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		pm.mu.Lock()
+		quitting := pm.stopped
+		pm.mu.Unlock()
+		if quitting {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(release)
+
+	for _, done := range []chan struct{}{restarted, stopReturned} {
+		select {
+		case <-done:
+		case <-time.After(8 * time.Second):
+			t.Fatal("RestartAll or StopAll hung")
+		}
+	}
+
+	data, _ := os.ReadFile(pidFile)
+	for _, field := range strings.Fields(string(data)) {
+		pid, err := strconv.Atoi(field)
+		if err == nil && syscall.Kill(pid, 0) == nil {
+			t.Errorf("child %d survived StopAll", pid)
+		}
+	}
+	procs[1].mu.Lock()
+	defer procs[1].mu.Unlock()
+	if procs[1].cmd != nil {
+		t.Error("RestartAll spawned b after StopAll")
+	}
+}

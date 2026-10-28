@@ -109,6 +109,8 @@ type ProcessManager struct {
 	Processes []*Process
 	mu        sync.Mutex
 	sink      OutputSink
+	// set by StopAll so a quit can't be followed by a restart spawning children
+	stopped bool
 }
 
 func NewProcessManager() *ProcessManager {
@@ -171,6 +173,15 @@ func (pm *ProcessManager) Start(p *Process) error {
 }
 
 func (pm *ProcessManager) start(p *Process) error {
+	pm.mu.Lock()
+	quitting := pm.stopped
+	pm.mu.Unlock()
+	if quitting {
+		return nil
+	}
+	// a process has at most one live child
+	pm.stop(p)
+
 	p.mu.Lock()
 	p.State = StateStarting
 	p.ExitCode = 0
@@ -385,6 +396,12 @@ func (pm *ProcessManager) Skip(p *Process) {
 func (pm *ProcessManager) Restart(p *Process) error {
 	p.lifecycle.Lock()
 	defer p.lifecycle.Unlock()
+	pm.mu.Lock()
+	quitting := pm.stopped
+	pm.mu.Unlock()
+	if quitting {
+		return nil
+	}
 	pm.stop(p)
 	p.Buffer.Clear()
 	return pm.start(p)
@@ -417,6 +434,7 @@ func (pm *ProcessManager) ResizeAll(rows, cols int) {
 // StopAll stops every process in the manager.
 func (pm *ProcessManager) StopAll() {
 	pm.mu.Lock()
+	pm.stopped = true
 	procs := make([]*Process, len(pm.Processes))
 	copy(procs, pm.Processes)
 	pm.mu.Unlock()
