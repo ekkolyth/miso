@@ -190,3 +190,22 @@ func TestDiscoverMembers_DepthStopsAtTwo(t *testing.T) {
 		t.Errorf("want no members, got %v", members)
 	}
 }
+
+func TestDiscoverMembers_WorkspaceExclusionBeatsMisoJSON(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "package.json"), `{"workspaces":["apps/*","!apps/legacy"]}`)
+	mkdirAll(t, filepath.Join(root, "apps", "web"))
+	writeFile(t, filepath.Join(root, "apps", "web", "package.json"), `{"name":"web"}`)
+	mkdirAll(t, filepath.Join(root, "apps", "legacy"))
+	writeFile(t, filepath.Join(root, "apps", "legacy", "miso.json"), `{}`)
+
+	members, err := DiscoverMembers(root, config.Config{})
+	if err != nil {
+		t.Fatalf("DiscoverMembers() error: %v", err)
+	}
+	names := memberNameList(members)
+	want := []string{"web"}
+	if !slices.Equal(names, want) {
+		t.Errorf("members = %v, want %v", names, want)
+	}
+}

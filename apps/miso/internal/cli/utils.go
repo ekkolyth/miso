@@ -82,8 +82,8 @@ func FindProjectRoot(startPath string) (string, error) {
 }
 
 // the nearest ancestor with a miso.json whose workspace has dir as a member,
-// else dir. Only the member's own directory counts: a project nested deeper
-// inside a member (a test fixture, say) keeps its own root
+// else dir. a project nested more than two levels inside a member keeps its own
+// root, but one within two levels with its own miso.json is claimed by the member
 func enclosingWorkspaceRoot(dir string) string {
 	for ancestor := filepath.Dir(dir); ancestor != filepath.Dir(ancestor); ancestor = filepath.Dir(ancestor) {
 		// standalone mode has no workspace discovery, so it never claims a member

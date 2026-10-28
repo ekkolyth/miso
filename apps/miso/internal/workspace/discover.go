@@ -27,41 +27,39 @@ func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
 	seen := make(map[string]bool)
 	var members []Member
 
-	if len(patterns) > 0 {
-		var includes, excludes []string
-		for _, pattern := range patterns {
-			if strings.HasPrefix(pattern, "!") {
-				excludes = append(excludes, strings.TrimPrefix(pattern, "!"))
-			} else {
-				includes = append(includes, pattern)
-			}
+	var includes, excludes []string
+	for _, pattern := range patterns {
+		if strings.HasPrefix(pattern, "!") {
+			excludes = append(excludes, strings.TrimPrefix(pattern, "!"))
+		} else {
+			includes = append(includes, pattern)
 		}
+	}
 
-		for _, pattern := range includes {
-			glob := pattern
-			if !filepath.IsAbs(glob) {
-				glob = filepath.Join(root, pattern)
+	for _, pattern := range includes {
+		glob := pattern
+		if !filepath.IsAbs(glob) {
+			glob = filepath.Join(root, pattern)
+		}
+		matches, err := filepath.Glob(glob)
+		if err != nil {
+			return nil, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
+		}
+		for _, match := range matches {
+			info, err := os.Stat(match)
+			if err != nil || !info.IsDir() {
+				continue
 			}
-			matches, err := filepath.Glob(glob)
-			if err != nil {
-				return nil, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
+			if seen[match] || excluded(match, root, excludes) {
+				continue
 			}
-			for _, match := range matches {
-				info, err := os.Stat(match)
-				if err != nil || !info.IsDir() {
-					continue
-				}
-				if seen[match] || excluded(match, root, excludes) {
-					continue
-				}
-				seen[match] = true
-				members = append(members, newMember(match))
-			}
+			seen[match] = true
+			members = append(members, newMember(match))
 		}
 	}
 
 	for _, dir := range scanDirs(root) {
-		if seen[dir] || insideMember(dir, members) {
+		if seen[dir] || excluded(dir, root, excludes) || insideMember(dir, members) {
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(dir, config.FileName)); err != nil {
