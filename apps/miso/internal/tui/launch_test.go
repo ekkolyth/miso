@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1096,6 +1097,21 @@ func TestBuildRunMemberWithoutManagerErrors(t *testing.T) {
 	}
 }
 
+func TestBuildRunMemberWithConflictingLockfilesErrors(t *testing.T) {
+	root := t.TempDir()
+	writeTestFiles(t, root, map[string]string{
+		"package.json":          `{"workspaces":["apps/*"]}`,
+		"apps/web/package.json": `{"name":"web","scripts":{"dev":"vite"}}`,
+		"apps/web/bun.lock":     "",
+		"apps/web/yarn.lock":    "",
+	})
+
+	_, _, _, _, _, err := buildRun(config.Config{Scripts: "./scripts"}, "dev", root, bun.Bun{}, nil, nil, false, false)
+	if err == nil || !strings.Contains(err.Error(), "member web:") {
+		t.Errorf("err = %v, want an error containing %q", err, "member web:")
+	}
+}
+
 func TestBuildRunStandaloneMemberEntryIsMarkedStandalone(t *testing.T) {
 	root := t.TempDir()
 	writeTestFiles(t, root, map[string]string{
@@ -1132,12 +1148,17 @@ func TestEntryManager(t *testing.T) {
 		mgr         manager.Manager
 		wantMgr     manager.Manager
 		wantManager string
+		wantErr     string
+		wantErrIs   error
 	}{
 		{name: "root entry uses mgr", mgr: bun.Bun{}, wantMgr: bun.Bun{}, wantManager: "bun"},
 		{name: "root entry without mgr detects lockfile", files: map[string]string{"pnpm-lock.yaml": ""}, wantManager: "pnpm"},
 		{name: "standalone member resolves nothing", files: map[string]string{"apps/web/package.json": pnpmField}, member: true, standalone: true, mgr: bun.Bun{}},
 		{name: "member uses its own manager", files: map[string]string{"apps/web/package.json": pnpmField}, member: true, mgr: bun.Bun{}, wantMgr: pnpm.Pnpm{}, wantManager: "pnpm"},
 		{name: "member with nothing falls back to mgr", member: true, mgr: bun.Bun{}, wantMgr: bun.Bun{}, wantManager: "bun"},
+		{name: "member with nothing and no mgr resolves nothing", member: true},
+		{name: "member with conflicting lockfiles errors", files: map[string]string{"apps/web/bun.lock": "", "apps/web/yarn.lock": ""}, member: true, mgr: bun.Bun{}, wantErrIs: manager.ErrMultipleLockfiles},
+		{name: "member with unsupported manager errors", files: map[string]string{"apps/web/package.json": `{"packageManager":"deno@2"}`}, member: true, mgr: bun.Bun{}, wantErr: `unsupported package manager "deno"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1151,7 +1172,16 @@ func TestEntryManager(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			gotMgr, gotManager := entryManager(entry, root, tt.mgr)
+			gotMgr, gotManager, err := entryManager(entry, root, tt.mgr)
+			if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
+				t.Fatalf("err = %v, want errors.Is %v", err, tt.wantErrIs)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("err = %v, want containing %q", err, tt.wantErr)
+			}
+			if tt.wantErrIs == nil && tt.wantErr == "" && err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
 			if gotMgr != tt.wantMgr || gotManager != tt.wantManager {
 				t.Errorf("entryManager = (%v, %q), want (%v, %q)", gotMgr, gotManager, tt.wantMgr, tt.wantManager)
 			}

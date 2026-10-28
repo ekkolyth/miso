@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -175,7 +176,10 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		var cmd string
 		var args []string
 		dir := entry.WorkspaceDir
-		entryMgr, managerName := entryManager(entry, root, mgr)
+		entryMgr, managerName, mgrErr := entryManager(entry, root, mgr)
+		if mgrErr != nil {
+			return nil, nil, nil, nil, false, fmt.Errorf("member %s: %w", entry.WorkspaceName, mgrErr)
+		}
 
 		if entry.ScriptSource == "folder" {
 			// member's effective shell wins, then root, then sh (see ResolveInterpreter)
@@ -243,33 +247,34 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	return pm, levels, graph, concurrentProcs, true, nil
 }
 
-// entryManager picks the package manager for one entry and the manager name
-// folder scripts use to choose a runtime. A root entry uses mgr, detecting a
-// name from root's lockfile when mgr is nil. A standalone member resolves
-// nothing. Any other member uses its own packageManager field or lockfile,
-// falling back to mgr
-func entryManager(entry TuiScriptEntry, root string, mgr manager.Manager) (manager.Manager, string) {
+// entryManager picks an entry's manager; a member falls back to mgr only when it sets none
+func entryManager(entry TuiScriptEntry, root string, mgr manager.Manager) (manager.Manager, string, error) {
 	if entry.WorkspaceName == "" {
 		if mgr != nil {
-			return mgr, mgr.Name()
+			return mgr, mgr.Name(), nil
 		}
 		if detected, err := manager.DetectManager(root); err == nil {
-			return nil, detected
+			return nil, detected, nil
 		}
-		return nil, ""
+		return nil, "", nil
 	}
 	if entry.Standalone {
-		return nil, ""
+		return nil, "", nil
 	}
-	if name, err := manager.Resolve(entry.WorkspaceDir); err == nil {
+	name, err := manager.Resolve(entry.WorkspaceDir)
+	if err == nil {
 		if driver, ok := manager.GetManager(name); ok {
-			return driver, name
+			return driver, name, nil
 		}
+		return nil, "", fmt.Errorf("unsupported package manager %q", name)
+	}
+	if !errors.Is(err, manager.ErrNoLockfile) {
+		return nil, "", err
 	}
 	if mgr != nil {
-		return mgr, mgr.Name()
+		return mgr, mgr.Name(), nil
 	}
-	return nil, ""
+	return nil, "", nil
 }
 
 // members ≥ 1: fan out over members (root is the orchestrator, never a
