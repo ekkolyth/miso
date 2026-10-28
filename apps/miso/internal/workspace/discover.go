@@ -19,43 +19,16 @@ type Member struct {
 // glob members first (pnpm-workspace.yaml wins over package.json "workspaces"),
 // then directories with their own miso.json. Independent of repo mode.
 func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
-	patterns, err := workspacePatterns(root)
+	globDirs, excludes, err := globMemberDirs(root)
 	if err != nil {
 		return nil, err
 	}
 
 	seen := make(map[string]bool)
 	var members []Member
-
-	var includes, excludes []string
-	for _, pattern := range patterns {
-		if strings.HasPrefix(pattern, "!") {
-			excludes = append(excludes, strings.TrimPrefix(pattern, "!"))
-		} else {
-			includes = append(includes, pattern)
-		}
-	}
-
-	for _, pattern := range includes {
-		glob := pattern
-		if !filepath.IsAbs(glob) {
-			glob = filepath.Join(root, pattern)
-		}
-		matches, err := filepath.Glob(glob)
-		if err != nil {
-			return nil, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
-		}
-		for _, match := range matches {
-			info, err := os.Stat(match)
-			if err != nil || !info.IsDir() {
-				continue
-			}
-			if seen[match] || excluded(match, root, excludes) {
-				continue
-			}
-			seen[match] = true
-			members = append(members, newMember(match))
-		}
+	for _, dir := range globDirs {
+		seen[dir] = true
+		members = append(members, newMember(dir))
 	}
 
 	for _, dir := range scanDirs(root) {
@@ -69,6 +42,48 @@ func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
 		members = append(members, newMember(dir))
 	}
 	return members, nil
+}
+
+// expands the workspace globs minus the "!" exclusions, and returns those
+// exclusions so callers apply the same rule to their own scans
+func globMemberDirs(root string) (dirs, excludes []string, err error) {
+	patterns, err := workspacePatterns(root)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var includes []string
+	for _, pattern := range patterns {
+		if strings.HasPrefix(pattern, "!") {
+			excludes = append(excludes, strings.TrimPrefix(pattern, "!"))
+		} else {
+			includes = append(includes, pattern)
+		}
+	}
+
+	seen := make(map[string]bool)
+	for _, pattern := range includes {
+		glob := pattern
+		if !filepath.IsAbs(glob) {
+			glob = filepath.Join(root, pattern)
+		}
+		matches, err := filepath.Glob(glob)
+		if err != nil {
+			return nil, nil, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
+		}
+		for _, match := range matches {
+			info, err := os.Stat(match)
+			if err != nil || !info.IsDir() {
+				continue
+			}
+			if seen[match] || excluded(match, root, excludes) {
+				continue
+			}
+			seen[match] = true
+			dirs = append(dirs, match)
+		}
+	}
+	return dirs, excludes, nil
 }
 
 func insideMember(dir string, members []Member) bool {
