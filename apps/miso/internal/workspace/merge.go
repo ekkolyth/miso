@@ -3,13 +3,16 @@ package workspace
 import "github.com/ekkolyth/miso/internal/config"
 
 // overlays a member's miso.json onto root for non-env fields.
+// Tasks and packageManager belong to the member alone; neither is inherited from root.
 // Env is resolved per-target elsewhere; member Repo is ignored (members are leaves).
 func EffectiveConfig(root config.Config, member Member) config.Config {
 	if member.ConfigPath == "" {
 		// tasks are member-owned: a member with no miso.json must not inherit
-		// root's task list, else a root concurrent broadcasts to every fan-out member
+		// root's task list, else a root concurrent broadcasts to every fan-out member.
+		// packageManager is member-owned too: a standalone root must not make its members standalone
 		effective := root
 		effective.Tasks = nil
+		effective.PackageManager = nil
 		return effective
 	}
 	memberCfg, err := config.Load(member.Dir)
@@ -18,6 +21,7 @@ func EffectiveConfig(root config.Config, member Member) config.Config {
 		// config must not leak root's task list into this member's fan-out
 		effective := root
 		effective.Tasks = nil
+		effective.PackageManager = nil
 		return effective
 	}
 
@@ -38,5 +42,6 @@ func EffectiveConfig(root config.Config, member Member) config.Config {
 	// tasks are member-owned: a member with none must not inherit root's task
 	// list, else a root concurrent broadcasts to every fan-out member
 	merged.Tasks = memberCfg.Tasks
+	merged.PackageManager = memberCfg.PackageManager
 	return merged
 }

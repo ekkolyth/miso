@@ -160,3 +160,41 @@ func TestEffectiveConfig_MemberTasksReplaceRoot(t *testing.T) {
 		t.Errorf("TaskConcurrent(dev) = %v, want [convex] (member owns tasks)", conc)
 	}
 }
+
+func TestEffectiveConfig_PackageManagerIsMemberOwn(t *testing.T) {
+	noPackageManager := false
+	rootConfig := config.Config{PackageManager: &noPackageManager}
+
+	tests := []struct {
+		name           string
+		memberJSON     *string
+		wantStandalone bool
+	}{
+		{name: "member sets false", memberJSON: ptr(`{"packageManager":false}`), wantStandalone: true},
+		{name: "member sets nothing", memberJSON: ptr(`{}`)},
+		{name: "member has no miso.json"},
+		{name: "member miso.json unreadable", memberJSON: ptr(`{`)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			memberDir := t.TempDir()
+			member := Member{Name: "web", Dir: memberDir}
+			if tc.memberJSON != nil {
+				member.ConfigPath = filepath.Join(memberDir, "miso.json")
+				if err := os.WriteFile(member.ConfigPath, []byte(*tc.memberJSON), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got := EffectiveConfig(rootConfig, member)
+			if got.StandaloneMode() != tc.wantStandalone {
+				t.Errorf("StandaloneMode() = %v, want %v", got.StandaloneMode(), tc.wantStandalone)
+			}
+			if !tc.wantStandalone && got.PackageManager != nil {
+				t.Errorf("PackageManager = %v, want nil (root value must not leak)", *got.PackageManager)
+			}
+		})
+	}
+}
+
+func ptr(value string) *string { return &value }
