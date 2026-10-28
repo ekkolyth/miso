@@ -112,12 +112,12 @@ func TestFindProjectRoot_MemberConfigResolvesToWorkspaceRoot(t *testing.T) {
 	assertSameDir(t, got, root)
 }
 
-func TestFindProjectRoot_NestedConfigOutsideWorkspaceStaysRoot(t *testing.T) {
+func TestFindProjectRoot_MemberConfigOutsideWorkspaceClaimedByRoot(t *testing.T) {
 	root := writeMemberConfigLayout(t, false, true)
 	member := filepath.Join(root, "apps", "web")
 	got, err := FindProjectRoot(member)
 	testutil.NoError(t, err)
-	assertSameDir(t, got, member)
+	assertSameDir(t, got, root)
 }
 
 func TestFindProjectRoot_MemberConfigWithoutRootConfigStaysRoot(t *testing.T) {
@@ -130,7 +130,7 @@ func TestFindProjectRoot_MemberConfigWithoutRootConfigStaysRoot(t *testing.T) {
 
 func TestFindProjectRoot_ProjectNestedInsideMemberStaysRoot(t *testing.T) {
 	root := writeMemberConfigLayout(t, true, true)
-	nested := filepath.Join(root, "apps", "web", "testdata", "fixture")
+	nested := filepath.Join(root, "apps", "web", "testdata", "cases", "fixture")
 	writeFile(t, filepath.Join(nested, config.FileName), "{}")
 	got, err := FindProjectRoot(nested)
 	testutil.NoError(t, err)

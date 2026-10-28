@@ -16,50 +16,71 @@ type Member struct {
 	ConfigPath string
 }
 
-// pnpm-workspace.yaml wins when present; otherwise package.json "workspaces".
-// Independent of repo mode.
+// glob members first (pnpm-workspace.yaml wins over package.json "workspaces"),
+// then directories with their own miso.json. Independent of repo mode.
 func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
 	patterns, err := workspacePatterns(root)
 	if err != nil {
 		return nil, err
 	}
-	if len(patterns) == 0 {
-		return nil, nil
-	}
-
-	var includes, excludes []string
-	for _, pattern := range patterns {
-		if strings.HasPrefix(pattern, "!") {
-			excludes = append(excludes, strings.TrimPrefix(pattern, "!"))
-		} else {
-			includes = append(includes, pattern)
-		}
-	}
 
 	seen := make(map[string]bool)
 	var members []Member
-	for _, pattern := range includes {
-		glob := pattern
-		if !filepath.IsAbs(glob) {
-			glob = filepath.Join(root, pattern)
-		}
-		matches, err := filepath.Glob(glob)
-		if err != nil {
-			return nil, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
-		}
-		for _, match := range matches {
-			info, err := os.Stat(match)
-			if err != nil || !info.IsDir() {
-				continue
+
+	if len(patterns) > 0 {
+		var includes, excludes []string
+		for _, pattern := range patterns {
+			if strings.HasPrefix(pattern, "!") {
+				excludes = append(excludes, strings.TrimPrefix(pattern, "!"))
+			} else {
+				includes = append(includes, pattern)
 			}
-			if seen[match] || excluded(match, root, excludes) {
-				continue
+		}
+
+		for _, pattern := range includes {
+			glob := pattern
+			if !filepath.IsAbs(glob) {
+				glob = filepath.Join(root, pattern)
 			}
-			seen[match] = true
-			members = append(members, newMember(match))
+			matches, err := filepath.Glob(glob)
+			if err != nil {
+				return nil, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
+			}
+			for _, match := range matches {
+				info, err := os.Stat(match)
+				if err != nil || !info.IsDir() {
+					continue
+				}
+				if seen[match] || excluded(match, root, excludes) {
+					continue
+				}
+				seen[match] = true
+				members = append(members, newMember(match))
+			}
 		}
 	}
+
+	for _, dir := range scanDirs(root) {
+		if seen[dir] || insideMember(dir, members) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, config.FileName)); err != nil {
+			continue
+		}
+		seen[dir] = true
+		members = append(members, newMember(dir))
+	}
 	return members, nil
+}
+
+func insideMember(dir string, members []Member) bool {
+	for _, member := range members {
+		rel, err := filepath.Rel(member.Dir, dir)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // prefers pnpm-workspace.yaml; falls back to package.json workspaces.
