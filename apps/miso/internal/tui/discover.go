@@ -138,7 +138,7 @@ func DeduplicateLabels(entries []TuiScriptEntry) []TuiScriptEntry {
 }
 
 // ResolveSingleRepoScriptsFolderOnly is like ResolveSingleRepoScripts but only
-// checks the scripts folder, ignoring package.json. Used in simple mode.
+// checks the scripts folder, ignoring package.json. Used in standalone mode.
 func ResolveSingleRepoScriptsFolderOnly(scripts []string, root string, cfg config.Config) ([]TuiScriptEntry, error) {
 	var entries []TuiScriptEntry
 

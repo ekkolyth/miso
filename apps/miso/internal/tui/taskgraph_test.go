@@ -76,7 +76,7 @@ func TestBuildRunBareDependsOnRunsNamedRootTasksInOrder(t *testing.T) {
 	assertLevels(t, cfg, "dev", root, [][]string{{"build", "services"}, {"migrate"}, {"dev"}})
 }
 
-func TestBuildRunBareDependsOnSimpleMode(t *testing.T) {
+func TestBuildRunBareDependsOnStandaloneMode(t *testing.T) {
 	root := t.TempDir()
 	writeFolderScripts(t, root, "services", "migrate", "build", "dev")
 	simple := false

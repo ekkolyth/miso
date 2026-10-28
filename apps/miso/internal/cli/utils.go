@@ -20,7 +20,7 @@ import (
 // find project root by walking up directories
 // priority: miso.json > lockfile > node_modules. A member's own miso.json
 // resolves to the workspace root that lists it, when that root has a miso.json
-// and isn't in simple mode
+// and isn't in standalone mode
 func FindProjectRoot(startPath string) (string, error) {
 	absPath, err := filepath.Abs(startPath)
 	if err != nil {
@@ -87,8 +87,8 @@ func FindProjectRoot(startPath string) (string, error) {
 // inside a member (a test fixture, say) keeps its own root
 func enclosingWorkspaceRoot(dir string) string {
 	for ancestor := filepath.Dir(dir); ancestor != filepath.Dir(ancestor); ancestor = filepath.Dir(ancestor) {
-		// simple mode has no workspace discovery, so it never claims a member
-		if ancestorCfg, err := config.Load(ancestor); err != nil || ancestorCfg.SimpleMode() {
+		// standalone mode has no workspace discovery, so it never claims a member
+		if ancestorCfg, err := config.Load(ancestor); err != nil || ancestorCfg.StandaloneMode() {
 			continue
 		}
 		members, err := workspace.DiscoverMembers(ancestor, config.Config{})

@@ -205,7 +205,7 @@ func assertDependsOnOrder(t *testing.T, root string) {
 	assertBefore(t, order, "build-done", "dev")
 }
 
-func TestE2E_DependsOnSimpleMode(t *testing.T) {
+func TestE2E_DependsOnStandaloneMode(t *testing.T) {
 	root := writeDependsOnFixture(t, false, "")
 	out, code := runTimeout(t, root, 30*time.Second, "dev")
 	if code != 0 {
@@ -254,7 +254,7 @@ func TestE2E_CaretDependsOnFailureDoesNotHang(t *testing.T) {
 	}
 }
 
-func TestE2E_SimpleModeDependsOnOnlyTask(t *testing.T) {
+func TestE2E_StandaloneModeDependsOnOnlyTask(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, filepath.Join(root, "miso.json"),
 		`{"packageManager":false,"repo":{"tasks":{"setup":{"dependsOn":["a","b"]}}}}`)

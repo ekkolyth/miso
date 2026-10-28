@@ -42,11 +42,11 @@ type ParsedCLI struct {
 	Scopes        []string // @-prefixed workspace filters (@web, @ekko/web)
 }
 
-// simple mode: folder scripts only, no package.json fallback.
-// main.go short-circuits simple mode before ParseCLI reaches here — this keeps
+// standalone mode: folder scripts only, no package.json fallback.
+// main.go short-circuits standalone mode before ParseCLI reaches here — this keeps
 // resolution correct for any other ParseCLI caller too.
 func resolveScript(name, root string, cfg config.Config) (scripting.ResolvedScript, error) {
-	if cfg.SimpleMode() {
+	if cfg.StandaloneMode() {
 		return scripting.ResolveScriptFolderOnly(name, root, cfg)
 	}
 	return scripting.ResolveScript(name, root, cfg)

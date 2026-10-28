@@ -60,7 +60,7 @@ func TestGetCandidates_MemberDirIncludesMemberScripts(t *testing.T) {
 	}
 }
 
-func TestGetCandidates_SimpleModeSkipsMemberScripts(t *testing.T) {
+func TestGetCandidates_StandaloneModeSkipsMemberScripts(t *testing.T) {
 	root := t.TempDir()
 	files := map[string]string{
 		"package.json":                 `{"name":"fx","private":true,"workspaces":["apps/*"]}`,
@@ -79,7 +79,7 @@ func TestGetCandidates_SimpleModeSkipsMemberScripts(t *testing.T) {
 	}
 	for _, c := range getCandidates("miso", "", filepath.Join(root, "apps", "web")) {
 		if c == "web-show" {
-			t.Error("simple mode has no workspaces, so completion must not offer member scripts")
+			t.Error("standalone mode has no workspaces, so completion must not offer member scripts")
 		}
 	}
 }

@@ -203,10 +203,10 @@ func main() {
 
 	// Simple mode: bypass ParseCLI and EnsureManager entirely.
 	// Only meta-commands are handled; everything else is folder script resolution.
-	if cfg.SimpleMode() {
+	if cfg.StandaloneMode() {
 		cmd := args[0]
 
-		// Meta-commands that remain in simple mode
+		// Meta-commands that remain in standalone mode
 		// (init, version, upgrade, completion already handled above)
 		switch cmd {
 		case "env":

@@ -240,7 +240,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		}
 		logger.Info("created miso.json")
 
-	// ── Case 3: no package.json — offer new project or simple mode ───────
+	// ── Case 3: no package.json — offer new project or standalone mode ───────
 	default:
 		var initChoice string
 		form := huh.NewForm(

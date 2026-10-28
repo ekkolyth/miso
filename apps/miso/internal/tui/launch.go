@@ -249,10 +249,10 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 // members ≥ 1: fan out over members (root is the orchestrator, never a
 // fan-out member); root script is the body only when no member defines the
 // name. Root task companions attach exactly once either way. Zero members /
-// simple mode: root script is the body, as always.
+// standalone mode: root script is the body, as always.
 func discoverEntries(cfg config.Config, scriptName string, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
 	var members []workspace.Member
-	if !cfg.SimpleMode() {
+	if !cfg.StandaloneMode() {
 		var err error
 		members, err = workspace.DiscoverMembersCached(root, cfg)
 		if err != nil {
@@ -311,7 +311,7 @@ func emptyTaskEntryError(cfg config.Config, scriptName string) error {
 func discoverSingleRepo(cfg config.Config, scriptName, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
 	var rootResolved []TuiScriptEntry
 	var err error
-	if cfg.SimpleMode() {
+	if cfg.StandaloneMode() {
 		rootResolved, err = ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
 	} else {
 		rootResolved, err = ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
@@ -356,7 +356,7 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 	case strings.HasPrefix(concName, "#"):
 		rootName := strings.TrimPrefix(concName, "#")
 		scopeDesc = rootScopeDesc(cfg)
-		if cfg.SimpleMode() {
+		if cfg.StandaloneMode() {
 			entries, err = ResolveSingleRepoScriptsFolderOnly([]string{rootName}, root, cfg)
 		} else {
 			entries, err = ResolveSingleRepoScripts([]string{rootName}, root, cfg)
@@ -378,7 +378,7 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 		entries, err = DiscoverTuiScripts(script, []WorkspaceInfo{memberInfo}, cfg.Scripts)
 	case local == nil:
 		scopeDesc = rootScopeDesc(cfg)
-		if cfg.SimpleMode() {
+		if cfg.StandaloneMode() {
 			entries, err = ResolveSingleRepoScriptsFolderOnly([]string{concName}, root, cfg)
 		} else {
 			entries, err = ResolveSingleRepoScripts([]string{concName}, root, cfg)
@@ -399,7 +399,7 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 
 // root-scope search-location description for an unresolvable concurrent entry
 func rootScopeDesc(cfg config.Config) string {
-	if cfg.SimpleMode() {
+	if cfg.StandaloneMode() {
 		return fmt.Sprintf("root scope (scripts folder %q)", cfg.Scripts)
 	}
 	return fmt.Sprintf("root scope (scripts folder %q and root package.json)", cfg.Scripts)

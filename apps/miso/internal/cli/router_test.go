@@ -119,7 +119,7 @@ func TestParseMisoxFallsThroughToPassthrough(t *testing.T) {
 	}
 }
 
-func TestParseCLI_SimpleModeIgnoresPackageJSON(t *testing.T) {
+func TestParseCLI_StandaloneModeIgnoresPackageJSON(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
@@ -129,14 +129,14 @@ func TestParseCLI_SimpleModeIgnoresPackageJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	pm := false
-	cfg := config.Config{PackageManager: &pm, Scripts: "./scripts"} // SimpleMode
+	cfg := config.Config{PackageManager: &pm, Scripts: "./scripts"} // StandaloneMode
 
 	parsed, err := ParseCLI([]string{"foo"}, cfg, root)
 	if err != nil {
 		t.Fatalf("ParseCLI() error: %v", err)
 	}
 	if parsed.Action != ActionPassthrough {
-		t.Errorf("Action = %v, want ActionPassthrough (simple mode must not resolve package.json)", parsed.Action)
+		t.Errorf("Action = %v, want ActionPassthrough (standalone mode must not resolve package.json)", parsed.Action)
 	}
 }
 

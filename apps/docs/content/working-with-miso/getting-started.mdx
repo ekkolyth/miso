@@ -43,7 +43,7 @@ Leave `repo` unset (or `"miso"`, the default). With no workspace members detecte
 During Init, If you select **Monorepo**, miso will ask for your workspace glob patterns. This defaults to `apps/*, packages/*` which covers the most common monorepo layouts. Miso will add a `workspaces` field to your root `package.json` using the patterns you provide, and create the base workspace directories for you (if they don't already exist)
 
 
-### Simple Mode
+### Standalone Mode
 <Terminal
     copy={false}
     className="mt-4 border border-neutral-700 rounded-sm"
@@ -57,12 +57,12 @@ If `miso init` doesn't detect an existing JavaScript project (no `package.json` 
 miso could not detect an existing javascript project.
 
   ❯ Create new project
-    Run in simple mode (scripts only, no package manager)
+    Run in standalone mode (scripts only, no package manager)
 ```
 
-Selecting `Run in simple mode` lets you use miso's script runner, TUI, env validation, and task orchestration in any project — Go, Python, Rust, or anything else, without passing through commands to a package manager like bun, pnpm, etc.
+Selecting `Run in standalone mode` lets you use miso's script runner, TUI, env validation, and task orchestration in any project — Go, Python, Rust, or anything else, without passing through commands to a package manager like bun, pnpm, etc.
 
-See [Simple Mode](/working-with-miso/simple-mode) for the more details.
+See [Standalone Mode](/working-with-miso/simple-mode) for the more details.
 
 ### Running Commands from Anywhere
 

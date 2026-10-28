@@ -35,7 +35,7 @@ func expandDependencies(cfg config.Config, root string, scriptName string, entri
 		infos:   make(map[string]WorkspaceInfo),
 		effects: make(map[string]config.Config),
 	}
-	if !cfg.SimpleMode() {
+	if !cfg.StandaloneMode() {
 		members, err := workspace.DiscoverMembersCached(root, cfg)
 		if err != nil {
 			return nil, nil, fmt.Errorf("discover members: %w", err)
@@ -314,7 +314,7 @@ func (g *taskGraph) resolveInWorkspace(name string, member *workspace.Member) ([
 	if member != nil {
 		return DiscoverTuiScripts(name, []WorkspaceInfo{g.memberInfo(*member)}, g.cfg.Scripts)
 	}
-	if g.cfg.SimpleMode() {
+	if g.cfg.StandaloneMode() {
 		return ResolveSingleRepoScriptsFolderOnly([]string{name}, g.root, g.cfg)
 	}
 	return ResolveSingleRepoScripts([]string{name}, g.root, g.cfg)

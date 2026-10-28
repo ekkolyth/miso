@@ -93,8 +93,8 @@ func projectScriptNames(cwd string) []string {
 	if err != nil {
 		return nil
 	}
-	// simple mode has no workspaces
-	if cfg.SimpleMode() {
+	// standalone mode has no workspaces
+	if cfg.StandaloneMode() {
 		return names
 	}
 	members, _ := workspace.DiscoverMembers(root, cfg)
