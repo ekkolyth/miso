@@ -48,9 +48,13 @@ type OpRewrite struct {
 
 type OpClear struct{}
 
-func (OpAppend) lineOp()  {}
-func (OpRewrite) lineOp() {}
-func (OpClear) lineOp()   {}
+// drops the newest Count lines, the rows a child erased below its cursor
+type OpTruncate struct{ Count int }
+
+func (OpAppend) lineOp()   {}
+func (OpRewrite) lineOp()  {}
+func (OpClear) lineOp()    {}
+func (OpTruncate) lineOp() {}
 
 // ProcessLineMsg carries one output op from the capture goroutine to the model.
 type ProcessLineMsg struct {
@@ -392,10 +396,10 @@ func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGr
 
 // liveWriter maps a child's redraw stream onto in-place buffer edits so a tool
 // that repaints its output — docker compose's container block, a spinner, a
-// vite banner after a screen clear — overwrites or resets recent lines instead
-// of appending a fresh copy each tick. It handles the linear "move up N lines,
-// rewrite them" and "clear the screen, start over" patterns only, not full
-// cursor addressing.
+// vite banner after a screen clear, a clack prompt — overwrites or resets
+// recent lines instead of appending a fresh copy each tick. It follows the
+// cursor up and down through recent rows, erase-below, and screen clears, not
+// full cursor addressing.
 type liveWriter struct {
 	buf *RingBuffer
 	// rows above the append point the write cursor sits on; 0 = append
@@ -404,6 +408,9 @@ type liveWriter struct {
 	pending       bool
 	pendingOffset int
 	lastPainted   string
+	// bytes of the open line already applied — everything up to its last cursor
+	// move, which a prompt redrawing in place may never follow with a newline
+	applied int
 }
 
 // feed resolves one newline-terminated segment against the buffer — resetting
@@ -411,54 +418,37 @@ type liveWriter struct {
 // redraw, otherwise appending — and returns the ops it applied so a consumer
 // can mirror the same edit.
 func (lw *liveWriter) feed(raw string) []LineOp {
+	// a pty turns a cooked child's \n into \r\n, so a bare \n comes from a
+	// raw-mode TUI (bubbletea) stepping over a row it left unchanged
+	bareLineFeed := !strings.HasSuffix(raw, "\r")
 	raw = strings.TrimSuffix(raw, "\r")
-	cleared := strings.IndexByte(raw, '\x1b') >= 0 && screenResetRe.MatchString(raw)
-	moveUp, raw := extractCursorUp(raw)
-	raw = resolveLine(raw)
-	raw = stripNonColorANSI(raw)
+	ops, rest, moved := lw.applyMoves(raw)
+	lw.applied = 0
+	raw = stripNonColorANSI(resolveLine(rest))
 
-	var ops []LineOp
+	if bareLineFeed && rest == "" && lw.up > 0 && !lw.pending {
+		lw.up--
+		return ops
+	}
 	if lw.pending {
 		lw.pending = false
-		if !cleared && moveUp == 0 {
-			lw.buf.SetFromEnd(lw.pendingOffset, raw)
-			if lw.up > 0 {
-				lw.up--
-			}
-			return []LineOp{OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: raw}}
+		lw.buf.SetFromEnd(lw.pendingOffset, raw)
+		if lw.up > 0 {
+			lw.up--
 		}
-		// the painted row stays as history and the redraw proceeds from there;
-		// text the child wrote before its cursor-up on this line shows twice
-		// (frozen here and at the rewrite target), which beats losing it
-		ops = append(ops, OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: lw.lastPainted})
+		return append(ops, OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: raw})
 	}
-	if cleared {
-		lw.buf.Clear()
-		lw.up = 0
-		ops = append(ops, OpClear{})
-		if raw == "" {
-			return ops // a bare screen clear commits no line
-		}
-	}
-	if moveUp > 0 {
-		lw.up += moveUp
-		if room := lw.buf.Len(); lw.up > room {
-			lw.up = room
-		}
-		if raw == "" {
-			return ops // cursor-only reposition, no reprint to commit yet
-		}
+	if moved && raw == "" {
+		return ops // cursor-only reposition, no reprint to commit yet
 	}
 	if lw.up == 0 {
 		lw.buf.Write(raw)
-		ops = append(ops, OpAppend{Text: raw})
-	} else {
-		offset := lw.up - 1
-		lw.buf.SetFromEnd(offset, raw)
-		ops = append(ops, OpRewrite{OffsetFromEnd: offset, Text: raw})
-		lw.up--
+		return append(ops, OpAppend{Text: raw})
 	}
-	return ops
+	offset := lw.up - 1
+	lw.buf.SetFromEnd(offset, raw)
+	lw.up--
+	return append(ops, OpRewrite{OffsetFromEnd: offset, Text: raw})
 }
 
 // feedPartial paints a line the child hasn't ended yet — a prompt, typed
@@ -468,22 +458,23 @@ func (lw *liveWriter) feedPartial(raw string) []LineOp {
 		return nil
 	}
 	raw = incompleteEscapeRe.ReplaceAllString(trimIncompleteRune(raw), "")
-	// redraw frames and screen clears only make sense once the whole line is in
-	if cursorUpRe.MatchString(raw) || screenResetRe.MatchString(raw) {
-		return nil
+	ops, rest, moved := lw.applyMoves(raw)
+	// a half-written row of a multi-row redraw frame waits for its newline
+	if moved {
+		return ops
 	}
-	text := stripNonColorANSI(resolveLine(raw))
+	text := stripNonColorANSI(resolveLine(rest))
 
 	if lw.pending {
 		if text == lw.lastPainted {
-			return nil
+			return ops
 		}
 		lw.buf.SetFromEnd(lw.pendingOffset, text)
 		lw.lastPainted = text
-		return []LineOp{OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: text, Pending: true}}
+		return append(ops, OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: text, Pending: true})
 	}
 	if text == "" {
-		return nil
+		return ops
 	}
 	var op LineOp
 	if lw.up == 0 {
@@ -497,7 +488,89 @@ func (lw *liveWriter) feedPartial(raw string) []LineOp {
 	}
 	lw.pending = true
 	lw.lastPainted = text
-	return []LineOp{op}
+	return append(ops, op)
+}
+
+// applyMoves walks the open line's cursor moves not yet applied, in order: the
+// text before each move lands on the row the cursor is on, then the move
+// repositions it. It returns the text after the last move and whether the open
+// line has moved the cursor at all.
+func (lw *liveWriter) applyMoves(raw string) (ops []LineOp, rest string, moved bool) {
+	base := lw.applied
+	for _, loc := range cursorMoveRe.FindAllStringSubmatchIndex(raw[base:], -1) {
+		start, end := base+loc[0], base+loc[1]
+		chunk := raw[lw.applied:start]
+		ops = append(ops, lw.writeInPlace(stripNonColorANSI(resolveLine(chunk)), eraseLineRe.MatchString(chunk))...)
+		count := ""
+		if loc[2] >= 0 {
+			count = raw[base+loc[2] : base+loc[3]]
+		}
+		ops = append(ops, lw.move(raw[start:end], count, ops)...)
+		lw.applied = end
+	}
+	return ops, raw[lw.applied:], lw.applied > 0
+}
+
+// writeInPlace puts text on the cursor's row without ending the line, so the
+// cursor stays on that row for the move that follows. A row the child erased
+// and left empty is blanked — dialoguer clears its prompt row by row this way
+func (lw *liveWriter) writeInPlace(text string, erased bool) []LineOp {
+	if lw.pending {
+		lw.pending = false
+		lw.buf.SetFromEnd(lw.pendingOffset, text)
+		lw.up = lw.pendingOffset + 1
+		return []LineOp{OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: text}}
+	}
+	if text == "" && (!erased || lw.up == 0) {
+		return nil
+	}
+	if lw.up == 0 {
+		lw.buf.Write(text)
+		lw.up = 1
+		return []LineOp{OpAppend{Text: text}}
+	}
+	lw.buf.SetFromEnd(lw.up-1, text)
+	return []LineOp{OpRewrite{OffsetFromEnd: lw.up - 1, Text: text}}
+}
+
+func (lw *liveWriter) move(seq, count string, prior []LineOp) []LineOp {
+	n := 1
+	if v, err := strconv.Atoi(count); err == nil && v > 0 {
+		n = v
+	}
+	switch seq[len(seq)-1] {
+	case 'A':
+		lw.up = min(lw.up+n, lw.buf.Len())
+	case 'B':
+		lw.up = max(lw.up-n, 0)
+	case 'J':
+		if seq == "\x1b[J" || seq == "\x1b[0J" {
+			// rows below the cursor's go; its own row is repainted by what follows
+			if lw.up > 1 {
+				lw.buf.TruncateEnd(lw.up - 1)
+				dropped := lw.up - 1
+				lw.up = 1
+				return []LineOp{OpTruncate{Count: dropped}}
+			}
+			return nil
+		}
+		return lw.clear(prior)
+	default:
+		return lw.clear(prior)
+	}
+	return nil
+}
+
+func (lw *liveWriter) clear(prior []LineOp) []LineOp {
+	lw.buf.Clear()
+	lw.up = 0
+	// ESC[2J ESC[H is one reset, not two
+	if len(prior) > 0 {
+		if _, ok := prior[len(prior)-1].(OpClear); ok {
+			return nil
+		}
+	}
+	return []LineOp{OpClear{}}
 }
 
 // each read re-resolves the whole open line, so painting stops at a length no
@@ -520,36 +593,16 @@ func trimIncompleteRune(s string) string {
 	return s
 }
 
-// screenResetRe matches full-screen clears a redrawing child emits before
-// repainting: erase-display (ESC[2J), erase-scrollback (ESC[3J), and cursor-home
-// (ESC[H and its 0/1 row;col forms). It deliberately excludes arbitrary cursor
-// addressing (ESC[<row>;<col>H) and partial erases (ESC[0J/ESC[1J).
-var screenResetRe = regexp.MustCompile(`\x1b\[[23]J|\x1b\[[01]?(?:;[01]?)?H`)
+// erase-to-end-of-line or erase-whole-line
+var eraseLineRe = regexp.MustCompile(`\x1b\[[02]?K`)
 
-// cursorUpRe matches cursor-up sequences (ESC[<n>A). ESC[A and ESC[0A both mean
-// up one line.
-var cursorUpRe = regexp.MustCompile(`\x1b\[([0-9]*)A`)
-
-// extractCursorUp removes cursor-up sequences and returns their summed line
-// count plus the remaining string.
-func extractCursorUp(s string) (int, string) {
-	if !strings.Contains(s, "\x1b[") {
-		return 0, s
-	}
-	total := 0
-	rest := cursorUpRe.ReplaceAllStringFunc(s, func(match string) string {
-		digits := cursorUpRe.FindStringSubmatch(match)[1]
-		n := 1
-		if digits != "" {
-			if v, err := strconv.Atoi(digits); err == nil && v > 0 {
-				n = v
-			}
-		}
-		total += n
-		return ""
-	})
-	return total, rest
-}
+// cursorMoveRe matches the sequences that move the write cursor between rows:
+// cursor-up and cursor-down (ESC[<n>A, ESC[<n>B; no count or 0 means one),
+// erase-below (ESC[J, ESC[0J), and the full-screen clears a redrawing child
+// emits before repainting — erase-display (ESC[2J), erase-scrollback (ESC[3J),
+// and cursor-home (ESC[H and its 0/1 row;col forms). It deliberately excludes
+// arbitrary cursor addressing (ESC[<row>;<col>H) and erase-above (ESC[1J).
+var cursorMoveRe = regexp.MustCompile(`\x1b\[([0-9]*)[AB]|\x1b\[[023]?J|\x1b\[[01]?(?:;[01]?)?H`)
 
 type lineCell struct {
 	seq   string

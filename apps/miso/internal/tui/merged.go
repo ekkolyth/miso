@@ -371,8 +371,9 @@ func (m MergedModel) renderFilterBar() string {
 
 // applyLineOp folds one child op into the interleaved log. An append extends the
 // app's tail block; a rewrite collapses in place while the block is still at the
-// tail, or appends a fresh block once another app has interleaved; a clear
-// freezes the block so later output starts fresh.
+// tail, or appends a fresh block once another app has interleaved; a truncate
+// drops erased rows only from a block still at the tail; a clear freezes the
+// block so later output starts fresh.
 func (m *MergedModel) applyLineOp(label string, op LineOp) {
 	switch o := op.(type) {
 	case OpAppend:
@@ -381,6 +382,13 @@ func (m *MergedModel) applyLineOp(label string, op LineOp) {
 		m.tailRebuilding = false
 	case OpRewrite:
 		m.rewriteLine(label, o.OffsetFromEnd, o.Text)
+	case OpTruncate:
+		if m.ownsTail(label) {
+			n := min(o.Count, m.tailBlockLen)
+			m.logLines = m.logLines[:len(m.logLines)-n]
+			m.tailBlockLen -= n
+			m.tailLastOffset = -1
+		}
 	case OpClear:
 		if m.ownsTail(label) {
 			m.tailBlockLen = 0

@@ -81,6 +81,32 @@ func TestMergedClearResetsBlock(t *testing.T) {
 	}
 }
 
+// a prompt that shrinks erases the rows below its cursor — gone from its own
+// tail block, untouched once another app has interleaved.
+func TestMergedTruncateDropsOnlyOwnTail(t *testing.T) {
+	pm := &ProcessManager{Processes: []*Process{
+		{Entry: TuiScriptEntry{Label: "a"}},
+		{Entry: TuiScriptEntry{Label: "b"}},
+	}}
+	m := MergedModel{pm: pm, visible: map[int]bool{0: true, 1: true}}
+
+	m = feedMerged(m, "a", OpAppend{Text: "◆ pick"})
+	m = feedMerged(m, "a", OpAppend{Text: "│ a"})
+	m = feedMerged(m, "a", OpAppend{Text: "│ b"})
+	m = feedMerged(m, "a", OpAppend{Text: "└"})
+	m = feedMerged(m, "a", OpTruncate{Count: 2})
+	m = feedMerged(m, "a", OpRewrite{OffsetFromEnd: 0, Text: "│ a'"})
+	m = feedMerged(m, "a", OpAppend{Text: "└"})
+	m = feedMerged(m, "b", OpAppend{Text: "b1"})
+	m = feedMerged(m, "a", OpTruncate{Count: 1})
+
+	got := mergedTexts(m)
+	want := []string{"◆ pick", "│ a'", "└", "b1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("merged lines = %#v, want %#v", got, want)
+	}
+}
+
 // toggling another app's visibility is a render-time filter — it must not
 // disturb the in-place bookkeeping kept on the full list.
 func TestMergedFilterToggleDoesNotCorruptRewrites(t *testing.T) {

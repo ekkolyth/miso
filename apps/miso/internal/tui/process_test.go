@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -732,9 +733,10 @@ func TestCaptureOutputBareCursorUpDoesNotBlankLines(t *testing.T) {
 	pm := NewProcessManager()
 	p := pm.Add(TuiScriptEntry{Label: "spin"}, "", nil, "", nil)
 
-	stream := "web  Creating\ndb  Creating\n" + // frame 1
-		"\x1b[2A\n" + // bare cursor-up, no reprint text
-		"web  Created\ndb  Created\n" // reprint arrives on its own lines
+	// a cooked child's \n reaches miso as \r\n through the pty
+	stream := "web  Creating\r\ndb  Creating\r\n" + // frame 1
+		"\x1b[2A\r\n" + // bare cursor-up, no reprint text
+		"web  Created\r\ndb  Created\r\n" // reprint arrives on its own lines
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -760,8 +762,9 @@ func TestCaptureOutputRedrawWithBlankRowStillOverwrites(t *testing.T) {
 	pm := NewProcessManager()
 	p := pm.Add(TuiScriptEntry{Label: "compose"}, "", nil, "", nil)
 
-	stream := "web  Creating\ndb  Creating\nlog line\n" + // frame 1: 3 lines
-		"\x1b[3Aweb  Created\n\ndb  Created\n" // up 3, middle row reprints blank
+	// a cooked child's \n reaches miso as \r\n through the pty
+	stream := "web  Creating\r\ndb  Creating\r\nlog line\r\n" + // frame 1: 3 lines
+		"\x1b[3Aweb  Created\r\n\r\ndb  Created\r\n" // up 3, middle row reprints blank
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -1006,4 +1009,68 @@ func TestStartEmitsPreambleBeforeChildOutput(t *testing.T) {
 	if !strings.Contains(lines[1], "next dev booting") {
 		t.Errorf("second line = %q, want the child's output", lines[1])
 	}
+}
+
+func TestCaptureOutputClackPromptRedrawsInPlace(t *testing.T) {
+	// clack (changeset's prompts) leaves the cursor on the frame's last row,
+	// jumps to its top, steps down with ESC[nB to the first changed row, and
+	// either rewrites one row with ESC[2K or erases below with ESC[J and
+	// reprints the tail
+	_, p, _, w, stop := startPipeCapture(t, "changeset")
+	defer stop()
+
+	writeAndWaitFor(t, p, w, "◆ pick\n│ ● a\n│ ○ b\n└",
+		[]string{"◆ pick", "│ ● a", "│ ○ b", "└"})
+	// arrow down: rows 1 and 2 change
+	writeAndWaitFor(t, p, w, "\x1b[999D\x1b[3A\x1b[1B\x1b[J│ ○ a\n│ ● b\n└",
+		[]string{"◆ pick", "│ ○ a", "│ ● b", "└"})
+	// arrow up again
+	writeAndWaitFor(t, p, w, "\x1b[999D\x1b[3A\x1b[1B\x1b[J│ ● a\n│ ○ b\n└",
+		[]string{"◆ pick", "│ ● a", "│ ○ b", "└"})
+	// typing into a filter changes only the title row
+	writeAndWaitFor(t, p, w, "\x1b[999D\x1b[3A\x1b[2K\x1b[G◆ pick x\x1b[3B",
+		[]string{"◆ pick x", "│ ● a", "│ ○ b", "└"})
+	// a shorter frame erases the rows it no longer uses
+	writeAndWaitFor(t, p, w, "\x1b[999D\x1b[3A\x1b[1B\x1b[J│ ● a\n└",
+		[]string{"◆ pick x", "│ ● a", "└"})
+	// submit: clack closes with a newline, and later output appends below
+	writeAndWaitFor(t, p, w, "\ndone\n",
+		[]string{"◆ pick x", "│ ● a", "└", "done"})
+}
+
+func TestCaptureOutputDialoguerPromptClearsOnSubmit(t *testing.T) {
+	// dialoguer (via the console crate) repaints a multi-select by stepping
+	// through its rows with \r ESC[2K ESC[1B, and on submit clears the whole
+	// prompt that way before printing its summary; bytes recorded from ekko
+	_, p, _, w, stop := startPipeCapture(t, "ekko")
+	defer stop()
+
+	clearRows := func(n int) string {
+		return fmt.Sprintf("\x1b[%dA", n) + strings.Repeat("\r\x1b[2K\x1b[1B", n) + fmt.Sprintf("\x1b[%dA", n)
+	}
+	writeAndWaitFor(t, p, w, "\x1b[?25lagents:\r\n> [ ] claude\r\n  [ ] cursor\r\n",
+		[]string{"agents:", "> [ ] claude", "  [ ] cursor"})
+	writeAndWaitFor(t, p, w, clearRows(2)+"  [ ] claude\r\n> [x] cursor\r\n",
+		[]string{"agents:", "  [ ] claude", "> [x] cursor"})
+	writeAndWaitFor(t, p, w, clearRows(3)+"agents: \r\n\x1b[?25hnothing selected\r\n",
+		[]string{"agents: ", "nothing selected", ""})
+}
+
+func TestCaptureOutputBubbleteaRedrawSkipsUnchangedRows(t *testing.T) {
+	// bubbletea runs the pty raw, parks the cursor on the frame's last row,
+	// jumps to the top, and steps over unchanged rows with a bare \n instead of
+	// reprinting them; bytes recorded from create-ekko-app (huh)
+	_, p, _, w, stop := startPipeCapture(t, "cea")
+	defer stop()
+
+	writeAndWaitFor(t, p, w, "\r┃ name?\r\n┃ > app\r\n\r\nenter next\x1b[K",
+		[]string{"┃ name?", "┃ > app", "", "enter next"})
+	writeAndWaitFor(t, p, w, "\r\x1b[3A\n┃ > appx\r\n\n",
+		[]string{"┃ name?", "┃ > appx", "", "enter next"})
+	writeAndWaitFor(t, p, w, "\r\x1b[3A┃ framework?\r\n┃ > Next.js\r\n┃   TanStack\r\nenter select\x1b[K",
+		[]string{"┃ framework?", "┃ > Next.js", "┃   TanStack", "enter select"})
+	writeAndWaitFor(t, p, w, "\r\x1b[3A\n┃   Next.js\r\n┃ > TanStack\r\n",
+		[]string{"┃ framework?", "┃   Next.js", "┃ > TanStack", "enter select"})
+	writeAndWaitFor(t, p, w, "\r\x1b[2KINFO setup cancelled\r\n",
+		[]string{"┃ framework?", "┃   Next.js", "┃ > TanStack", "INFO setup cancelled"})
 }

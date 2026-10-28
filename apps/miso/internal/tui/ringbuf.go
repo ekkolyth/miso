@@ -77,6 +77,16 @@ func (rb *RingBuffer) SetFromEnd(offsetFromEnd int, line string) {
 	rb.buf[idx] = line
 }
 
+// drops the newest n lines, clamped to what's retained
+func (rb *RingBuffer) TruncateEnd(n int) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	n = min(n, rb.count)
+	rb.head = ((rb.head-n)%rb.cap + rb.cap) % rb.cap
+	rb.count -= n
+}
+
 // Clear resets the buffer to empty.
 func (rb *RingBuffer) Clear() {
 	rb.mu.Lock()
