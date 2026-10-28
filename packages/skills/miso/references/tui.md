@@ -13,7 +13,7 @@ Controls the renderer. Set at the top level of `miso.json`.
 
 | Value | Behavior |
 |---|---|
-| `"tabbed"` | Default. Sidebar with per-process log panes. Click or use arrow keys to navigate, `r` to restart, `C` to copy full log buffer. |
+| `"tabbed"` | Default. Sidebar with per-process log panes. Click or use arrow keys to navigate, `r` to restart (re-reads `.env` files; the TUI then stays open until you quit), `C` to copy full log buffer. |
 | `"merged"` | Interleaved output with color-coded process labels and a filter bar. |
 | `"off"` | No chrome. Orchestration is unaffected — fan-out, `concurrent`, `dependsOn` still run — output streams as plain `[label] line` per process. |
 | `{ "mode": "tabbed", "cleanExit": true }` | Object form. `cleanExit: true` suppresses the log dump to stdout when the TUI exits. By default, all buffered process output is printed to stdout after the TUI closes. |
@@ -52,7 +52,7 @@ In delegated (`turbo`/`nx`) mode there is no per-child pty — the delegate pipe
 
 ## `repo` Field
 
-Controls **orchestration** — who runs the processes. Workspace membership is detected automatically from the package manager (`pnpm-workspace.yaml` or `package.json` `workspaces`), independent of this field.
+Controls **orchestration** — who runs the processes. Workspace membership is detected automatically from the package manager (`pnpm-workspace.yaml`, `package.json` `workspaces`, or a `miso.json` at `*/` or `*/*/`), independent of this field.
 
 | Value | Behavior |
 |---|---|

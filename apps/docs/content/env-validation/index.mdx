@@ -84,7 +84,7 @@ Two consequences worth knowing:
     ERROR miso: load apps/web/miso.json: parse config: …
     ```
 
-- **Membership is the package manager's.** Members come from `package.json` workspaces or `pnpm-workspace.yaml`. A `miso.json` in a directory that isn't a workspace member isn't traversed — if you keep schemas outside the workspace set, declare them at the root instead.
+- **Members come from workspaces and `miso.json` files.** Members are the directories matched by `package.json` workspaces or `pnpm-workspace.yaml`, plus directories with their own `miso.json` at `*/` or `*/*/`. A workspace `!` exclusion wins, so an excluded directory isn't traversed.
 
 ## CI mode
 

@@ -75,7 +75,7 @@ Controls how miso discovers and orchestrates workspaces.
     Default
 </Badge>
 
-Miso orchestrates directly. Workspace membership is auto-detected — independent of this setting — from a `pnpm-workspace.yaml` (checked first) or a `workspaces` field in your root `package.json`. Uses `concurrent` in task config for companion scripts.
+Miso orchestrates directly. Workspace membership is auto-detected — independent of this setting — from a `pnpm-workspace.yaml` (checked first), a `workspaces` field in your root `package.json`, or a `miso.json` in a directory at `*/` or `*/*/`. Uses `concurrent` in task config for companion scripts.
 
 <DocProp prop='"turbo"' />
 

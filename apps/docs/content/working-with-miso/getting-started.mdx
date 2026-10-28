@@ -4,7 +4,7 @@ Run `miso init` to set up Miso in your project.
 
 <CommandSelect miso="miso init" />
 
-This creates a `miso.json` configuration file in the current directory. Miso will try to assume its own default configuration, but will ask you to confirm during `miso init` to make sure you're both on the same page.
+`miso init` scans the root, `*/`, and `*/*/` for apps (JavaScript/TypeScript, Go, Rust, C#, F#, Python, Java/Kotlin, and Laravel), then asks you to confirm which ones to run with miso. It writes only `miso.json` files and never touches `package.json`.
 
 ### Choosing Your Repo Type
 
@@ -32,7 +32,7 @@ or, for more advanced setups:
 }`}
 />
 
-`repo` controls the orchestration engine, not whether the project is a single project or a monorepo — workspace membership is auto-detected from a `pnpm-workspace.yaml` (checked first) or a `workspaces` field in your root `package.json`, independent of this setting.
+`repo` controls the orchestration engine, not whether the project is a single project or a monorepo — workspace membership is auto-detected from a `pnpm-workspace.yaml` (checked first), a `workspaces` field in your root `package.json`, or a `miso.json` in a directory at `*/` or `*/*/`, independent of this setting.
 
 ### Single Project
 
@@ -40,7 +40,20 @@ Leave `repo` unset (or `"miso"`, the default). With no workspace members detecte
 
 ### Monorepo
 
-During Init, If you select **Monorepo**, miso will ask for your workspace glob patterns. This defaults to `apps/*, packages/*` which covers the most common monorepo layouts. Miso will add a `workspaces` field to your root `package.json` using the patterns you provide, and create the base workspace directories for you (if they don't already exist)
+When `miso init` finds more than one app, it lists them in two groups, all selected:
+
+```md
+miso found 7 apps. Pick the ones to run with miso:
+space to toggle • ctrl+a to toggle all • Enter to confirm • ctrl+c to bail
+
+Workspace:
+  [x] apps/web — Typescript bun
+  [x] apps/api — Go
+Non-Workspace:
+  [x] tools/learning — Python uv
+```
+
+**Workspace** lists apps that a workspace glob in your `package.json` or `pnpm-workspace.yaml` already matches. **Non-Workspace** lists every other app it found. Apps that need one get their own `miso.json`, and the root gets a `miso.json` last. Miso doesn't add a `workspaces` field to your `package.json`.
 
 
 ### Standalone Mode
@@ -51,14 +64,17 @@ During Init, If you select **Monorepo**, miso will ask for your workspace glob p
     command={`"packageManager": false`}
 />
 
-If `miso init` doesn't detect an existing JavaScript project (no `package.json` or lockfile), it offers an additional option:
+If the scan finds no apps, or you deselect every app, `miso init` asks how to set up miso:
 
 ```md
-miso could not detect an existing javascript project.
+miso didn't find any apps here. How do you want to set up miso?
+Press ↑/↓ to move, Enter to confirm • ctrl+c to bail
 
   ❯ Create new project
     Run in standalone mode (scripts only, no package manager)
 ```
+
+If you deselected every app, the title is `No apps selected. How do you want to set up miso?`. When the root already has a `package.json`, `Create new project` is left out.
 
 Selecting `Run in standalone mode` lets you use miso's script runner, TUI, env validation, and task orchestration in any project — Go, Python, Rust, or anything else, without passing through commands to a package manager like bun, pnpm, etc.
 
