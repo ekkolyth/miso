@@ -171,17 +171,11 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	pm := NewProcessManager()
 	styles := ui.Default()
 
-	managerName := ""
-	if mgr != nil {
-		managerName = mgr.Name()
-	} else if detected, err := manager.DetectManager(root); err == nil {
-		managerName = detected
-	}
-
 	for _, entry := range entries {
 		var cmd string
 		var args []string
 		dir := entry.WorkspaceDir
+		entryMgr, managerName := entryManager(entry, root, mgr)
 
 		if entry.ScriptSource == "folder" {
 			// member's effective shell wins, then root, then sh (see ResolveInterpreter)
@@ -197,10 +191,13 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 			args = append(spawnArgs, entry.Args...)
 		} else {
 			// Run via package manager
-			if mgr == nil {
-				return nil, nil, nil, nil, false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
+			if entryMgr == nil {
+				if entry.WorkspaceName == "" {
+					return nil, nil, nil, nil, false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
+				}
+				return nil, nil, nil, nil, false, fmt.Errorf("script %q in %s requires a package manager but none is configured", entry.ScriptName, entry.WorkspaceName)
 			}
-			spec := mgr.BuildRun(entry.ScriptName, entry.Args)
+			spec := entryMgr.BuildRun(entry.ScriptName, entry.Args)
 			cmd = spec.Command
 			args = spec.Args
 		}
@@ -244,6 +241,35 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	}
 
 	return pm, levels, graph, concurrentProcs, true, nil
+}
+
+// entryManager picks the package manager for one entry and the manager name
+// folder scripts use to choose a runtime. A root entry uses mgr, detecting a
+// name from root's lockfile when mgr is nil. A standalone member resolves
+// nothing. Any other member uses its own packageManager field or lockfile,
+// falling back to mgr
+func entryManager(entry TuiScriptEntry, root string, mgr manager.Manager) (manager.Manager, string) {
+	if entry.WorkspaceName == "" {
+		if mgr != nil {
+			return mgr, mgr.Name()
+		}
+		if detected, err := manager.DetectManager(root); err == nil {
+			return nil, detected
+		}
+		return nil, ""
+	}
+	if entry.Standalone {
+		return nil, ""
+	}
+	if name, err := manager.Resolve(entry.WorkspaceDir); err == nil {
+		if driver, ok := manager.GetManager(name); ok {
+			return driver, name
+		}
+	}
+	if mgr != nil {
+		return mgr, mgr.Name()
+	}
+	return nil, ""
 }
 
 // members ≥ 1: fan out over members (root is the orchestrator, never a

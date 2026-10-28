@@ -10,8 +10,14 @@ import (
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/manager"
 	"github.com/ekkolyth/miso/internal/manager/bun"
+	"github.com/ekkolyth/miso/internal/manager/drivers"
+	"github.com/ekkolyth/miso/internal/manager/npm"
+	"github.com/ekkolyth/miso/internal/manager/pnpm"
 )
+
+func init() { drivers.Register() }
 
 func TestFilterEntriesByWorkspace(t *testing.T) {
 	entries := []TuiScriptEntry{
@@ -1016,5 +1022,139 @@ func TestDiscoverEntriesStandaloneRootFallbackIsFolderOnly(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Errorf("entries = %v, want none: root package.json scripts are off in standalone mode", labelsOf(entries))
+	}
+}
+
+func TestBuildRunResolvesManagerPerMember(t *testing.T) {
+	root := t.TempDir()
+	writeTestFiles(t, root, map[string]string{
+		"package.json":                 `{"workspaces":["apps/*"],"packageManager":"bun@1.4.2"}`,
+		"apps/web/package.json":        `{"name":"web","packageManager":"pnpm@9.0.0","scripts":{"dev":"vite"}}`,
+		"apps/admin/package.json":      `{"name":"admin","scripts":{"dev":"vite"}}`,
+		"apps/admin/package-lock.json": `{}`,
+	})
+
+	pm, _, _, _, ran, err := buildRun(config.Config{Scripts: "./scripts"}, "dev", root, bun.Bun{}, nil, nil, false, false)
+	if err != nil {
+		t.Fatalf("buildRun: %v", err)
+	}
+	if !ran {
+		t.Fatal("buildRun returned not-applicable")
+	}
+
+	web := pm.findProc("web")
+	if web == nil {
+		t.Fatal("no process for label \"web\"")
+	}
+	wantWeb := pnpm.Pnpm{}.BuildRun("dev", nil)
+	if web.Command != "pnpm" || !reflect.DeepEqual(web.Args, wantWeb.Args) {
+		t.Errorf("web = %s %v, want pnpm %v", web.Command, web.Args, wantWeb.Args)
+	}
+
+	admin := pm.findProc("admin")
+	if admin == nil {
+		t.Fatal("no process for label \"admin\"")
+	}
+	wantAdmin := npm.Npm{}.BuildRun("dev", nil)
+	if admin.Command != wantAdmin.Command || !reflect.DeepEqual(admin.Args, wantAdmin.Args) {
+		t.Errorf("admin = %s %v, want %s %v", admin.Command, admin.Args, wantAdmin.Command, wantAdmin.Args)
+	}
+}
+
+func TestBuildRunMemberFallsBackToRootManager(t *testing.T) {
+	root := t.TempDir()
+	writeTestFiles(t, root, map[string]string{
+		"package.json":          `{"workspaces":["apps/*"]}`,
+		"apps/web/package.json": `{"name":"web","scripts":{"dev":"vite"}}`,
+	})
+
+	pm, _, _, _, _, err := buildRun(config.Config{Scripts: "./scripts"}, "dev", root, bun.Bun{}, nil, nil, false, false)
+	if err != nil {
+		t.Fatalf("buildRun: %v", err)
+	}
+	web := pm.findProc("web")
+	if web == nil {
+		t.Fatal("no process for label \"web\"")
+	}
+	if web.Command != "bun" {
+		t.Errorf("web Command = %q, want bun", web.Command)
+	}
+}
+
+func TestBuildRunMemberWithoutManagerErrors(t *testing.T) {
+	root := t.TempDir()
+	writeTestFiles(t, root, map[string]string{
+		"web/miso.json":    `{}`,
+		"web/package.json": `{"name":"web","scripts":{"dev":"ng serve"}}`,
+	})
+	standalone := false
+	cfg := config.Config{Scripts: "./scripts", PackageManager: &standalone}
+
+	_, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
+	if err == nil || !strings.Contains(err.Error(), `script "dev" in web requires a package manager`) {
+		t.Errorf("err = %v, want a missing package manager error for web", err)
+	}
+}
+
+func TestBuildRunStandaloneMemberEntryIsMarkedStandalone(t *testing.T) {
+	root := t.TempDir()
+	writeTestFiles(t, root, map[string]string{
+		"api/miso.json": `{"packageManager":false}`,
+	})
+	writeEchoScript(t, filepath.Join(root, "api", "scripts", "dev.sh"), "api")
+
+	pm, _, _, _, ran, err := buildRun(config.Config{Scripts: "./scripts"}, "dev", root, nil, nil, nil, false, false)
+	if err != nil {
+		t.Fatalf("buildRun: %v", err)
+	}
+	if !ran {
+		t.Fatal("buildRun returned not-applicable")
+	}
+	api := pm.findProc("api")
+	if api == nil {
+		t.Fatal("no process for label \"api\"")
+	}
+	if !api.Entry.Standalone {
+		t.Errorf("api Entry.Standalone = false, want true")
+	}
+	if api.Entry.ScriptSource != "folder" {
+		t.Errorf("api ScriptSource = %q, want folder", api.Entry.ScriptSource)
+	}
+}
+
+func TestEntryManager(t *testing.T) {
+	pnpmField := `{"packageManager":"pnpm@9"}`
+	tests := []struct {
+		name        string
+		files       map[string]string
+		standalone  bool
+		member      bool
+		mgr         manager.Manager
+		wantMgr     manager.Manager
+		wantManager string
+	}{
+		{name: "root entry uses mgr", mgr: bun.Bun{}, wantMgr: bun.Bun{}, wantManager: "bun"},
+		{name: "root entry without mgr detects lockfile", files: map[string]string{"pnpm-lock.yaml": ""}, wantManager: "pnpm"},
+		{name: "standalone member resolves nothing", files: map[string]string{"apps/web/package.json": pnpmField}, member: true, standalone: true, mgr: bun.Bun{}},
+		{name: "member uses its own manager", files: map[string]string{"apps/web/package.json": pnpmField}, member: true, mgr: bun.Bun{}, wantMgr: pnpm.Pnpm{}, wantManager: "pnpm"},
+		{name: "member with nothing falls back to mgr", member: true, mgr: bun.Bun{}, wantMgr: bun.Bun{}, wantManager: "bun"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeTestFiles(t, root, tt.files)
+			entry := TuiScriptEntry{Standalone: tt.standalone}
+			if tt.member {
+				entry.WorkspaceName = "web"
+				entry.WorkspaceDir = filepath.Join(root, "apps", "web")
+				if err := os.MkdirAll(entry.WorkspaceDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			gotMgr, gotManager := entryManager(entry, root, tt.mgr)
+			if gotMgr != tt.wantMgr || gotManager != tt.wantManager {
+				t.Errorf("entryManager = (%v, %q), want (%v, %q)", gotMgr, gotManager, tt.wantMgr, tt.wantManager)
+			}
+		})
 	}
 }
