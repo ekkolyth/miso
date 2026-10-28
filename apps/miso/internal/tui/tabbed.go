@@ -69,10 +69,12 @@ type TabbedModel struct {
 	script           string
 	delegated        bool
 	allExitedPending bool
-	sel              SelectionState
-	interactive      bool
-	copyFlash        bool // true during the 150ms invert flash
-	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
+	// restarted is set on the first r or R; after that the TUI stays open until the user quits.
+	restarted   bool
+	sel         SelectionState
+	interactive bool
+	copyFlash   bool // true during the 150ms invert flash
+	copyConfirm bool // true during the 1.5s green "✓ copied!" state
 }
 
 func NewTabbedModel(pm *ProcessManager, script string, delegated bool) TabbedModel {
@@ -135,11 +137,13 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.selected < len(m.pm.Processes) {
 				m.allExitedPending = false
+				m.restarted = true
 				m.sel = SelectionState{}
 				go func() { _ = m.pm.Restart(m.pm.Processes[m.selected]) }()
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
+			m.restarted = true
 			m.sel = SelectionState{}
 			go m.pm.RestartAll()
 		case key.Matches(msg, m.keys.CopyKey):
@@ -255,7 +259,7 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ProcessStateMsg:
-		if !m.allExitedPending && m.pm.AllExited() {
+		if !m.restarted && !m.allExitedPending && m.pm.AllExited() {
 			m.allExitedPending = true
 			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
 				return allExitedMsg{}
@@ -264,6 +268,10 @@ func (m TabbedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case allExitedMsg:
+		// a restart may have landed after this tick was queued.
+		if m.restarted || !m.pm.AllExited() {
+			return m, nil
+		}
 		return m, tea.Quit
 
 	case copyFlashDoneMsg:

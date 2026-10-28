@@ -224,3 +224,69 @@ func TestMergedPartialDoesNotCorruptOtherRedraw(t *testing.T) {
 		t.Errorf("merged lines = %#v, want %#v", got, want)
 	}
 }
+
+func TestMergedStaysOpenAfterRestart(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 0\n")
+	t.Cleanup(pm.StopAll)
+
+	m := NewMergedModel(pm, "dev", false)
+	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "r", Code: 'r'}))
+	m = next.(MergedModel)
+	pm.StopAll()
+	markAllExited(pm)
+
+	_, cmd := m.Update(ProcessStateMsg{Label: "a", State: StateExited, Code: -1})
+	if cmd != nil {
+		t.Error("auto-exit tick scheduled after a restart")
+	}
+	_, cmd = m.Update(allExitedMsg{})
+	if isQuit(cmd) {
+		t.Error("allExitedMsg quit after a restart")
+	}
+}
+
+func TestMergedStaysOpenAfterRestartAll(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 0\n")
+	t.Cleanup(pm.StopAll)
+
+	m := NewMergedModel(pm, "dev", false)
+	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "R", Code: 'R'}))
+	m = next.(MergedModel)
+	pm.StopAll()
+	markAllExited(pm)
+
+	_, cmd := m.Update(allExitedMsg{})
+	if isQuit(cmd) {
+		t.Error("allExitedMsg quit after restart all")
+	}
+}
+
+func TestMergedAutoExitQuitsWithoutRestart(t *testing.T) {
+	pm := NewProcessManager()
+	pm.Add(TuiScriptEntry{Label: "a"}, "", nil, "", nil)
+	markAllExited(pm)
+
+	m := NewMergedModel(pm, "dev", false)
+	_, cmd := m.Update(allExitedMsg{})
+	if !isQuit(cmd) {
+		t.Error("allExitedMsg did not quit with every process exited and no restart")
+	}
+}
+
+func TestMergedAllExitedIgnoredWhileProcessRunning(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "a"}, "", nil, "", nil)
+	p.mu.Lock()
+	p.State = StateRunning
+	p.mu.Unlock()
+
+	m := NewMergedModel(pm, "dev", false)
+	_, cmd := m.Update(allExitedMsg{})
+	if isQuit(cmd) {
+		t.Error("allExitedMsg quit while a process is running")
+	}
+}

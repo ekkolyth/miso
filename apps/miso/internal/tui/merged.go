@@ -30,9 +30,11 @@ type MergedModel struct {
 	script           string
 	delegated        bool
 	allExitedPending bool
-	sel              SelectionState
-	copyFlash        bool // true during the 150ms invert flash
-	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
+	// restarted is set on the first r or R; after that the TUI stays open until the user quits.
+	restarted   bool
+	sel         SelectionState
+	copyFlash   bool // true during the 150ms invert flash
+	copyConfirm bool // true during the 1.5s green "✓ copied!" state
 
 	// live-region bookkeeping for in-place redraws, kept on the full (unfiltered)
 	// list so a filter toggle never disturbs it
@@ -93,11 +95,13 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.cursor < len(m.pm.Processes) {
 				m.allExitedPending = false
+				m.restarted = true
 				m.sel = SelectionState{}
 				go func() { _ = m.pm.Restart(m.pm.Processes[m.cursor]) }()
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
+			m.restarted = true
 			m.sel = SelectionState{}
 			go m.pm.RestartAll()
 		case key.Matches(msg, m.keys.CopyKey):
@@ -195,7 +199,7 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ProcessStateMsg:
 		m.ensureVisible()
-		if !m.allExitedPending && m.pm.AllExited() {
+		if !m.restarted && !m.allExitedPending && m.pm.AllExited() {
 			m.allExitedPending = true
 			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
 				return allExitedMsg{}
@@ -204,6 +208,10 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case allExitedMsg:
+		// a restart may have landed after this tick was queued.
+		if m.restarted || !m.pm.AllExited() {
+			return m, nil
+		}
 		return m, tea.Quit
 
 	case copyFlashDoneMsg:
