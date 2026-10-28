@@ -200,7 +200,7 @@ func TestAppLine(t *testing.T) {
 	badged := ansi.Strip(commands.AppLineForTest(
 		workspace.DetectedApp{RelPath: "apps/web", Label: "Typescript", Badge: "bun"}, styles))
 	if !strings.Contains(badged, "apps/web — Typescript") || !strings.Contains(badged, "bun") {
-		t.Errorf("badged line = %q", badged)
+		t.Fatalf("badged line = %q", badged)
 	}
 	between := badged[strings.Index(badged, "Typescript"):strings.Index(badged, "bun")]
 	if strings.ContainsAny(between, ",<[") {
@@ -235,5 +235,65 @@ func TestRepoFieldForOrchestration_Miso(t *testing.T) {
 func TestRepoFieldForOrchestration_Unset(t *testing.T) {
 	if got := commands.RepoFieldForOrchestration(""); got != "" {
 		t.Errorf("RepoFieldForOrchestration(\"\") = %q, want empty", got)
+	}
+}
+
+func TestWriteConfigsWorkspaceLaravelAppGetsMemberConfig(t *testing.T) {
+	root := t.TempDir()
+	writeTree(t, root, map[string]string{
+		"package.json":                `{"workspaces":["apps/*"]}`,
+		"apps/site/composer.json":     "{}",
+		"apps/site/artisan":           "",
+		"apps/site/package.json":      `{"name":"site"}`,
+		"apps/site/package-lock.json": "{}",
+	})
+
+	if _, err := detectAndWrite(t, root); err != nil {
+		t.Fatalf("writeConfigs: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "apps", "site", "miso.json"))
+	if err != nil {
+		t.Fatalf("apps/site/miso.json: %v", err)
+	}
+	if strings.Contains(string(data), "packageManager") {
+		t.Errorf("apps/site/miso.json should not set packageManager: %s", data)
+	}
+}
+
+func TestWriteConfigsTurboWinsOverNx(t *testing.T) {
+	root := t.TempDir()
+	writeTree(t, root, map[string]string{
+		"package.json": `{"name":"root"}`,
+		"turbo.json":   "{}",
+		"nx.json":      "{}",
+	})
+
+	if _, err := detectAndWrite(t, root); err != nil {
+		t.Fatalf("writeConfigs: %v", err)
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Repo != "turbo" {
+		t.Errorf("Repo = %q, want turbo", cfg.Repo)
+	}
+}
+
+func TestFallbackOptions(t *testing.T) {
+	values := func(hasPackageJSON bool) []string {
+		var got []string
+		for _, option := range commands.FallbackOptionsForTest(hasPackageJSON) {
+			got = append(got, option.Value)
+		}
+		return got
+	}
+
+	if got, want := values(false), []string{"new", "standalone"}; !slices.Equal(got, want) {
+		t.Errorf("without package.json = %v, want %v", got, want)
+	}
+	if got, want := values(true), []string{"standalone"}; !slices.Equal(got, want) {
+		t.Errorf("with package.json = %v, want %v", got, want)
 	}
 }

@@ -86,10 +86,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			huh.NewSelect[string]().
 				Title(styles.Heading.Render(fallbackTitle(len(apps) > 0))).
 				Description(styles.Muted.Render("Press ↑/↓ to move, Enter to confirm • ctrl+c to bail")).
-				Options(
-					huh.NewOption("Create new project", "new"),
-					huh.NewOption("Run in standalone mode (scripts only, no package manager)", "standalone"),
-				).
+				Options(fallbackOptions(fileExists(filepath.Join(root, "package.json")))...).
 				Value(&initChoice),
 		),
 	).WithTheme(huh.ThemeFunc(huh.ThemeCharm))
@@ -211,6 +208,15 @@ func fallbackTitle(foundAny bool) string {
 	return "miso didn't find any apps here. How do you want to set up miso?"
 }
 
+// "Create new project" would run over an existing package.json
+func fallbackOptions(hasPackageJSON bool) []huh.Option[string] {
+	standalone := huh.NewOption("Run in standalone mode (scripts only, no package manager)", "standalone")
+	if hasPackageJSON {
+		return []huh.Option[string]{standalone}
+	}
+	return []huh.Option[string]{huh.NewOption("Create new project", "new"), standalone}
+}
+
 func appLine(app workspace.DetectedApp, styles ui.Styles) string {
 	line := app.RelPath + " — " + app.Label
 	switch {
@@ -237,19 +243,19 @@ func askApps(apps []workspace.DetectedApp, styles ui.Styles) ([]workspace.Detect
 	const help = "space to toggle • ctrl+a to toggle all • Enter to confirm • ctrl+c to bail"
 	var workspaceChosen, otherChosen []int
 	fields := []huh.Field{
-		huh.NewNote().Title(styles.Heading.Render(fmt.Sprintf("miso found %d apps. Pick the ones to run with miso:", len(apps)))),
+		huh.NewNote().
+			Title(styles.Heading.Render(fmt.Sprintf("miso found %d apps. Pick the ones to run with miso:", len(apps)))).
+			Description(styles.Muted.Render(help)),
 	}
 	if len(workspaceOptions) > 0 {
 		fields = append(fields, huh.NewMultiSelect[int]().
 			Title("Workspace:").
-			Description(styles.Muted.Render(help)).
 			Options(workspaceOptions...).
 			Value(&workspaceChosen))
 	}
 	if len(otherOptions) > 0 {
 		fields = append(fields, huh.NewMultiSelect[int]().
 			Title("Non-Workspace:").
-			Description(styles.Muted.Render(help)).
 			Options(otherOptions...).
 			Value(&otherChosen))
 	}
@@ -268,9 +274,8 @@ func askApps(apps []workspace.DetectedApp, styles ui.Styles) ([]workspace.Detect
 	return selected, nil
 }
 
-// writeConfigs writes members first and the root last, so a failure partway
-// never leaves a root miso.json that hides a half-configured tree. It never
-// touches a package.json.
+// members first and the root last, so a failure partway never leaves a root
+// miso.json over a half-configured tree; never touches a package.json
 func writeConfigs(root string, apps []workspace.DetectedApp) ([]string, error) {
 	var written []string
 	for _, app := range apps {

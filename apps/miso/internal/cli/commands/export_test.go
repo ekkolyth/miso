@@ -7,4 +7,5 @@ var (
 	WriteConfigsForTest            = writeConfigs
 	FallbackTitleForTest           = fallbackTitle
 	AppLineForTest                 = appLine
+	FallbackOptionsForTest         = fallbackOptions
 )
