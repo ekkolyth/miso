@@ -141,6 +141,69 @@ func TestDetect(t *testing.T) {
 			},
 			want: []DetectedApp{{RelPath: "packages/a/b", Label: "Go", HasPackageJSON: true, NoManager: true, InWorkspace: true}},
 		},
+		{
+			name: "marker-less glob member hides what is inside it",
+			files: map[string]string{
+				"package.json":      `{"workspaces":["api"]}`,
+				"api/server/go.mod": ``,
+			},
+			want: nil,
+		},
+		{
+			name: "glob member with a marker is listed and hides what is inside it",
+			files: map[string]string{
+				"package.json":      `{"workspaces":["api"]}`,
+				"api/go.mod":        ``,
+				"api/server/go.mod": ``,
+			},
+			want: []DetectedApp{{RelPath: "api", Label: "Go", HasPackageJSON: false, InWorkspace: true}},
+		},
+		{
+			name: "go root lists apps beside it",
+			files: map[string]string{
+				"go.mod":           ``,
+				"web/package.json": `{}`,
+				"web/bun.lock":     ``,
+			},
+			want: []DetectedApp{
+				{RelPath: ".", Label: "Go"},
+				{RelPath: "web", Label: "Javascript", Badge: "bun", HasPackageJSON: true},
+			},
+		},
+		{
+			name: "tooling-only package.json root lists apps beside it",
+			files: map[string]string{
+				"package.json":     `{"devDependencies":{"prettier":"3.0.0"}}`,
+				"bun.lock":         ``,
+				"web/package.json": `{}`,
+				"web/bun.lock":     ``,
+				"api/api.csproj":   ``,
+			},
+			want: []DetectedApp{
+				{RelPath: ".", Label: "Javascript", Badge: "bun", HasPackageJSON: true},
+				{RelPath: "api", Label: "C#"},
+				{RelPath: "web", Label: "Javascript", Badge: "bun", HasPackageJSON: true},
+			},
+		},
+		{
+			name: "cargo root without a workspace section lists apps beside it",
+			files: map[string]string{
+				"Cargo.toml":          `[package]`,
+				"crates/x/Cargo.toml": `[package]`,
+			},
+			want: []DetectedApp{
+				{RelPath: ".", Label: "Rust"},
+				{RelPath: "crates/x", Label: "Rust"},
+			},
+		},
+		{
+			name: "non-root app hides apps beneath it",
+			files: map[string]string{
+				"svc/go.mod":      ``,
+				"svc/sub/pom.xml": ``,
+			},
+			want: []DetectedApp{{RelPath: "svc", Label: "Go"}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

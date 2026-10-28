@@ -32,7 +32,7 @@ func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
 	}
 
 	for _, dir := range scanDirs(root) {
-		if seen[dir] || excluded(dir, root, excludes) || insideMember(dir, members) {
+		if seen[dir] || excluded(dir, root, excludes) || insideAnyMember(dir, members) {
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(dir, config.FileName)); err != nil {
@@ -87,14 +87,19 @@ func globMemberDirs(root string) (dirs, excludes []string, declared bool, err er
 	return dirs, excludes, len(patterns) > 0, nil
 }
 
-func insideMember(dir string, members []Member) bool {
+func insideAnyMember(dir string, members []Member) bool {
 	for _, member := range members {
-		rel, err := filepath.Rel(member.Dir, dir)
-		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if within(member.Dir, dir) {
 			return true
 		}
 	}
 	return false
+}
+
+// reports whether dir is parent or sits anywhere beneath it
+func within(parent, dir string) bool {
+	rel, err := filepath.Rel(parent, dir)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // prefers pnpm-workspace.yaml; falls back to package.json workspaces.

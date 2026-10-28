@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -31,6 +32,7 @@ func Detect(root string) ([]DetectedApp, error) {
 		return nil, err
 	}
 
+	rootHides := rootCargoWorkspace(root)
 	var apps []DetectedApp
 	candidates := append([]string{root}, detectCandidates(root, globDirs)...)
 	for _, dir := range candidates {
@@ -38,7 +40,7 @@ func Detect(root string) ([]DetectedApp, error) {
 		if !isRoot && excluded(dir, root, excludes) {
 			continue
 		}
-		if insideApp(dir, apps) {
+		if insideApp(dir, apps, rootHides) || insideGlobMember(dir, globDirs) {
 			continue
 		}
 		if isRoot && declaresWorkspaces {
@@ -102,14 +104,36 @@ func detectCandidates(root string, globDirs []string) []string {
 	return candidates
 }
 
-func insideApp(dir string, apps []DetectedApp) bool {
+// the root app hides the apps beneath it only when it is a Cargo workspace;
+// any other app hides what is inside it
+func insideApp(dir string, apps []DetectedApp, rootHides bool) bool {
 	for _, app := range apps {
-		rel, err := filepath.Rel(app.Dir, dir)
-		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if app.RelPath == "." && !rootHides {
+			continue
+		}
+		if within(app.Dir, dir) {
 			return true
 		}
 	}
 	return false
+}
+
+// a glob member is listed itself when it has a marker, but never the
+// directories inside it, because discovery does not look there
+func insideGlobMember(dir string, globDirs []string) bool {
+	for _, globDir := range globDirs {
+		if dir != globDir && within(globDir, dir) {
+			return true
+		}
+	}
+	return false
+}
+
+var cargoWorkspaceSection = regexp.MustCompile(`(?m)^\s*\[workspace\]`)
+
+func rootCargoWorkspace(root string) bool {
+	data, err := os.ReadFile(filepath.Join(root, "Cargo.toml"))
+	return err == nil && cargoWorkspaceSection.Match(data)
 }
 
 // ok is false for a directory with no marker, and for a group (go.work, or a
