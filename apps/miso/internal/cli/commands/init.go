@@ -261,7 +261,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		}
 
 		if initChoice == "simple" {
-			// Simple mode: scaffold miso.json with packageManager: false and create scripts dir
+			// Standalone mode: scaffold miso.json with packageManager: false and create scripts dir
 			f := false
 			cfg := config.Config{
 				Schema:         config.SchemaURL,
