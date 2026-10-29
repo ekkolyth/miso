@@ -363,7 +363,17 @@ func main() {
 	}
 
 	// ensure manager configured
-	managerName, cfg, err := cli.EnsureManager(projectRoot, cfg)
+	// the member the command runs in: an @workspace/script target, else the member holding the cwd
+	managerMember := cwdMember
+	if parsed.Action == cli.ActionWorkspaceScript && parsed.WorkspaceName != "" {
+		managerMember = nil
+		if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 {
+			if target, findErr := workspace.Find(parsed.WorkspaceName, members, projectRoot); findErr == nil {
+				managerMember = &target
+			}
+		}
+	}
+	managerName, cfg, err := cli.EnsureMemberManager(projectRoot, cfg, managerMember)
 	if err != nil {
 		cli.Fail(logger, err, false)
 	}

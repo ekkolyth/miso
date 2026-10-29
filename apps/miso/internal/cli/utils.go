@@ -120,12 +120,30 @@ func LoadConfig(projectRoot string) (config.Config, error) {
 func EnsureManager(root string, cfg config.Config) (string, config.Config, error) {
 	name, err := manager.Resolve(root)
 	if errors.Is(err, manager.ErrNoLockfile) || errors.Is(err, manager.ErrMultipleLockfiles) {
-		return "", cfg, errors.New("could not determine package manager: add a packageManager field to package.json, or run 'miso init'")
+		return "", cfg, errors.New("could not determine package manager: add a packageManager field to package.json or a lockfile")
 	}
 	if err != nil {
 		return "", cfg, err
 	}
 	return name, cfg, nil
+}
+
+// package manager for a command run inside member: the member's own
+// packageManager field or lockfile wins, and the root's manager is the fallback
+// only when the member sets none. A standalone member, or a nil member, uses the
+// root's. The root's manager is only required when the member needs the fallback
+func EnsureMemberManager(root string, cfg config.Config, member *workspace.Member) (string, config.Config, error) {
+	if member == nil || workspace.EffectiveConfig(cfg, *member).StandaloneMode() {
+		return EnsureManager(root, cfg)
+	}
+	name, err := manager.Resolve(member.Dir)
+	if err == nil {
+		return name, cfg, nil
+	}
+	if !errors.Is(err, manager.ErrNoLockfile) {
+		return "", cfg, fmt.Errorf("member %s: %w", member.Name, err)
+	}
+	return EnsureManager(root, cfg)
 }
 
 // print styled error and exit with code 1

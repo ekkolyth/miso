@@ -769,3 +769,51 @@ func TestE2E_StandaloneRootFromMemberDirFallsBackToRoot(t *testing.T) {
 	}
 	assertMarkers(t, root, map[string]bool{"root-lint-ran": true})
 }
+
+// root and member differ in package manager; the fake pnpm and npm on PATH
+// report which one miso ran. rootLockfile "" leaves the root with none
+func writeMemberManagerFixture(t *testing.T, rootLockfile string) (root, web string, environ []string) {
+	t.Helper()
+	root = t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true,"workspaces":["apps/*"]}`)
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{}`)
+	if rootLockfile != "" {
+		writeFixtureFile(t, filepath.Join(root, rootLockfile), `{"name":"fx","lockfileVersion":3,"packages":{}}`)
+	}
+	web = filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(web, "package.json"), `{"name":"web","private":true,"packageManager":"pnpm@9.0.0","scripts":{"hello":"echo hi"}}`)
+	bin := filepath.Join(root, "bin")
+	for _, name := range []string{"pnpm", "npm"} {
+		path := filepath.Join(bin, name)
+		writeFixtureFile(t, path, "#!/bin/sh\necho \""+name+" ran: $*\"\n")
+		if err := os.Chmod(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	environ = environWithout([]string{"PATH"}, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return root, web, environ
+}
+
+func TestE2E_MemberDirRunUsesMemberPackageManager(t *testing.T) {
+	_, web, environ := writeMemberManagerFixture(t, "package-lock.json")
+	out, code := runEnv(t, web, environ, "run", "hello")
+	if code != 0 || !strings.HasPrefix(out, "pnpm ran:") {
+		t.Errorf("run hello from apps/web exit = %d, out %q; want the member's pnpm", code, out)
+	}
+}
+
+func TestE2E_MemberDirRunWithoutRootManager(t *testing.T) {
+	_, web, environ := writeMemberManagerFixture(t, "")
+	out, code := runEnv(t, web, environ, "run", "hello")
+	if code != 0 || !strings.Contains(out, "pnpm ran:") {
+		t.Errorf("run hello from apps/web exit = %d, out %q; want the member's pnpm though the root has none", code, out)
+	}
+}
+
+func TestE2E_MemberDirScriptUsesMemberPackageManager(t *testing.T) {
+	_, web, environ := writeMemberManagerFixture(t, "package-lock.json")
+	out, code := runEnv(t, web, environ, "hello")
+	if code != 0 || !strings.Contains(out, "pnpm ran:") {
+		t.Errorf("hello from apps/web exit = %d, out %q; want the member's pnpm", code, out)
+	}
+}
