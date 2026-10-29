@@ -543,8 +543,10 @@ func (lw *liveWriter) feedPartial(raw string) []LineOp {
 	}
 	raw = incompleteEscapeRe.ReplaceAllString(trimIncompleteRune(raw), "")
 	ops, rest, moved := lw.applyMoves(raw)
-	// a half-written row of a multi-row redraw frame waits for its newline
-	if moved {
+	// a half-written row of a multi-row redraw frame waits for its newline; at the
+	// append point (after a screen clear) there is no row to corrupt, so a
+	// prompt waiting for input is painted
+	if moved && lw.up > 0 {
 		return ops
 	}
 	text := stripNonColorANSI(resolveLine(rest))

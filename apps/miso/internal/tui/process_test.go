@@ -1399,3 +1399,20 @@ func TestProcessManager_StopAllDuringRestartAllLeavesNoChild(t *testing.T) {
 		t.Error("RestartAll spawned b after StopAll")
 	}
 }
+
+func TestCaptureOutputPromptAfterScreenClearPaintsWhileWaiting(t *testing.T) {
+	for name, clear := range map[string]string{
+		"clear then home":       "\x1b[2J\x1b[H",
+		"home then erase-below": "\x1b[H\x1b[2J",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, p, _, w, stop := startPipeCapture(t, "ask")
+			defer stop()
+
+			writeAndWaitFor(t, p, w, "old\r\n", []string{"old"})
+			writeAndWaitFor(t, p, w, clear+"Name: ", []string{"Name: "})
+			writeAndWaitFor(t, p, w, "ab", []string{"Name: ab"})
+			writeAndWaitFor(t, p, w, "\r\n", []string{"Name: ab"})
+		})
+	}
+}
