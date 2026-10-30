@@ -89,13 +89,13 @@ func TestParseSkillsFlags_NoYes(t *testing.T) {
 }
 
 func TestBuildSkillsArgs(t *testing.T) {
-	add := commands.BuildSkillsArgsForTest("add", "miso", []string{"claude", "codex"})
-	wantAdd := []string{"add", "https://github.com/ekkolyth/miso/tree/main/packages/skills", "-a", "claude", "-a", "codex", "-y"}
+	add := commands.BuildSkillsArgsForTest("add", "miso", []string{"claude-code", "codex"})
+	wantAdd := []string{"add", "https://github.com/ekkolyth/miso/tree/main/packages/skills", "-a", "claude-code", "-a", "codex", "-y"}
 	if !reflect.DeepEqual(add, wantAdd) {
 		t.Errorf("add args = %v, want %v", add, wantAdd)
 	}
-	rm := commands.BuildSkillsArgsForTest("remove", "miso", []string{"claude"})
-	wantRm := []string{"remove", "miso", "-a", "claude", "-y"}
+	rm := commands.BuildSkillsArgsForTest("remove", "miso", []string{"claude-code"})
+	wantRm := []string{"remove", "miso", "-a", "claude-code", "-y"}
 	if !reflect.DeepEqual(rm, wantRm) {
 		t.Errorf("remove args = %v, want %v", rm, wantRm)
 	}

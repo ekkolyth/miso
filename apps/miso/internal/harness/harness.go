@@ -12,10 +12,10 @@ type Harness struct {
 }
 
 var table = []Harness{
-	{Agent: "claude", Label: "Claude Code", Bins: []string{"claude"}},
+	{Agent: "claude-code", Label: "Claude Code", Bins: []string{"claude"}},
 	{Agent: "opencode", Label: "OpenCode", Bins: []string{"opencode"}},
 	{Agent: "codex", Label: "Codex", Bins: []string{"codex"}},
-	{Agent: "gemini", Label: "Gemini CLI", Bins: []string{"gemini"}},
+	{Agent: "gemini-cli", Label: "Gemini CLI", Bins: []string{"gemini"}},
 	{Agent: "cursor", Label: "Cursor", Bins: []string{"cursor", "cursor-agent"}},
 }
 
