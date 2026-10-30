@@ -1,0 +1,314 @@
+{
+	"$schema": "https://json-schema.org/draft-07/schema#",
+	"$id": "https://misojs.dev/v0.8.0/miso.schema.json",
+	"version": "0.8.0",
+	"title": "Miso Configuration",
+	"description": "Configuration for Miso package manager",
+	"type": "object",
+	"properties": {
+		"$schema": {
+			"type": "string",
+			"description": "Path or URL to this JSON schema for IDE support"
+		},
+		"packageManager": {
+			"type": "boolean",
+			"default": true,
+			"description": "Enable or disable package manager features. When false, miso operates as a pure script runner — no install/add/remove commands, no package.json script discovery. Default: true."
+		},
+		"scripts": {
+			"type": "string",
+			"default": "./scripts",
+			"description": "Path to scripts folder (relative to project root)"
+		},
+		"shell": {
+			"type": "string",
+			"enum": [
+				"sh",
+				"zsh",
+				"bash",
+				"dash",
+				"ksh",
+				"fish",
+				"nu",
+				"pwsh"
+			],
+			"description": "Default interpreter for scripts with no shebang or recognized extension (e.g. sh, bash, zsh)"
+		},
+		"flags": {
+			"type": "object",
+			"additionalProperties": {
+				"type": "array",
+				"items": {
+					"type": "string"
+				}
+			},
+			"description": "Default flags for package manager commands (add, remove, install, dev)"
+		},
+		"repo": {
+			"oneOf": [
+				{
+					"type": "string",
+					"enum": [
+						"miso",
+						"turbo",
+						"nx"
+					],
+					"description": "Orchestration mode. 'miso' (default) discovers workspace members from package.json workspaces or pnpm-workspace.yaml and fans out task execution; 'turbo' delegates to Turborepo; 'nx' delegates to Nx. Workspace membership is detected independently of this setting."
+				},
+				{
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": [
+								"miso",
+								"turbo",
+								"nx"
+							],
+							"description": "Orchestration mode. Defaults to 'miso' if omitted."
+						},
+						"tasks": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "object",
+								"properties": {
+									"dependsOn": {
+										"type": "array",
+										"items": {
+											"type": "string"
+										},
+										"description": "Tasks to run first. 'name' runs in the dependent's own workspace (a member's script depends on that member's 'name', a root script on the root's), whichever list declares it; a workspace without it is skipped. '#name' resolves at the repo root; '@member/script' resolves inside the named member. '^name' runs 'name' in the workspace members this member depends on (package.json graph); an upstream member without it is skipped. Followed transitively; each script runs once per run. Each dependency must exit 0 before its dependents start, and a failure stops the run. A '#name' or '@member/script' entry that resolves nowhere fails the launch. A dependency's own concurrent list does not attach, and concurrent companions of the invoked task always start immediately. Works in standalone mode."
+									},
+									"concurrent": {
+										"type": "array",
+										"items": {
+											"type": "string"
+										},
+										"description": "Companion scripts run alongside the main task in the shared TUI. Three forms: 'name' resolves in the declaring scope (root list → root, member list → that member); '#name' resolves at the repo root explicitly; '@member/script' resolves inside the named workspace member. The root list spawns once per run, including during member fan-out. An entry that resolves nowhere fails the launch."
+									}
+								},
+								"additionalProperties": false
+							},
+							"description": "Per-task orchestration metadata. A task entry never defines a command body — the body resolves by name (workspace member scripts, then root package.json / scripts folder). Declaring a task in turbo/nx mode opts that one name out of delegation and into miso's orchestration. An entry with no resolvable body and no concurrent/dependsOn is a config error."
+						}
+					},
+					"additionalProperties": false
+				}
+			],
+			"default": "miso",
+			"description": "Orchestration mode and optional task configuration. String shorthand or object with mode and tasks. Workspace membership is auto-detected from package.json workspaces or pnpm-workspace.yaml, independent of this setting."
+		},
+		"tui": {
+			"oneOf": [
+				{
+					"type": "string",
+					"enum": [
+						"off",
+						"tabbed",
+						"merged"
+					],
+					"description": "TUI mode shorthand. 'tabbed' shows panes in separate tabs (default), 'merged' shows all output in a single stream, 'off' disables the chrome — orchestration (fan-out, concurrent, dependsOn) still runs, output streams as plain prefixed lines."
+				},
+				{
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": [
+								"off",
+								"tabbed",
+								"merged"
+							],
+							"description": "TUI display mode"
+						},
+						"cleanExit": {
+							"type": "boolean",
+							"default": false,
+							"description": "When true, suppress log dump on TUI exit. By default, all buffered output is printed to stdout when the TUI exits."
+						}
+					},
+					"required": [
+						"mode"
+					],
+					"additionalProperties": false
+				}
+			],
+			"default": "tabbed",
+			"description": "Multi-terminal UI mode. String shorthand or object with mode and cleanExit option."
+		},
+		"env": {
+			"oneOf": [
+				{
+					"type": "string",
+					"description": "Path to a .env file (legacy shorthand)"
+				},
+				{
+					"$ref": "#/$defs/envEntry",
+					"description": "Single env entry (legacy object form)"
+				},
+				{
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/envEntry"
+					},
+					"description": "One entry per app or .env file to validate"
+				}
+			],
+			"description": "Environment file path(s) and variable validation rules"
+		}
+	},
+	"additionalProperties": false,
+	"$defs": {
+		"envEntry": {
+			"type": "object",
+			"description": "A single env file and its validation rules",
+			"properties": {
+				"scope": {
+					"type": "string",
+					"description": "Target name this entry applies to, or \"global\". Required on root config entries; member configs scope by file location. A scope belongs to the root config or the member's own miso.json, never both — declaring it in each is a config error."
+				},
+				"label": {
+					"type": "string",
+					"description": "Human-readable name for this env entry (e.g. 'web', 'api'). Used in log and error output."
+				},
+				"path": {
+					"oneOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						}
+					],
+					"description": "Path to the .env file, relative to project root (string). A legacy array is accepted; only the first element is used."
+				},
+				"override": {
+					"type": "string",
+					"description": "Path to this scope's override file, layered over populated values by `miso env -g -o` (override wins)."
+				},
+				"required": {
+					"oneOf": [
+						{
+							"type": "string",
+							"enum": [
+								"all",
+								"none"
+							]
+						},
+						{
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						}
+					],
+					"description": "Which variables must be present: 'all' (default), 'none', or a list of specific keys"
+				},
+				"variables": {
+					"oneOf": [
+						{
+							"type": "array",
+							"items": {
+								"type": "string"
+							},
+							"description": "Variable names — presence-only validation"
+						},
+						{
+							"type": "object",
+							"additionalProperties": {
+								"oneOf": [
+									{
+										"type": "string",
+										"description": "Type shorthand (e.g. 'port', 'url', 'string', 'bool')"
+									},
+									{
+										"$ref": "#/$defs/varConfig"
+									}
+								]
+							},
+							"description": "Variable names mapped to type shorthands or full VarConfig objects"
+						}
+					],
+					"description": "Variables to validate. Array = presence only; object = type validation."
+				}
+			},
+			"additionalProperties": false
+		},
+		"varConfig": {
+			"type": "object",
+			"description": "Full validation config for a single variable",
+			"properties": {
+				"type": {
+					"type": "string",
+					"enum": [
+						"string",
+						"port",
+						"int",
+						"int+",
+						"float",
+						"bool",
+						"url",
+						"enum",
+						"email",
+						"json",
+						"uuid",
+						"pattern"
+					],
+					"description": "Validation type"
+				},
+				"optional": {
+					"type": "boolean",
+					"default": false,
+					"description": "If true, a missing value passes validation"
+				},
+				"min": {
+					"type": "number",
+					"description": "string: min length. int/int+/float: min value"
+				},
+				"max": {
+					"type": "number",
+					"description": "string: max length. int/int+/float: max value"
+				},
+				"pattern": {
+					"type": "string",
+					"description": "Regex pattern (required for 'pattern' type; also valid on 'string')"
+				},
+				"values": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"description": "Allowed values (required for 'enum' type)"
+				},
+				"schemes": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"description": "Allowed URL schemes for 'url' type (default: ['http', 'https'])"
+				},
+				"trueValues": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"description": "Strings treated as true for 'bool' type (default: ['true','1','yes','on'])"
+				},
+				"falseValues": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"description": "Strings treated as false for 'bool' type (default: ['false','0','no','off'])"
+				}
+			},
+			"required": [
+				"type"
+			],
+			"additionalProperties": false
+		}
+	}
+}
