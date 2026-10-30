@@ -72,6 +72,13 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 			return err
 		}
 		if len(selected) > 0 {
+			chosen, err := askAppManagers(selected, styles)
+			if err != nil {
+				return err
+			}
+			if _, err := writePackageManagers(selected, chosen); err != nil {
+				return err
+			}
 			written, err := writeConfigs(root, selected)
 			for _, path := range written {
 				logger.Info("created miso.json", "path", path)
@@ -139,7 +146,7 @@ func RunInit(root string, styles ui.Styles, logger *log.Logger) error {
 		return err
 	}
 
-	managerName, err := selectManager(manager.GetRegisteredManagers(), "", styles)
+	managerName, err := selectManager(manager.GetRegisteredManagers(), "", "Pick your package manager", styles)
 	if err != nil {
 		return err
 	}
@@ -228,54 +235,101 @@ func appLine(app workspace.DetectedApp, styles ui.Styles) string {
 	return line
 }
 
-// prompts for which detected apps to write a miso.json for; keeps Detect's order
+// lists workspace apps, which always run, and asks which Non-Workspace apps to
+// include; keeps Detect's order
 func askApps(apps []workspace.DetectedApp, styles ui.Styles) ([]workspace.DetectedApp, error) {
-	var workspaceOptions, otherOptions []huh.Option[int]
+	var workspaceLines []string
+	var otherOptions []huh.Option[int]
 	for index, app := range apps {
-		option := huh.NewOption(appLine(app, styles), index).Selected(true)
 		if app.InWorkspace {
-			workspaceOptions = append(workspaceOptions, option)
+			workspaceLines = append(workspaceLines, "  "+appLine(app, styles))
 		} else {
-			otherOptions = append(otherOptions, option)
+			otherOptions = append(otherOptions, huh.NewOption(appLine(app, styles), index).Selected(true))
 		}
 	}
 
-	const help = "space to toggle • ctrl+a to toggle all • Enter to confirm • ctrl+c to bail"
-	var workspaceChosen, otherChosen []int
 	fields := []huh.Field{
-		huh.NewNote().
-			Title(styles.Heading.Render(fmt.Sprintf("miso found %d apps. Pick the ones to run with miso:", len(apps)))).
-			Description(styles.Muted.Render(help)),
+		huh.NewNote().Title(styles.Heading.Render(fmt.Sprintf("miso found %d apps:", len(apps)))),
 	}
-	if len(workspaceOptions) > 0 {
-		fields = append(fields, huh.NewMultiSelect[int]().
-			Title("Workspace:").
-			Options(workspaceOptions...).
-			Value(&workspaceChosen))
+	if len(workspaceLines) > 0 {
+		fields = append(fields, huh.NewNote().
+			Title("Workspace (always run):").
+			Description(strings.Join(workspaceLines, "\n")))
 	}
+	var picked []int
 	if len(otherOptions) > 0 {
 		fields = append(fields, huh.NewMultiSelect[int]().
-			Title("Non-Workspace:").
+			Title("Non-Workspace — pick the ones to run with miso:").
+			Description(styles.Muted.Render("space to toggle • ctrl+a to toggle all • Enter to confirm • ctrl+c to bail")).
 			Options(otherOptions...).
-			Value(&otherChosen))
+			Value(&picked))
+	} else {
+		fields = append(fields, huh.NewNote().
+			Description(styles.Muted.Render("Press Enter to set up these apps • ctrl+c to bail")))
 	}
 
 	form := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeFunc(huh.ThemeCharm))
 	if err := form.Run(); err != nil {
 		return nil, err
 	}
+	return selectedApps(apps, picked), nil
+}
 
-	chosen := append(workspaceChosen, otherChosen...)
-	slices.Sort(chosen)
-	selected := make([]workspace.DetectedApp, 0, len(chosen))
-	for _, index := range chosen {
-		selected = append(selected, apps[index])
+// every workspace app plus the picked Non-Workspace ones (indexes into apps),
+// in apps' order
+func selectedApps(apps []workspace.DetectedApp, picked []int) []workspace.DetectedApp {
+	selected := make([]workspace.DetectedApp, 0, len(apps))
+	for index, app := range apps {
+		if app.InWorkspace || slices.Contains(picked, index) {
+			selected = append(selected, app)
+		}
 	}
-	return selected, nil
+	return selected
+}
+
+// asks for a package manager for each selected app that has none
+func askAppManagers(apps []workspace.DetectedApp, styles ui.Styles) (map[string]string, error) {
+	chosen := map[string]string{}
+	for _, app := range apps {
+		if !app.NoManager {
+			continue
+		}
+		name, err := selectManager(manager.GetRegisteredManagers(), "", "Pick a package manager for "+app.RelPath, styles)
+		if err != nil {
+			return nil, err
+		}
+		chosen[app.RelPath] = name
+	}
+	return chosen, nil
+}
+
+// sets packageManager in the package.json of each NoManager app that has a
+// choice in chosen (keyed by RelPath); the only package.json init touches
+func writePackageManagers(apps []workspace.DetectedApp, chosen map[string]string) ([]string, error) {
+	var written []string
+	for _, app := range apps {
+		name, ok := chosen[app.RelPath]
+		if !app.NoManager || !ok {
+			continue
+		}
+		pkg, err := readPackageJSON(app.Dir)
+		if err != nil {
+			return written, fmt.Errorf("%s: %w", app.RelPath, err)
+		}
+		if pkg == nil {
+			continue
+		}
+		pkg["packageManager"] = manager.ResolveManagerVersion(name)
+		if err := writePackageJSON(app.Dir, pkg); err != nil {
+			return written, fmt.Errorf("%s: %w", app.RelPath, err)
+		}
+		written = append(written, app.RelPath+"/package.json")
+	}
+	return written, nil
 }
 
 // members first and the root last, so a failure partway never leaves a root
-// miso.json over a half-configured tree; never touches a package.json
+// miso.json over a half-configured tree
 func writeConfigs(root string, apps []workspace.DetectedApp) ([]string, error) {
 	var written []string
 	for _, app := range apps {

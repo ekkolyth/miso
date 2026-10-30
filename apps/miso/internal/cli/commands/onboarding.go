@@ -16,7 +16,7 @@ import (
 // return when user exits onboarding
 var ErrAborted = errors.New("onboarding aborted")
 
-func selectManager(options []string, preselected string, styles ui.Styles) (string, error) {
+func selectManager(options []string, preselected, title string, styles ui.Styles) (string, error) {
 	if len(options) == 0 {
 		return "", errors.New("no package managers available to select")
 	}
@@ -38,7 +38,7 @@ func selectManager(options []string, preselected string, styles ui.Styles) (stri
 	}
 
 	selectField := huh.NewSelect[string]().
-		Title(styles.Heading.Render("Pick your package manager")).
+		Title(styles.Heading.Render(title)).
 		Description(styles.Muted.Render("Press ↑/↓ to move, Enter to confirm • ctrl+c to bail")).
 		Value(&choice).
 		Options(opts...)

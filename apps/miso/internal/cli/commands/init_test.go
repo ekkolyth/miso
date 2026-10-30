@@ -2,6 +2,7 @@ package commands_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/ekkolyth/miso/internal/cli/commands"
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/manager"
 	"github.com/ekkolyth/miso/internal/ui"
 	"github.com/ekkolyth/miso/internal/workspace"
 )
@@ -295,5 +297,133 @@ func TestFallbackOptions(t *testing.T) {
 	}
 	if got, want := values(true), []string{"standalone"}; !slices.Equal(got, want) {
 		t.Errorf("with package.json = %v, want %v", got, want)
+	}
+}
+
+func TestSelectedApps(t *testing.T) {
+	apps := []workspace.DetectedApp{
+		{RelPath: "apps/web", InWorkspace: true},
+		{RelPath: "apps/api", InWorkspace: true},
+		{RelPath: "tools/legacy"},
+		{RelPath: "tools/learning"},
+	}
+	relPaths := func(picked []int) []string {
+		var got []string
+		for _, app := range commands.SelectedAppsForTest(apps, picked) {
+			got = append(got, app.RelPath)
+		}
+		return got
+	}
+
+	if got, want := relPaths(nil), []string{"apps/web", "apps/api"}; !slices.Equal(got, want) {
+		t.Errorf("nothing picked = %v, want only workspace apps %v", got, want)
+	}
+	if got, want := relPaths([]int{3}), []string{"apps/web", "apps/api", "tools/learning"}; !slices.Equal(got, want) {
+		t.Errorf("one picked = %v, want %v", got, want)
+	}
+	if got, want := relPaths([]int{3, 2}), []string{"apps/web", "apps/api", "tools/legacy", "tools/learning"}; !slices.Equal(got, want) {
+		t.Errorf("picked out of order = %v, want Detect order %v", got, want)
+	}
+}
+
+func TestSelectedAppsNoWorkspaceNothingPicked(t *testing.T) {
+	apps := []workspace.DetectedApp{{RelPath: "tools/legacy"}}
+	if got := commands.SelectedAppsForTest(apps, nil); len(got) != 0 {
+		t.Errorf("selected = %v, want none", got)
+	}
+}
+
+func detectApps(t *testing.T, root string) []workspace.DetectedApp {
+	t.Helper()
+	apps, err := workspace.Detect(root)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	return apps
+}
+
+func TestWritePackageManagersSetsFieldAndKeepsOtherKeys(t *testing.T) {
+	root := t.TempDir()
+	writeTree(t, root, map[string]string{
+		"tools/legacy/package.json": `{"name":"legacy","version":"1.0.0","scripts":{"build":"tsc"}}`,
+	})
+	apps := detectApps(t, root)
+	if len(apps) != 1 || !apps[0].NoManager {
+		t.Fatalf("apps = %+v, want one NoManager app", apps)
+	}
+
+	written, err := commands.WritePackageManagersForTest(apps, map[string]string{"tools/legacy": "bun"})
+	if err != nil {
+		t.Fatalf("writePackageManagers: %v", err)
+	}
+	if want := []string{"tools/legacy/package.json"}; !slices.Equal(written, want) {
+		t.Errorf("written = %v, want %v", written, want)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "tools", "legacy", "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pkg map[string]any
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := pkg["packageManager"].(string); got != manager.ResolveManagerVersion("bun") {
+		t.Errorf("packageManager = %q, want %q", got, manager.ResolveManagerVersion("bun"))
+	}
+	if pkg["name"] != "legacy" || pkg["version"] != "1.0.0" || pkg["scripts"] == nil {
+		t.Errorf("other keys lost: %s", data)
+	}
+	if !strings.Contains(string(data), "\n  \"name\"") {
+		t.Errorf("not 2-space indented: %s", data)
+	}
+
+	name, err := manager.Resolve(filepath.Join(root, "tools", "legacy"))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if name != "bun" {
+		t.Errorf("Resolve = %q, want bun", name)
+	}
+}
+
+func TestWritePackageManagersLeavesManagedAppAlone(t *testing.T) {
+	root := t.TempDir()
+	managed := `{"name":"web","packageManager":"bun@1.4.2"}`
+	writeTree(t, root, map[string]string{"web/package.json": managed})
+	apps := detectApps(t, root)
+
+	written, err := commands.WritePackageManagersForTest(apps, map[string]string{"web": "npm"})
+	if err != nil {
+		t.Fatalf("writePackageManagers: %v", err)
+	}
+	if len(written) != 0 {
+		t.Errorf("written = %v, want none", written)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "web", "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != managed {
+		t.Errorf("web/package.json changed: %q", got)
+	}
+}
+
+func TestWritePackageManagersThenRootConfigLast(t *testing.T) {
+	root := t.TempDir()
+	writeTree(t, root, map[string]string{
+		"tools/legacy/package.json": `{"name":"legacy"}`,
+	})
+	apps := detectApps(t, root)
+
+	if _, err := commands.WritePackageManagersForTest(apps, map[string]string{"tools/legacy": "pnpm"}); err != nil {
+		t.Fatalf("writePackageManagers: %v", err)
+	}
+	written, err := commands.WriteConfigsForTest(root, apps)
+	if err != nil {
+		t.Fatalf("writeConfigs: %v", err)
+	}
+	if got := written[len(written)-1]; got != "miso.json" {
+		t.Errorf("last written = %q, want root miso.json", got)
 	}
 }

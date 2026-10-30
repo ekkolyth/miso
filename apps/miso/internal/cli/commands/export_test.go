@@ -8,4 +8,6 @@ var (
 	FallbackTitleForTest           = fallbackTitle
 	AppLineForTest                 = appLine
 	FallbackOptionsForTest         = fallbackOptions
+	SelectedAppsForTest            = selectedApps
+	WritePackageManagersForTest    = writePackageManagers
 )

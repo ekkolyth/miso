@@ -6,7 +6,7 @@ Once per project, to adopt miso. Works with no existing config.
 
 ### How it works
 
-Scans the root, `*/`, and `*/*/` for JavaScript/TypeScript, Go, Rust, C#, F#, Python, Java/Kotlin, and Laravel apps, then shows a Workspace / Non-Workspace multi-select with every app selected. It writes only `miso.json` files and never changes `package.json`. If the scan finds nothing, or you deselect every app, it offers "Create new project" (only when the root has no `package.json`) and "Run in standalone mode (scripts only, no package manager)". Runs before any project is loaded.
+Scans the root, `*/`, and `*/*/` for JavaScript/TypeScript, Go, Rust, C#, F#, Python, Java/Kotlin, and Laravel apps, then lists the Workspace apps, which always run, and shows a multi-select of the Non-Workspace apps with every app selected. It writes `miso.json` files. The one `package.json` change is `packageManager`, set after you pick a manager for a JavaScript/TypeScript app that has none. If the scan finds nothing, or there are no Workspace apps and you deselect every app, it offers "Create new project" (only when the root has no `package.json`) and "Run in standalone mode (scripts only, no package manager)". Runs before any project is loaded.
 
 ### Examples
 
