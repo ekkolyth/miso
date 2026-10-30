@@ -822,7 +822,11 @@ func TestE2E_MemberDirScriptUsesMemberPackageManager(t *testing.T) {
 // fake manager records the directory and arguments it ran with
 func writeInstallFixture(t *testing.T) (root, web, ranFile string, environ []string) {
 	t.Helper()
-	root = t.TempDir()
+	// resolved so it matches the $PWD the fake managers record; macOS temp dirs sit under a symlinked /var
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true,"workspaces":["apps/*"]}`)
 	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{}`)
 	writeFixtureFile(t, filepath.Join(root, "bun.lock"), "")
