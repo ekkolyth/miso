@@ -817,3 +817,55 @@ func TestE2E_MemberDirScriptUsesMemberPackageManager(t *testing.T) {
 		t.Errorf("hello from apps/web exit = %d, out %q; want the member's pnpm", code, out)
 	}
 }
+
+// a bun-root workspace with a pnpm member that has its own miso.json; each
+// fake manager records the directory and arguments it ran with
+func writeInstallFixture(t *testing.T) (root, web, ranFile string, environ []string) {
+	t.Helper()
+	root = t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true,"workspaces":["apps/*"]}`)
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{}`)
+	writeFixtureFile(t, filepath.Join(root, "bun.lock"), "")
+	web = filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(web, "package.json"), `{"name":"web","private":true,"packageManager":"pnpm@9.0.0"}`)
+	writeFixtureFile(t, filepath.Join(web, "miso.json"), `{}`)
+	ranFile = filepath.Join(root, "ran.txt")
+	bin := filepath.Join(root, "bin")
+	for _, name := range []string{"pnpm", "bun"} {
+		path := filepath.Join(bin, name)
+		writeFixtureFile(t, path, "#!/bin/sh\necho \""+name+" $PWD $*\" > \""+ranFile+"\"\n")
+		if err := os.Chmod(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	environ = environWithout([]string{"PATH"}, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return root, web, ranFile, environ
+}
+
+func TestE2E_InstallRunsInMemberDirWithMemberManager(t *testing.T) {
+	_, web, ranFile, environ := writeInstallFixture(t)
+	if out, code := runEnv(t, web, environ, "install"); code != 0 {
+		t.Fatalf("install from apps/web exit = %d, out %q", code, out)
+	}
+	ran, err := os.ReadFile(ranFile)
+	if err != nil {
+		t.Fatalf("no package manager ran: %v", err)
+	}
+	if !strings.HasPrefix(string(ran), "pnpm "+web+" ") {
+		t.Errorf("install ran %q; want pnpm in %s", ran, web)
+	}
+}
+
+func TestE2E_InstallFromRootRunsAtRoot(t *testing.T) {
+	root, _, ranFile, environ := writeInstallFixture(t)
+	if out, code := runEnv(t, root, environ, "install"); code != 0 {
+		t.Fatalf("install from root exit = %d, out %q", code, out)
+	}
+	ran, err := os.ReadFile(ranFile)
+	if err != nil {
+		t.Fatalf("no package manager ran: %v", err)
+	}
+	if !strings.HasPrefix(string(ran), "bun "+root+" ") {
+		t.Errorf("install ran %q; want bun in %s", ran, root)
+	}
+}

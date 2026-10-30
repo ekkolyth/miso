@@ -577,7 +577,11 @@ func main() {
 		}
 		return
 	case cli.ActionInstall:
-		if err := commands.Install(managerName, projectRoot, cfg); err != nil {
+		installDir := projectRoot
+		if cwdMember != nil {
+			installDir = originalWorkDir
+		}
+		if err := commands.Install(managerName, installDir, pmCfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return
