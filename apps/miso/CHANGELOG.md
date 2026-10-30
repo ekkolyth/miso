@@ -1,5 +1,11 @@
 # @ekkolyth/miso
 
+## 0.8.0
+
+### Minor Changes
+
+- cd0e51f: tui updates, standlone mode overhaul
+
 ## 0.7.2
 
 ### Patch Changes
