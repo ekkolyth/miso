@@ -29,7 +29,7 @@ miso i
 
 ### Gotchas
 
-- In simple mode (`"packageManager": false`) there are no built-in commands — `install` resolves as a script instead.
+- In standalone mode (`"packageManager": false`) there are no built-in commands — `install` resolves as a script instead.
 - A `scripts/` entry or a `package.json` script named `install` shadows this command.
 
 ## `miso add`
@@ -182,7 +182,7 @@ miso env
 - `miso env` validates **all** scopes (global, per-target, per-member), even though injection at run time only uses the resolved subset for the target.
 - Traversal covers every workspace member in every repo mode, delegated (`repo: "turbo"`/`"nx"`) included — a clean exit means the whole repo's declared variables checked out.
 - A member `miso.json` that won't parse fails the run rather than being skipped, since a skipped schema would read as a pass.
-- Membership comes from `package.json` workspaces or `pnpm-workspace.yaml`. A `miso.json` in a directory that isn't a workspace member isn't traversed.
+- Members are the directories matched by `package.json` workspaces or `pnpm-workspace.yaml`, plus directories with their own `miso.json` at `*/` or `*/*/`. A workspace `!` exclusion wins, so an excluded directory isn't traversed.
 - In CI mode (`CI` set, or `miso --ci env`), a missing `.env` file isn't an error. Variables are checked against the shell environment instead. See [CI mode](/env-validation#ci-mode).
 
 ## `miso init`
@@ -197,7 +197,7 @@ Once per project, to adopt miso. Works with no existing config.
 
 ### How it works
 
-Interactively confirms the orchestration engine and package manager, then writes a `miso.json`. Runs before any project is loaded.
+Scans the root, `*/`, and `*/*/` for JavaScript/TypeScript, Go, Rust, C#, F#, Python, Java/Kotlin, and Laravel apps, then lists the Workspace apps, which always run, and shows a multi-select of the Non-Workspace apps with every app selected. It writes `miso.json` files. The one `package.json` change is `packageManager`, set after you pick a manager for a JavaScript/TypeScript app that has none. If the scan finds nothing, or there are no Workspace apps and you deselect every app, it offers "Create new project" (only when the root has no `package.json`) and "Run in standalone mode (scripts only, no package manager)". Runs before any project is loaded.
 
 ### Examples
 

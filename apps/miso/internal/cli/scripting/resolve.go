@@ -121,7 +121,7 @@ func ResolveScript(name string, root string, cfg config.Config) (ResolvedScript,
 	return ResolvedScript{Source: ScriptSourceNone}, nil
 }
 
-// folder only — no package.json fallback; used in simple mode, where package.json is ignored.
+// folder only — no package.json fallback; used in standalone mode, where package.json is ignored.
 func ResolveScriptFolderOnly(name string, root string, cfg config.Config) (ResolvedScript, error) {
 	discovered, err := DiscoverScripts(scriptsFolder(cfg, root))
 	if err != nil {

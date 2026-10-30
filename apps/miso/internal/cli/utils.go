@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -20,7 +19,7 @@ import (
 // find project root by walking up directories
 // priority: miso.json > lockfile > node_modules. A member's own miso.json
 // resolves to the workspace root that lists it, when that root has a miso.json
-// and isn't in simple mode
+// and isn't in standalone mode
 func FindProjectRoot(startPath string) (string, error) {
 	absPath, err := filepath.Abs(startPath)
 	if err != nil {
@@ -83,12 +82,12 @@ func FindProjectRoot(startPath string) (string, error) {
 }
 
 // the nearest ancestor with a miso.json whose workspace has dir as a member,
-// else dir. Only the member's own directory counts: a project nested deeper
-// inside a member (a test fixture, say) keeps its own root
+// else dir. a project nested more than two levels inside a member keeps its own
+// root, but one within two levels with its own miso.json is claimed by the member
 func enclosingWorkspaceRoot(dir string) string {
 	for ancestor := filepath.Dir(dir); ancestor != filepath.Dir(ancestor); ancestor = filepath.Dir(ancestor) {
-		// simple mode has no workspace discovery, so it never claims a member
-		if ancestorCfg, err := config.Load(ancestor); err != nil || ancestorCfg.SimpleMode() {
+		// members are found whatever the ancestor's mode, so a standalone ancestor claims them too
+		if _, err := config.Load(ancestor); err != nil {
 			continue
 		}
 		members, err := workspace.DiscoverMembers(ancestor, config.Config{})
@@ -119,40 +118,32 @@ func LoadConfig(projectRoot string) (config.Config, error) {
 //  1. package.json packageManager field
 //  2. lockfile detection
 func EnsureManager(root string, cfg config.Config) (string, config.Config, error) {
-	// 1. package.json packageManager field
-	pkgJSONPath := filepath.Join(root, "package.json")
-	data, readErr := os.ReadFile(pkgJSONPath)
-	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-		return "", cfg, fmt.Errorf("read package.json: %w", readErr)
+	name, err := manager.Resolve(root)
+	if errors.Is(err, manager.ErrNoLockfile) || errors.Is(err, manager.ErrMultipleLockfiles) {
+		return "", cfg, errors.New("could not determine package manager: add a packageManager field to package.json or a lockfile")
 	}
-	if readErr == nil {
-		var pkg struct {
-			PackageManager string `json:"packageManager"`
-		}
-		if err := json.Unmarshal(data, &pkg); err != nil {
-			return "", cfg, fmt.Errorf("parse package.json: %w", err)
-		}
-		if pkg.PackageManager != "" {
-			name := strings.SplitN(pkg.PackageManager, "@", 2)[0]
-			if name != "" {
-				if _, ok := manager.GetManager(name); !ok {
-					return "", cfg, fmt.Errorf(
-						"unsupported package manager %q in package.json (supported: %s)",
-						name,
-						strings.Join(manager.GetRegisteredManagers(), ", "),
-					)
-				}
-				return name, cfg, nil
-			}
-		}
+	if err != nil {
+		return "", cfg, err
 	}
+	return name, cfg, nil
+}
 
-	// 2. lockfile detection
-	if detected, err := manager.DetectManager(root); err == nil {
-		return detected, cfg, nil
+// package manager for a command run inside member: the member's own
+// packageManager field or lockfile wins, and the root's manager is the fallback
+// only when the member sets none. A standalone member, or a nil member, uses the
+// root's. The root's manager is only required when the member needs the fallback
+func EnsureMemberManager(root string, cfg config.Config, member *workspace.Member) (string, config.Config, error) {
+	if member == nil || workspace.EffectiveConfig(cfg, *member).StandaloneMode() {
+		return EnsureManager(root, cfg)
 	}
-
-	return "", cfg, errors.New("could not determine package manager: add a packageManager field to package.json, or run 'miso init'")
+	name, err := manager.Resolve(member.Dir)
+	if err == nil {
+		return name, cfg, nil
+	}
+	if !errors.Is(err, manager.ErrNoLockfile) {
+		return "", cfg, fmt.Errorf("member %s: %w", member.Name, err)
+	}
+	return EnsureManager(root, cfg)
 }
 
 // print styled error and exit with code 1

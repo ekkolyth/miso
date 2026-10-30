@@ -81,6 +81,32 @@ func TestMergedClearResetsBlock(t *testing.T) {
 	}
 }
 
+// a prompt that shrinks erases the rows below its cursor — gone from its own
+// tail block, untouched once another app has interleaved.
+func TestMergedTruncateDropsOnlyOwnTail(t *testing.T) {
+	pm := &ProcessManager{Processes: []*Process{
+		{Entry: TuiScriptEntry{Label: "a"}},
+		{Entry: TuiScriptEntry{Label: "b"}},
+	}}
+	m := MergedModel{pm: pm, visible: map[int]bool{0: true, 1: true}}
+
+	m = feedMerged(m, "a", OpAppend{Text: "◆ pick"})
+	m = feedMerged(m, "a", OpAppend{Text: "│ a"})
+	m = feedMerged(m, "a", OpAppend{Text: "│ b"})
+	m = feedMerged(m, "a", OpAppend{Text: "└"})
+	m = feedMerged(m, "a", OpTruncate{Count: 2})
+	m = feedMerged(m, "a", OpRewrite{OffsetFromEnd: 0, Text: "│ a'"})
+	m = feedMerged(m, "a", OpAppend{Text: "└"})
+	m = feedMerged(m, "b", OpAppend{Text: "b1"})
+	m = feedMerged(m, "a", OpTruncate{Count: 1})
+
+	got := mergedTexts(m)
+	want := []string{"◆ pick", "│ a'", "└", "b1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("merged lines = %#v, want %#v", got, want)
+	}
+}
+
 // toggling another app's visibility is a render-time filter — it must not
 // disturb the in-place bookkeeping kept on the full list.
 func TestMergedFilterToggleDoesNotCorruptRewrites(t *testing.T) {
@@ -196,5 +222,71 @@ func TestMergedPartialDoesNotCorruptOtherRedraw(t *testing.T) {
 	want := []string{"b1", "b2", "b3", "b4", "p", "f1", "f2", "pa", "f3", "f4"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("merged lines = %#v, want %#v", got, want)
+	}
+}
+
+func TestMergedStaysOpenAfterRestart(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 0\n")
+	t.Cleanup(pm.StopAll)
+
+	m := NewMergedModel(pm, "dev", false)
+	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "r", Code: 'r'}))
+	m = next.(MergedModel)
+	pm.StopAll()
+	markAllExited(pm)
+
+	_, cmd := m.Update(ProcessStateMsg{Label: "a", State: StateExited, Code: -1})
+	if cmd != nil {
+		t.Error("auto-exit tick scheduled after a restart")
+	}
+	_, cmd = m.Update(allExitedMsg{})
+	if isQuit(cmd) {
+		t.Error("allExitedMsg quit after a restart")
+	}
+}
+
+func TestMergedStaysOpenAfterRestartAll(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 0\n")
+	t.Cleanup(pm.StopAll)
+
+	m := NewMergedModel(pm, "dev", false)
+	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "R", Code: 'R'}))
+	m = next.(MergedModel)
+	pm.StopAll()
+	markAllExited(pm)
+
+	_, cmd := m.Update(allExitedMsg{})
+	if isQuit(cmd) {
+		t.Error("allExitedMsg quit after restart all")
+	}
+}
+
+func TestMergedAutoExitQuitsWithoutRestart(t *testing.T) {
+	pm := NewProcessManager()
+	pm.Add(TuiScriptEntry{Label: "a"}, "", nil, "", nil)
+	markAllExited(pm)
+
+	m := NewMergedModel(pm, "dev", false)
+	_, cmd := m.Update(allExitedMsg{})
+	if !isQuit(cmd) {
+		t.Error("allExitedMsg did not quit with every process exited and no restart")
+	}
+}
+
+func TestMergedAllExitedIgnoredWhileProcessRunning(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "a"}, "", nil, "", nil)
+	p.mu.Lock()
+	p.State = StateRunning
+	p.mu.Unlock()
+
+	m := NewMergedModel(pm, "dev", false)
+	_, cmd := m.Update(allExitedMsg{})
+	if isQuit(cmd) {
+		t.Error("allExitedMsg quit while a process is running")
 	}
 }

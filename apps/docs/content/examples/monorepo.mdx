@@ -4,6 +4,6 @@ title: Monorepo
 
 # Monorepo Example
 
-A multi-workspace `miso.json` with dependency ordering, concurrent companion tasks, and per-app env validation. Workspace membership comes from `pnpm-workspace.yaml` (checked first), otherwise `package.json` `workspaces` — `repo` doesn't need a `mode` for miso to discover and fan out across `apps/web` and `apps/api`.
+A multi-workspace `miso.json` with dependency ordering, concurrent companion tasks, and per-app env validation. Workspace membership comes from `pnpm-workspace.yaml` (checked first), otherwise `package.json` `workspaces`, plus any directory with its own `miso.json` — `repo` doesn't need a `mode` for miso to discover and fan out across `apps/web` and `apps/api`.
 
 <ConfigExample name="monorepo" />

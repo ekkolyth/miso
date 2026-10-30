@@ -148,7 +148,7 @@ If a root script was deliberately shadowing fan-out, declare it as a task or add
 { "repo": { "tasks": { "dev": { "concurrent": ["#dev"] } } } }
 ```
 
-Single repos and simple mode are unaffected — no members means no fan-out set, so the root script is the body as always.
+Single repos are unaffected — no members means no fan-out set, so the root script is the body as always. A standalone root still runs members found through their own `miso.json`.
 
 ### Duplicate workspace commands now fan out together
 
@@ -209,7 +209,7 @@ Nx repos see more of this than turbo repos: miso parses `turbo.json` only, so in
 
 Nothing to edit, but a turbo/nx repo that was passing can now fail: member schemas that were silently skipped are finally being checked. Run `miso env` once after upgrading and clear whatever it surfaces before trusting it as a CI gate.
 
-Membership comes from `package.json` workspaces or `pnpm-workspace.yaml`. A `miso.json` outside that set still isn't traversed — declare those schemas at the root.
+Members are the directories matched by `package.json` workspaces or `pnpm-workspace.yaml`, plus directories with their own `miso.json` at `*/` or `*/*/`.
 
 ### A scope belongs to the root config or the member's, never both
 
@@ -315,7 +315,7 @@ Drop the field (it defaults to `miso`) or set it explicitly:
 { "repo": "miso" }
 ```
 
-`turbo` and `nx` are unchanged, in both the string and object (`{ "mode": "turbo", "tasks": { … } }`) forms. Workspace membership is auto-detected from `package.json` workspaces or `pnpm-workspace.yaml` regardless of `repo` — see `miso-config`.
+`turbo` and `nx` are unchanged, in both the string and object (`{ "mode": "turbo", "tasks": { … } }`) forms. Workspace membership is auto-detected from `package.json` workspaces, `pnpm-workspace.yaml`, or member `miso.json` files regardless of `repo` — see `miso-config`.
 
 ### `tui` default flips from `off` to `tabbed`
 

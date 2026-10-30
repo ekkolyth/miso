@@ -58,5 +58,6 @@ Each workspace appears as a colored badge in the filter bar. Use arrow keys to m
 Both modes behave the same here:
 
 - Press `i` in tabbed mode for **interactive mode** — keystrokes forward to the selected process's stdin; `Ctrl+Z` returns to miso's controls. Unavailable in merged mode and in delegated mode (Turbo/Nx). See [Interactive Mode](/tui#interactive-mode) for the full rundown.
+- Restarting a process (`r`, `R`) re-reads its `.env` files, but not `miso.json`. After any restart, miso stays open until you quit, even if every process has exited.
 - In delegated mode (Turbo/Nx), single-process restart (`r`) is disabled — only `R` (restart all) is available.
 - Hold a modifier (⌘/Alt/Ctrl) while clicking to let your terminal handle the click natively — miso ignores modifier-held clicks so opening links and native text selection keep working.

@@ -1,22 +1,24 @@
 ---
-title: Simple Mode
+title: Standalone Mode
 ---
 
-# Simple Mode
+# Standalone Mode
 
-Miso can run without a JavaScript package manager. If you like miso's script execution, TUI, env validation, and task orchestration but your project isn't JavaScript — simple mode is for you.
+Miso can run without a JavaScript package manager. If you like miso's script execution, TUI, env validation, and task orchestration but your project isn't JavaScript — standalone mode is for you.
 
 ### Setup
 
-Run `miso init` from any directory. If no JavaScript project is detected, miso will offer two options:
+Run `miso init` from any directory. If the scan finds no apps, or there are no Workspace apps and you deselect every app, miso asks how to set up:
 
 ```
-? miso could not detect an existing javascript project.
+? miso didn't find any apps here. How do you want to set up miso?
   ❯ Create new project
-    Run in simple mode (scripts only, no package manager)
+    Run in standalone mode (scripts only, no package manager)
 ```
 
-Select **"Run in simple mode"** and miso will create a `miso.json` with package management disabled, plus a `scripts/` directory:
+When the root already has a `package.json`, only the standalone option is offered.
+
+Select **"Run in standalone mode"** and miso will create a `miso.json` with package management disabled, plus a `scripts/` directory:
 
 <Terminal
     copy={false}
@@ -31,7 +33,7 @@ Select **"Run in simple mode"** and miso will create a `miso.json` with package 
 
 ### How It Works
 
-In simple mode, the package-management commands and `package.json` fallback are gone. Miso's utility commands still work — `help`, `init`, `version`, `upgrade`, `completion`, `skills`, `env`, and `scripts` — and every other argument resolves as a script name from the `scripts/` folder:
+In standalone mode, the package-management commands and `package.json` fallback are gone. Miso's utility commands still work — `help`, `init`, `version`, `upgrade`, `completion`, `skills`, `env`, and `scripts` — and every other argument resolves as a script name from the `scripts/` folder. A standalone root still finds members (directories with their own `miso.json`), and each member runs `package.json` scripts with its own package manager. A member with `"packageManager": false` runs folder scripts only:
 
 ```bash
 miso build              # runs scripts/build.sh

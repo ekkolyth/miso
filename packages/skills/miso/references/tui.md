@@ -13,7 +13,7 @@ Controls the renderer. Set at the top level of `miso.json`.
 
 | Value | Behavior |
 |---|---|
-| `"tabbed"` | Default. Sidebar with per-process log panes. Click or use arrow keys to navigate, `r` to restart, `C` to copy full log buffer. |
+| `"tabbed"` | Default. Sidebar with per-process log panes. Click or use arrow keys to navigate, `r` to restart (re-reads `.env` files; the TUI then stays open until you quit), `C` to copy full log buffer. |
 | `"merged"` | Interleaved output with color-coded process labels and a filter bar. |
 | `"off"` | No chrome. Orchestration is unaffected — fan-out, `concurrent`, `dependsOn` still run — output streams as plain `[label] line` per process. |
 | `{ "mode": "tabbed", "cleanExit": true }` | Object form. `cleanExit: true` suppresses the log dump to stdout when the TUI exits. By default, all buffered process output is printed to stdout after the TUI closes. |
@@ -52,7 +52,7 @@ In delegated (`turbo`/`nx`) mode there is no per-child pty — the delegate pipe
 
 ## `repo` Field
 
-Controls **orchestration** — who runs the processes. Workspace membership is detected automatically from the package manager (`pnpm-workspace.yaml` or `package.json` `workspaces`), independent of this field.
+Controls **orchestration** — who runs the processes. Workspace membership is detected automatically from the package manager (`pnpm-workspace.yaml`, `package.json` `workspaces`, or a `miso.json` at `*/` or `*/*/`), independent of this field.
 
 | Value | Behavior |
 |---|---|
@@ -77,8 +77,8 @@ applies to every script (`dev`, `build`, `test`, …), not just `dev`.
 Only when **no member** defines the name does the root's own `scripts/`
 folder + `package.json` become the body, run as a single process. A root
 task's `concurrent` companions attach exactly once per run either way — they
-never re-broadcast per fan-out member. Simple mode (`packageManager: false`)
-never fans out — there's no workspace concept without a package manager.
+never re-broadcast per fan-out member. Standalone mode (`packageManager: false`)
+still runs members found through their own `miso.json`.
 
 Positional args (`miso dev --inspect`) reach the spawned process only when
 the run resolves to a single root entry — a member fan-out drops them, since
@@ -116,7 +116,7 @@ Entry forms:
 - `@member/script` — resolves inside the named member
 - `^name` — runs `name` in the members this member depends on (`package.json` graph); an upstream member without `name` is skipped
 
-Dependencies are followed transitively; each resolved script runs once per run. Each must exit 0 before its dependents start, and independent ones run in parallel. A failure stops the run: dependents never start (their chrome tab shows skipped). A `#name` or `@member/script` entry that resolves nowhere fails the launch. A task entry with only `dependsOn` and no script runs its dependencies. A dependency's own `concurrent` list does not attach — companions start only for the invoked task. Works in simple mode.
+Dependencies are followed transitively; each resolved script runs once per run. Each must exit 0 before its dependents start, and independent ones run in parallel. A failure stops the run: dependents never start (their chrome tab shows skipped). A `#name` or `@member/script` entry that resolves nowhere fails the launch. A task entry with only `dependsOn` and no script runs its dependencies. A dependency's own `concurrent` list does not attach — companions start only for the invoked task. Works in standalone mode.
 
 ```json
 "repo": {

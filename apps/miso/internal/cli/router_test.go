@@ -25,7 +25,7 @@ func TestParseDevConflictErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// turbo mode, not simple — resolution checks both folder and package.json
+	// turbo mode, not standalone — resolution checks both folder and package.json
 	cfg := config.Config{Repo: "turbo", Scripts: "./scripts"}
 	if _, err := ParseCLI([]string{"dev"}, cfg, root); err == nil {
 		t.Fatal("expected error for \"dev\" defined in both scripts folder and package.json")
@@ -119,7 +119,7 @@ func TestParseMisoxFallsThroughToPassthrough(t *testing.T) {
 	}
 }
 
-func TestParseCLI_SimpleModeIgnoresPackageJSON(t *testing.T) {
+func TestParseCLI_StandaloneModeIgnoresPackageJSON(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
@@ -129,18 +129,18 @@ func TestParseCLI_SimpleModeIgnoresPackageJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	pm := false
-	cfg := config.Config{PackageManager: &pm, Scripts: "./scripts"} // SimpleMode
+	cfg := config.Config{PackageManager: &pm, Scripts: "./scripts"} // StandaloneMode
 
 	parsed, err := ParseCLI([]string{"foo"}, cfg, root)
 	if err != nil {
 		t.Fatalf("ParseCLI() error: %v", err)
 	}
 	if parsed.Action != ActionPassthrough {
-		t.Errorf("Action = %v, want ActionPassthrough (simple mode must not resolve package.json)", parsed.Action)
+		t.Errorf("Action = %v, want ActionPassthrough (standalone mode must not resolve package.json)", parsed.Action)
 	}
 }
 
-func TestParseCLI_NonSimpleResolvesPackageJSON(t *testing.T) {
+func TestParseCLI_NonStandaloneResolvesPackageJSON(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestParseCLI_NonSimpleResolvesPackageJSON(t *testing.T) {
 		[]byte(`{"scripts":{"foo":"echo hi"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Scripts: "./scripts"} // PackageManager nil → not simple
+	cfg := config.Config{Scripts: "./scripts"} // PackageManager nil → not standalone
 
 	parsed, err := ParseCLI([]string{"foo"}, cfg, root)
 	if err != nil {

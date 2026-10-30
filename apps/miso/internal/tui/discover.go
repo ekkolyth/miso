@@ -7,6 +7,7 @@ import (
 
 	"github.com/ekkolyth/miso/internal/cli/scripting"
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
 
 type WorkspaceInfo struct {
@@ -16,6 +17,18 @@ type WorkspaceInfo struct {
 	ScriptsFolder string
 	// per-member effective shell; empty falls back at spawn time
 	Shell string
+	// standalone members run folder scripts only; package.json is never read
+	Standalone bool
+}
+
+func newWorkspaceInfo(member workspace.Member, effective config.Config) WorkspaceInfo {
+	return WorkspaceInfo{
+		Name:          member.Name,
+		Dir:           member.Dir,
+		ScriptsFolder: effective.Scripts,
+		Shell:         effective.Shell,
+		Standalone:    effective.StandaloneMode(),
+	}
 }
 
 type TuiScriptEntry struct {
@@ -34,6 +47,8 @@ type TuiScriptEntry struct {
 	// ordering; stamped at discovery so the buildRun split never sorts a
 	// member-injected companion into the dependency levels
 	IsConcurrent bool
+	// member runs in standalone mode: its scripts come from the folder only
+	IsStandalone bool
 }
 
 // DiscoverTuiScripts finds the script named exactly command in each of the
@@ -85,10 +100,13 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 		return nil, err
 	}
 
-	// discover package.json scripts
-	pkgScripts, err := scripting.ReadPackageJSONScripts(ws.Dir)
-	if err != nil {
-		return nil, err
+	// a standalone member never reads package.json
+	pkgScripts := map[string]string{}
+	if !ws.Standalone {
+		pkgScripts, err = scripting.ReadPackageJSONScripts(ws.Dir)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	infos, inFolder := folderScripts[command]
@@ -108,6 +126,7 @@ func discoverWorkspaceScripts(command string, ws WorkspaceInfo, scriptsFolder st
 		WorkspaceDir:  ws.Dir,
 		ScriptSource:  "packagejson",
 		Shell:         ws.Shell,
+		IsStandalone:  ws.Standalone,
 	}
 	if inFolder {
 		entry.ScriptSource = "folder"
@@ -138,7 +157,7 @@ func DeduplicateLabels(entries []TuiScriptEntry) []TuiScriptEntry {
 }
 
 // ResolveSingleRepoScriptsFolderOnly is like ResolveSingleRepoScripts but only
-// checks the scripts folder, ignoring package.json. Used in simple mode.
+// checks the scripts folder, ignoring package.json. Used in standalone mode.
 func ResolveSingleRepoScriptsFolderOnly(scripts []string, root string, cfg config.Config) ([]TuiScriptEntry, error) {
 	var entries []TuiScriptEntry
 

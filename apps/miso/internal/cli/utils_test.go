@@ -3,11 +3,48 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ekkolyth/miso/internal/config"
+	"github.com/ekkolyth/miso/internal/manager/drivers"
 	"github.com/ekkolyth/miso/internal/testutil"
+	"github.com/ekkolyth/miso/internal/workspace"
 )
+
+func init() { drivers.Register() }
+
+func ensureManagerIn(t *testing.T, packageJSON string) (string, error) {
+	t.Helper()
+	root := t.TempDir()
+	if packageJSON != "" {
+		if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(packageJSON), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	name, _, err := EnsureManager(root, config.Config{})
+	return name, err
+}
+
+func TestEnsureManager_NoSourceMessage(t *testing.T) {
+	_, err := ensureManagerIn(t, "")
+	if err == nil || !strings.Contains(err.Error(), "could not determine package manager: add a packageManager field to package.json or a lockfile") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestEnsureManager_Field(t *testing.T) {
+	name, err := ensureManagerIn(t, `{"packageManager":"pnpm@9"}`)
+	testutil.NoError(t, err)
+	testutil.Equal(t, name, "pnpm")
+}
+
+func TestEnsureManager_Unsupported(t *testing.T) {
+	_, err := ensureManagerIn(t, `{"packageManager":"deno@2"}`)
+	if err == nil || !strings.Contains(err.Error(), `unsupported package manager "deno"`) {
+		t.Fatalf("err = %v", err)
+	}
+}
 
 func TestFindProjectRoot_FindsMisoJson(t *testing.T) {
 	root := t.TempDir()
@@ -76,12 +113,12 @@ func TestFindProjectRoot_MemberConfigResolvesToWorkspaceRoot(t *testing.T) {
 	assertSameDir(t, got, root)
 }
 
-func TestFindProjectRoot_NestedConfigOutsideWorkspaceStaysRoot(t *testing.T) {
+func TestFindProjectRoot_MemberConfigOutsideWorkspaceClaimedByRoot(t *testing.T) {
 	root := writeMemberConfigLayout(t, false, true)
 	member := filepath.Join(root, "apps", "web")
 	got, err := FindProjectRoot(member)
 	testutil.NoError(t, err)
-	assertSameDir(t, got, member)
+	assertSameDir(t, got, root)
 }
 
 func TestFindProjectRoot_MemberConfigWithoutRootConfigStaysRoot(t *testing.T) {
@@ -94,19 +131,76 @@ func TestFindProjectRoot_MemberConfigWithoutRootConfigStaysRoot(t *testing.T) {
 
 func TestFindProjectRoot_ProjectNestedInsideMemberStaysRoot(t *testing.T) {
 	root := writeMemberConfigLayout(t, true, true)
-	nested := filepath.Join(root, "apps", "web", "testdata", "fixture")
+	nested := filepath.Join(root, "apps", "web", "testdata", "cases", "fixture")
 	writeFile(t, filepath.Join(nested, config.FileName), "{}")
 	got, err := FindProjectRoot(nested)
 	testutil.NoError(t, err)
 	assertSameDir(t, got, nested)
 }
 
-// simple mode turns workspace discovery off, so the root doesn't claim the member
-func TestFindProjectRoot_SimpleModeRootDoesNotClaimMember(t *testing.T) {
+// a standalone root still finds members, so it claims the member
+func TestFindProjectRoot_StandaloneRootClaimsMember(t *testing.T) {
 	root := writeMemberConfigLayout(t, true, true)
 	writeFile(t, filepath.Join(root, config.FileName), `{"packageManager":false}`)
 	member := filepath.Join(root, "apps", "web")
 	got, err := FindProjectRoot(member)
 	testutil.NoError(t, err)
-	assertSameDir(t, got, member)
+	assertSameDir(t, got, root)
+}
+
+func memberAt(t *testing.T, packageJSON string, lockfile string) *workspace.Member {
+	t.Helper()
+	dir := t.TempDir()
+	if packageJSON != "" {
+		writeFile(t, filepath.Join(dir, "package.json"), packageJSON)
+	}
+	if lockfile != "" {
+		writeFile(t, filepath.Join(dir, lockfile), "")
+	}
+	return &workspace.Member{Name: "web", Dir: dir}
+}
+
+func rootWith(t *testing.T, lockfile string) string {
+	t.Helper()
+	root := t.TempDir()
+	if lockfile != "" {
+		writeFile(t, filepath.Join(root, lockfile), "")
+	}
+	return root
+}
+
+func TestEnsureMemberManager_MemberFieldWins(t *testing.T) {
+	name, _, err := EnsureMemberManager(rootWith(t, "package-lock.json"), config.Config{}, memberAt(t, `{"packageManager":"pnpm@9"}`, ""))
+	testutil.NoError(t, err)
+	testutil.Equal(t, name, "pnpm")
+}
+
+func TestEnsureMemberManager_FallsBackToRootOnNoLockfile(t *testing.T) {
+	name, _, err := EnsureMemberManager(rootWith(t, "package-lock.json"), config.Config{}, memberAt(t, `{"name":"web"}`, ""))
+	testutil.NoError(t, err)
+	testutil.Equal(t, name, "npm")
+}
+
+func TestEnsureMemberManager_ConflictingLockfilesNameMember(t *testing.T) {
+	member := memberAt(t, `{"name":"web"}`, "pnpm-lock.yaml")
+	writeFile(t, filepath.Join(member.Dir, "yarn.lock"), "")
+	_, _, err := EnsureMemberManager(rootWith(t, "package-lock.json"), config.Config{}, member)
+	testutil.ErrorContains(t, err, "member web:")
+}
+
+func TestEnsureMemberManager_RootWithoutManagerStillResolvesMember(t *testing.T) {
+	name, _, err := EnsureMemberManager(rootWith(t, ""), config.Config{}, memberAt(t, `{"packageManager":"pnpm@9"}`, ""))
+	testutil.NoError(t, err)
+	testutil.Equal(t, name, "pnpm")
+}
+
+func TestEnsureMemberManager_NoMemberUsesRoot(t *testing.T) {
+	name, _, err := EnsureMemberManager(rootWith(t, "bun.lock"), config.Config{}, nil)
+	testutil.NoError(t, err)
+	testutil.Equal(t, name, "bun")
+}
+
+func TestEnsureMemberManager_NeitherSetsOne(t *testing.T) {
+	_, _, err := EnsureMemberManager(rootWith(t, ""), config.Config{}, memberAt(t, `{"name":"web"}`, ""))
+	testutil.ErrorContains(t, err, "could not determine package manager")
 }

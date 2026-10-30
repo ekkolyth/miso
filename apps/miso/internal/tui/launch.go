@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -125,17 +126,23 @@ func LaunchPlain(cfg config.Config, scriptName string, root string, mgr manager.
 
 // markPlain switches every process to pipe-mode (no pty) and adds FORCE_COLOR,
 // so a tool detects a non-tty — emitting plain line output instead of cursor
-// redraws — yet still prints color. NO_COLOR still wins. A nil Environ is seeded
+// redraws — yet still prints color. NO_COLOR still wins. A nil env is seeded
 // from os.Environ so the augmented env inherits the ambient shell instead of
 // collapsing to FORCE_COLOR alone. Chrome (Launch) skips this and keeps the pty.
 func markPlain(procs []*Process) {
 	for _, proc := range procs {
 		proc.NoPTY = true
-		base := proc.Environ
-		if base == nil {
-			base = os.Environ()
+		inner := proc.BuildEnv
+		proc.BuildEnv = func() ([]string, []string, error) {
+			environ, preamble, err := inner()
+			if err != nil {
+				return nil, nil, err
+			}
+			if environ == nil {
+				environ = os.Environ()
+			}
+			return forceColorEnv(environ), preamble, nil
 		}
-		proc.Environ = forceColorEnv(base)
 	}
 }
 
@@ -171,17 +178,14 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	pm := NewProcessManager()
 	styles := ui.Default()
 
-	managerName := ""
-	if mgr != nil {
-		managerName = mgr.Name()
-	} else if detected, err := manager.DetectManager(root); err == nil {
-		managerName = detected
-	}
-
 	for _, entry := range entries {
 		var cmd string
 		var args []string
 		dir := entry.WorkspaceDir
+		entryMgr, managerName, mgrErr := entryManager(entry, root, mgr)
+		if mgrErr != nil {
+			return nil, nil, nil, nil, false, fmt.Errorf("member %s: %w", entry.WorkspaceName, mgrErr)
+		}
 
 		if entry.ScriptSource == "folder" {
 			// member's effective shell wins, then root, then sh (see ResolveInterpreter)
@@ -197,10 +201,13 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 			args = append(spawnArgs, entry.Args...)
 		} else {
 			// Run via package manager
-			if mgr == nil {
-				return nil, nil, nil, nil, false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
+			if entryMgr == nil {
+				if entry.WorkspaceName == "" {
+					return nil, nil, nil, nil, false, fmt.Errorf("script %q requires a package manager but none is configured", entry.ScriptName)
+				}
+				return nil, nil, nil, nil, false, fmt.Errorf("script %q in %s requires a package manager but none is configured", entry.ScriptName, entry.WorkspaceName)
 			}
-			spec := mgr.BuildRun(entry.ScriptName, entry.Args)
+			spec := entryMgr.BuildRun(entry.ScriptName, entry.Args)
 			cmd = spec.Command
 			args = spec.Args
 		}
@@ -210,16 +217,24 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 		if entry.WorkspaceName != "" {
 			target = workspace.Target{Kind: workspace.TargetMember, Name: entry.WorkspaceName, Dir: dir}
 		}
-		processEnv, envErr := env.BuildTargetEnv(root, cfg, target, ci)
-		if envErr != nil {
+		// fails the launch early; BuildEnv rebuilds it on every start
+		if _, envErr := env.BuildTargetEnv(root, cfg, target, ci); envErr != nil {
 			return nil, nil, nil, nil, false, envErr
 		}
 
-		proc := pm.Add(entry, cmd, args, dir, processEnv)
-		if envValidated {
-			if line := env.ValidatedLine(root, cfg, target); line != "" {
-				proc.Preamble = append(proc.Preamble, styles.MisoLine(line))
+		proc := pm.Add(entry, cmd, args, dir, nil)
+		proc.BuildEnv = func() ([]string, []string, error) {
+			environ, buildErr := env.BuildTargetEnv(root, cfg, target, ci)
+			if buildErr != nil {
+				return nil, nil, buildErr
 			}
+			var preamble []string
+			if envValidated {
+				if line := env.ValidatedLine(root, cfg, target); line != "" {
+					preamble = append(preamble, styles.MisoLine(line))
+				}
+			}
+			return environ, preamble, nil
 		}
 	}
 
@@ -246,18 +261,42 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 	return pm, levels, graph, concurrentProcs, true, nil
 }
 
+// a member falls back to mgr only when it sets none; a standalone member gets no manager
+func entryManager(entry TuiScriptEntry, root string, mgr manager.Manager) (manager.Manager, string, error) {
+	if entry.WorkspaceName == "" {
+		if mgr != nil {
+			return mgr, mgr.Name(), nil
+		}
+		if detected, err := manager.DetectManager(root); err == nil {
+			return nil, detected, nil
+		}
+		return nil, "", nil
+	}
+	if entry.IsStandalone {
+		return nil, "", nil
+	}
+	name, err := manager.Resolve(entry.WorkspaceDir)
+	if err == nil {
+		driver, _ := manager.GetManager(name)
+		return driver, name, nil
+	}
+	if !errors.Is(err, manager.ErrNoLockfile) {
+		return nil, "", err
+	}
+	if mgr != nil {
+		return mgr, mgr.Name(), nil
+	}
+	return nil, "", nil
+}
+
 // members ≥ 1: fan out over members (root is the orchestrator, never a
 // fan-out member); root script is the body only when no member defines the
-// name. Root task companions attach exactly once either way. Zero members /
-// simple mode: root script is the body, as always.
+// name. Root task companions attach exactly once either way. Zero members:
+// root script is the body, as always. Members are found whatever the root's mode.
 func discoverEntries(cfg config.Config, scriptName string, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
-	var members []workspace.Member
-	if !cfg.SimpleMode() {
-		var err error
-		members, err = workspace.DiscoverMembersCached(root, cfg)
-		if err != nil {
-			return nil, fmt.Errorf("discover members: %w", err)
-		}
+	members, err := workspace.DiscoverMembersCached(root, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("discover members: %w", err)
 	}
 
 	if len(members) == 0 {
@@ -275,7 +314,12 @@ func discoverEntries(cfg config.Config, scriptName string, root string, scriptAr
 	}
 
 	// no member defines the name — root script as the body (single pane)
-	rootResolved, err := ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+	var rootResolved []TuiScriptEntry
+	if cfg.StandaloneMode() {
+		rootResolved, err = ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
+	} else {
+		rootResolved, err = ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +355,7 @@ func emptyTaskEntryError(cfg config.Config, scriptName string) error {
 func discoverSingleRepo(cfg config.Config, scriptName, root string, scriptArgs []string) ([]TuiScriptEntry, error) {
 	var rootResolved []TuiScriptEntry
 	var err error
-	if cfg.SimpleMode() {
+	if cfg.StandaloneMode() {
 		rootResolved, err = ResolveSingleRepoScriptsFolderOnly([]string{scriptName}, root, cfg)
 	} else {
 		rootResolved, err = ResolveSingleRepoScripts([]string{scriptName}, root, cfg)
@@ -356,7 +400,7 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 	case strings.HasPrefix(concName, "#"):
 		rootName := strings.TrimPrefix(concName, "#")
 		scopeDesc = rootScopeDesc(cfg)
-		if cfg.SimpleMode() {
+		if cfg.StandaloneMode() {
 			entries, err = ResolveSingleRepoScriptsFolderOnly([]string{rootName}, root, cfg)
 		} else {
 			entries, err = ResolveSingleRepoScripts([]string{rootName}, root, cfg)
@@ -373,18 +417,18 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 		}
 		member := resolved[0]
 		effective := workspace.EffectiveConfig(cfg, member)
-		memberInfo := WorkspaceInfo{Name: member.Name, Dir: member.Dir, ScriptsFolder: effective.Scripts, Shell: effective.Shell}
-		scopeDesc = memberScopeDesc(member.Name, effective.Scripts)
+		memberInfo := newWorkspaceInfo(member, effective)
+		scopeDesc = memberScopeDesc(member.Name, effective.Scripts, memberInfo.Standalone)
 		entries, err = DiscoverTuiScripts(script, []WorkspaceInfo{memberInfo}, cfg.Scripts)
 	case local == nil:
 		scopeDesc = rootScopeDesc(cfg)
-		if cfg.SimpleMode() {
+		if cfg.StandaloneMode() {
 			entries, err = ResolveSingleRepoScriptsFolderOnly([]string{concName}, root, cfg)
 		} else {
 			entries, err = ResolveSingleRepoScripts([]string{concName}, root, cfg)
 		}
 	default:
-		scopeDesc = memberScopeDesc(local.Name, local.ScriptsFolder)
+		scopeDesc = memberScopeDesc(local.Name, local.ScriptsFolder, local.Standalone)
 		entries, err = DiscoverTuiScripts(concName, []WorkspaceInfo{*local}, cfg.Scripts)
 	}
 
@@ -399,14 +443,17 @@ func resolveConcurrent(cfg config.Config, concName, root string, local *Workspac
 
 // root-scope search-location description for an unresolvable concurrent entry
 func rootScopeDesc(cfg config.Config) string {
-	if cfg.SimpleMode() {
+	if cfg.StandaloneMode() {
 		return fmt.Sprintf("root scope (scripts folder %q)", cfg.Scripts)
 	}
 	return fmt.Sprintf("root scope (scripts folder %q and root package.json)", cfg.Scripts)
 }
 
 // member-scope search-location description for an unresolvable concurrent entry
-func memberScopeDesc(name, scriptsFolder string) string {
+func memberScopeDesc(name, scriptsFolder string, standalone bool) string {
+	if standalone {
+		return fmt.Sprintf("member %q (scripts folder %q)", name, scriptsFolder)
+	}
 	return fmt.Sprintf("member %q (scripts folder %q and its package.json)", name, scriptsFolder)
 }
 
@@ -431,7 +478,7 @@ func discoverRootScope(cfg config.Config, scriptName, root string, mainEntries [
 	concurrent := cfg.TaskConcurrent(scriptName)
 
 	// members may already be cached from discoverEntries's own fan-out fetch;
-	// this guard only spares the zero-member / simple-mode path a fetch when
+	// this guard only spares the zero-member path a fetch when
 	// no @-ref is present (bare names resolve at root)
 	var members []workspace.Member
 	if concurrentNeedsMembers(concurrent) {
@@ -460,12 +507,7 @@ func discoverMemberFanOut(cfg config.Config, scriptName, root string, members []
 	var entries []TuiScriptEntry
 	for _, member := range members {
 		effective := workspace.EffectiveConfig(cfg, member)
-		ws := WorkspaceInfo{
-			Name:          member.Name,
-			Dir:           member.Dir,
-			ScriptsFolder: effective.Scripts,
-			Shell:         effective.Shell,
-		}
+		ws := newWorkspaceInfo(member, effective)
 		memberEntries, err := DiscoverTuiScripts(scriptName, []WorkspaceInfo{ws}, cfg.Scripts)
 		if err != nil {
 			return nil, err

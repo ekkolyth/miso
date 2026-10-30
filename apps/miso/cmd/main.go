@@ -17,10 +17,7 @@ import (
 	"github.com/ekkolyth/miso/internal/config"
 	"github.com/ekkolyth/miso/internal/harness"
 	"github.com/ekkolyth/miso/internal/manager"
-	"github.com/ekkolyth/miso/internal/manager/bun"
-	"github.com/ekkolyth/miso/internal/manager/npm"
-	"github.com/ekkolyth/miso/internal/manager/pnpm"
-	"github.com/ekkolyth/miso/internal/manager/yarn"
+	"github.com/ekkolyth/miso/internal/manager/drivers"
 	"github.com/ekkolyth/miso/internal/tui"
 	"github.com/ekkolyth/miso/internal/turbo"
 	"github.com/ekkolyth/miso/internal/ui"
@@ -28,11 +25,7 @@ import (
 )
 
 func init() {
-	// Register manager drivers
-	manager.RegisterManager("bun", bun.Bun{})
-	manager.RegisterManager("npm", npm.Npm{})
-	manager.RegisterManager("pnpm", pnpm.Pnpm{})
-	manager.RegisterManager("yarn", yarn.Yarn{})
+	drivers.Register()
 }
 
 func main() {
@@ -201,12 +194,13 @@ func main() {
 		cli.Fail(logger, err, false)
 	}
 
-	// Simple mode: bypass ParseCLI and EnsureManager entirely.
-	// Only meta-commands are handled; everything else is folder script resolution.
-	if cfg.SimpleMode() {
+	// Standalone mode: bypass ParseCLI and EnsureManager entirely.
+	// Only meta-commands are handled; everything else resolves folder scripts at
+	// the root only (no package.json scripts), and members still fan out.
+	if cfg.StandaloneMode() {
 		cmd := args[0]
 
-		// Meta-commands that remain in simple mode
+		// Meta-commands that remain in standalone mode
 		// (init, version, upgrade, completion already handled above)
 		switch cmd {
 		case "env":
@@ -227,14 +221,29 @@ func main() {
 			cli.Fail(logger, err, false)
 		}
 
-		// a task entry may have no script of its own and still orchestrate
-		// companions or dependencies
-		_, isTask := cfg.Tasks[cmd]
-		if resolved.Source == scripting.ScriptSourceNone && !isTask {
-			cli.Fail(logger, fmt.Errorf("script '%s' not found in %s", cmd, cfg.Scripts), false)
-		}
+		scopes, rest := cli.ExtractScopes(args[1:])
+		scriptArgs := cli.ParseInlineArgs(rest)
+		filters := scopeFilterNames(scopes, projectRoot, cfg, logger)
 
-		scriptArgs := args[1:]
+		// inside a member without an @scope, the member's own script runs when
+		// it defines one; otherwise the root's script runs, as in the
+		// package manager path
+		launch := true
+		if len(scopes) == 0 {
+			if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 && originalWorkDir != projectRoot {
+				if member, inWs := workspace.FromCWD(originalWorkDir, members); inWs {
+					memberResolved, _, _, resolveErr := scripting.ResolveWorkspaceScript(member.Name, cmd, projectRoot, cfg)
+					if resolveErr != nil {
+						cli.Fail(logger, resolveErr, false)
+					}
+					if memberResolved.Source == scripting.ScriptSourceNone {
+						launch = false
+					} else {
+						filters = []string{member.Name}
+					}
+				}
+			}
+		}
 
 		if envValidated {
 			if err := env.Run(projectRoot, cfg, logger, ci); err != nil {
@@ -245,23 +254,32 @@ func main() {
 		// Orchestrate the folder script (and any root-scope concurrent) — chrome on
 		// a TTY with tui != off, plain otherwise. Falls through to the literal exec
 		// below only when nothing was orchestrated.
-		switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
-		case tui.RendererChrome:
-			ran, err := tui.Launch(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated, ci)
-			if err != nil {
-				cli.Fail(logger, err, false)
+		if launch {
+			switch tui.SelectRenderer(cfg, tui.InteractiveTTY()) {
+			case tui.RendererChrome:
+				ran, err := tui.Launch(cfg, cmd, projectRoot, nil, filters, scriptArgs, envValidated, ci)
+				if err != nil {
+					cli.Fail(logger, err, false)
+				}
+				if ran {
+					return
+				}
+			case tui.RendererPlain:
+				ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, filters, scriptArgs, envValidated, ci)
+				if err != nil {
+					cli.Fail(logger, err, false)
+				}
+				if ran {
+					return
+				}
 			}
-			if ran {
-				return
-			}
-		case tui.RendererPlain:
-			ran, err := tui.LaunchPlain(cfg, cmd, projectRoot, nil, nil, scriptArgs, envValidated, ci)
-			if err != nil {
-				cli.Fail(logger, err, false)
-			}
-			if ran {
-				return
-			}
+		}
+
+		if len(scopes) > 0 {
+			cli.Fail(logger, fmt.Errorf(
+				"cannot scope %q to %s — scoped runs need an interactive terminal and a workspace-aware target (a turbo/nx task or a script defined in the target workspace)",
+				cmd, strings.Join(scopes, " "),
+			), false)
 		}
 
 		if resolved.Source == scripting.ScriptSourceNone {
@@ -345,7 +363,17 @@ func main() {
 	}
 
 	// ensure manager configured
-	managerName, cfg, err := cli.EnsureManager(projectRoot, cfg)
+	// the member the command runs in: an @workspace/script target, else the member holding the cwd
+	managerMember := cwdMember
+	if parsed.Action == cli.ActionWorkspaceScript && parsed.WorkspaceName != "" {
+		managerMember = nil
+		if members, _ := workspace.DiscoverMembersCached(projectRoot, cfg); len(members) > 0 {
+			if target, findErr := workspace.Find(parsed.WorkspaceName, members, projectRoot); findErr == nil {
+				managerMember = &target
+			}
+		}
+	}
+	managerName, cfg, err := cli.EnsureMemberManager(projectRoot, cfg, managerMember)
 	if err != nil {
 		cli.Fail(logger, err, false)
 	}
@@ -549,7 +577,11 @@ func main() {
 		}
 		return
 	case cli.ActionInstall:
-		if err := commands.Install(managerName, projectRoot, cfg); err != nil {
+		installDir := projectRoot
+		if cwdMember != nil {
+			installDir = originalWorkDir
+		}
+		if err := commands.Install(managerName, installDir, pmCfg); err != nil {
 			cli.Fail(logger, err, false)
 		}
 		return

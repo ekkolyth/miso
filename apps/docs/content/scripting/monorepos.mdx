@@ -1,6 +1,6 @@
 # Monorepos
 
-Miso has first-class support for monorepos. Workspace membership is auto-detected — independent of the `repo` setting — from a `pnpm-workspace.yaml` (checked first) or a `workspaces` field in your root `package.json`. When members are found, you can run workspace-scoped scripts using the verb-first `miso <script> @scope` syntax, and Miso will automatically scope commands based on your current directory.
+Miso has first-class support for monorepos. Workspace membership is auto-detected — independent of the `repo` setting — from a `pnpm-workspace.yaml` (checked first) or a `workspaces` field in your root `package.json`, plus any directory that has its own `miso.json` at `*/` or `*/*/` (skipping `node_modules`, `.git`, and dot-directories). A `!` exclusion in the workspace globs always wins: an excluded directory is never a member, even with its own `miso.json`. When members are found, you can run workspace-scoped scripts using the verb-first `miso <script> @scope` syntax, and Miso will automatically scope commands based on your current directory.
 
 ## Setup
 
@@ -34,6 +34,8 @@ Alternatively, a `pnpm-workspace.yaml` with a `packages:` list works the same wa
 />
 
 **2. Leave `repo` unset (or set it to `"miso"`).** Workspace discovery happens automatically — no monorepo-specific `repo` mode is required. Native fan-out and `@scope` runs execute through Miso's TUI — see [Running Workspace Scripts](#running-workspace-scripts). Set `repo` to `"turbo"` or `"nx"` only if you want to delegate orchestration to one of those tools instead.
+
+**Members outside the workspace globs.** A directory with its own `miso.json` is a member even when no glob matches it and it has no `package.json`, so a Go or Rust app can sit beside your JavaScript workspaces. Each member runs `package.json` scripts with its own package manager, resolved from its `packageManager` field, then its lockfile, then the root's. A member with `"packageManager": false` runs folder scripts only.
 
 ## Workspace Scripts
 
@@ -94,7 +96,7 @@ An explicit `@scope` is always honored or Miso fails — if it doesn't resolve t
 
 > The old prefixed form, `miso @workspace/script`, has been removed in favor of `miso <script> @scope`.
 
-> Scoping needs a package manager. In [simple mode](/working-with-miso/simple-mode) (`"packageManager": false`), workspace discovery is disabled and `@scope` is passed through to the script as a literal argument instead of being resolved.
+> In [standalone mode](/working-with-miso/simple-mode) (`"packageManager": false`), a standalone root still runs members found through their own `miso.json`, and `@scope` selects them.
 
 ### From Inside a Workspace
 

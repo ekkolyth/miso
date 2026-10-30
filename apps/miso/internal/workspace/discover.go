@@ -16,18 +16,44 @@ type Member struct {
 	ConfigPath string
 }
 
-// pnpm-workspace.yaml wins when present; otherwise package.json "workspaces".
-// Independent of repo mode.
+// glob members first (pnpm-workspace.yaml wins over package.json "workspaces"),
+// then directories with their own miso.json. Independent of repo mode.
 func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
-	patterns, err := workspacePatterns(root)
+	globDirs, excludes, _, err := globMemberDirs(root)
 	if err != nil {
 		return nil, err
 	}
-	if len(patterns) == 0 {
-		return nil, nil
+
+	seen := make(map[string]bool)
+	var members []Member
+	for _, dir := range globDirs {
+		seen[dir] = true
+		members = append(members, newMember(dir))
 	}
 
-	var includes, excludes []string
+	for _, dir := range scanDirs(root) {
+		if seen[dir] || excluded(dir, root, excludes) || insideAnyMember(dir, members) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, config.FileName)); err != nil {
+			continue
+		}
+		seen[dir] = true
+		members = append(members, newMember(dir))
+	}
+	return members, nil
+}
+
+// expands the workspace globs minus the "!" exclusions, and returns those
+// exclusions so callers apply the same rule to their own scans, and whether the
+// root declares any workspace pattern at all
+func globMemberDirs(root string) (dirs, excludes []string, declared bool, err error) {
+	patterns, err := workspacePatterns(root)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	var includes []string
 	for _, pattern := range patterns {
 		if strings.HasPrefix(pattern, "!") {
 			excludes = append(excludes, strings.TrimPrefix(pattern, "!"))
@@ -37,7 +63,6 @@ func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
 	}
 
 	seen := make(map[string]bool)
-	var members []Member
 	for _, pattern := range includes {
 		glob := pattern
 		if !filepath.IsAbs(glob) {
@@ -45,7 +70,7 @@ func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
 		}
 		matches, err := filepath.Glob(glob)
 		if err != nil {
-			return nil, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
+			return nil, nil, false, fmt.Errorf("expand workspace glob %q: %w", pattern, err)
 		}
 		for _, match := range matches {
 			info, err := os.Stat(match)
@@ -56,10 +81,25 @@ func DiscoverMembers(root string, _ config.Config) ([]Member, error) {
 				continue
 			}
 			seen[match] = true
-			members = append(members, newMember(match))
+			dirs = append(dirs, match)
 		}
 	}
-	return members, nil
+	return dirs, excludes, len(patterns) > 0, nil
+}
+
+func insideAnyMember(dir string, members []Member) bool {
+	for _, member := range members {
+		if within(member.Dir, dir) {
+			return true
+		}
+	}
+	return false
+}
+
+// reports whether dir is parent or sits anywhere beneath it
+func within(parent, dir string) bool {
+	rel, err := filepath.Rel(parent, dir)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // prefers pnpm-workspace.yaml; falls back to package.json workspaces.

@@ -167,7 +167,7 @@ The two follow different rules — this is the part people get wrong:
     - `turbo`/`nx` mode, name owned by the delegate → turbo/nx runs it and owns its env; miso injects nothing.
     - `turbo`/`nx` mode, name claimed by a `repo.tasks.<name>` entry → **miso** spawns those processes, so miso injects the resolved env exactly as in miso mode.
 
-Membership comes from `package.json` workspaces or `pnpm-workspace.yaml`. A `miso.json` in a directory outside that set is not traversed — declare those schemas at the root.
+Members are the directories matched by `package.json` workspaces or `pnpm-workspace.yaml`, plus directories with their own `miso.json` at `*/` or `*/*/`. A workspace `!` exclusion wins, so an excluded directory is not traversed.
 
 In miso mode a scope names the target its vars inject for — a member, or a root script/task. A scope that matches no known member is not an error (it may name a root script/task); those vars simply inject only when that target runs, and never leak into another target's environment.
 

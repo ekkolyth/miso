@@ -1,10 +1,15 @@
 package tui
 
 import (
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -732,9 +737,10 @@ func TestCaptureOutputBareCursorUpDoesNotBlankLines(t *testing.T) {
 	pm := NewProcessManager()
 	p := pm.Add(TuiScriptEntry{Label: "spin"}, "", nil, "", nil)
 
-	stream := "web  Creating\ndb  Creating\n" + // frame 1
-		"\x1b[2A\n" + // bare cursor-up, no reprint text
-		"web  Created\ndb  Created\n" // reprint arrives on its own lines
+	// a cooked child's \n reaches miso as \r\n through the pty
+	stream := "web  Creating\r\ndb  Creating\r\n" + // frame 1
+		"\x1b[2A\r\n" + // bare cursor-up, no reprint text
+		"web  Created\r\ndb  Created\r\n" // reprint arrives on its own lines
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -760,8 +766,9 @@ func TestCaptureOutputRedrawWithBlankRowStillOverwrites(t *testing.T) {
 	pm := NewProcessManager()
 	p := pm.Add(TuiScriptEntry{Label: "compose"}, "", nil, "", nil)
 
-	stream := "web  Creating\ndb  Creating\nlog line\n" + // frame 1: 3 lines
-		"\x1b[3Aweb  Created\n\ndb  Created\n" // up 3, middle row reprints blank
+	// a cooked child's \n reaches miso as \r\n through the pty
+	stream := "web  Creating\r\ndb  Creating\r\nlog line\r\n" + // frame 1: 3 lines
+		"\x1b[3Aweb  Created\r\n\r\ndb  Created\r\n" // up 3, middle row reprints blank
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -989,7 +996,9 @@ func TestStartEmitsPreambleBeforeChildOutput(t *testing.T) {
 	pm := NewProcessManager()
 	p := pm.Add(TuiScriptEntry{Label: "web"}, "sh",
 		[]string{"-c", `printf 'next dev booting\n'`}, "", nil)
-	p.Preamble = []string{"env validated — 2 scopes, 3 variables"}
+	p.BuildEnv = func() ([]string, []string, error) {
+		return nil, []string{"env validated — 2 scopes, 3 variables"}, nil
+	}
 
 	if err := pm.Start(p); err != nil {
 		t.Fatalf("Start() error: %v", err)
@@ -1005,5 +1014,405 @@ func TestStartEmitsPreambleBeforeChildOutput(t *testing.T) {
 	}
 	if !strings.Contains(lines[1], "next dev booting") {
 		t.Errorf("second line = %q, want the child's output", lines[1])
+	}
+}
+
+func TestCaptureOutputClackPromptRedrawsInPlace(t *testing.T) {
+	// clack (changeset's prompts) leaves the cursor on the frame's last row,
+	// jumps to its top, steps down with ESC[nB to the first changed row, and
+	// either rewrites one row with ESC[2K or erases below with ESC[J and
+	// reprints the tail
+	_, p, _, w, stop := startPipeCapture(t, "changeset")
+	defer stop()
+
+	writeAndWaitFor(t, p, w, "◆ pick\n│ ● a\n│ ○ b\n└",
+		[]string{"◆ pick", "│ ● a", "│ ○ b", "└"})
+	// arrow down: rows 1 and 2 change
+	writeAndWaitFor(t, p, w, "\x1b[999D\x1b[3A\x1b[1B\x1b[J│ ○ a\n│ ● b\n└",
+		[]string{"◆ pick", "│ ○ a", "│ ● b", "└"})
+	// arrow up again
+	writeAndWaitFor(t, p, w, "\x1b[999D\x1b[3A\x1b[1B\x1b[J│ ● a\n│ ○ b\n└",
+		[]string{"◆ pick", "│ ● a", "│ ○ b", "└"})
+	// typing into a filter changes only the title row
+	writeAndWaitFor(t, p, w, "\x1b[999D\x1b[3A\x1b[2K\x1b[G◆ pick x\x1b[3B",
+		[]string{"◆ pick x", "│ ● a", "│ ○ b", "└"})
+	// a shorter frame erases the rows it no longer uses
+	writeAndWaitFor(t, p, w, "\x1b[999D\x1b[3A\x1b[1B\x1b[J│ ● a\n└",
+		[]string{"◆ pick x", "│ ● a", "└"})
+	// submit: clack closes with a newline, and later output appends below
+	writeAndWaitFor(t, p, w, "\ndone\n",
+		[]string{"◆ pick x", "│ ● a", "└", "done"})
+}
+
+func TestCaptureOutputDialoguerPromptClearsOnSubmit(t *testing.T) {
+	// dialoguer (via the console crate) repaints a multi-select by stepping
+	// through its rows with \r ESC[2K ESC[1B, and on submit clears the whole
+	// prompt that way before printing its summary; bytes recorded from ekko
+	_, p, _, w, stop := startPipeCapture(t, "ekko")
+	defer stop()
+
+	clearRows := func(n int) string {
+		return fmt.Sprintf("\x1b[%dA", n) + strings.Repeat("\r\x1b[2K\x1b[1B", n) + fmt.Sprintf("\x1b[%dA", n)
+	}
+	writeAndWaitFor(t, p, w, "\x1b[?25lagents:\r\n> [ ] claude\r\n  [ ] cursor\r\n",
+		[]string{"agents:", "> [ ] claude", "  [ ] cursor"})
+	writeAndWaitFor(t, p, w, clearRows(2)+"  [ ] claude\r\n> [x] cursor\r\n",
+		[]string{"agents:", "  [ ] claude", "> [x] cursor"})
+	writeAndWaitFor(t, p, w, clearRows(3)+"agents: \r\n\x1b[?25hnothing selected\r\n",
+		[]string{"agents: ", "nothing selected", ""})
+}
+
+func TestCaptureOutputBubbleteaRedrawSkipsUnchangedRows(t *testing.T) {
+	// bubbletea runs the pty raw, parks the cursor on the frame's last row,
+	// jumps to the top, and steps over unchanged rows with a bare \n instead of
+	// reprinting them; bytes recorded from create-ekko-app (huh)
+	_, p, _, w, stop := startPipeCapture(t, "cea")
+	defer stop()
+
+	writeAndWaitFor(t, p, w, "\r┃ name?\r\n┃ > app\r\n\r\nenter next\x1b[K",
+		[]string{"┃ name?", "┃ > app", "", "enter next"})
+	writeAndWaitFor(t, p, w, "\r\x1b[3A\n┃ > appx\r\n\n",
+		[]string{"┃ name?", "┃ > appx", "", "enter next"})
+	writeAndWaitFor(t, p, w, "\r\x1b[3A┃ framework?\r\n┃ > Next.js\r\n┃   TanStack\r\nenter select\x1b[K",
+		[]string{"┃ framework?", "┃ > Next.js", "┃   TanStack", "enter select"})
+	writeAndWaitFor(t, p, w, "\r\x1b[3A\n┃   Next.js\r\n┃ > TanStack\r\n",
+		[]string{"┃ framework?", "┃   Next.js", "┃ > TanStack", "enter select"})
+	writeAndWaitFor(t, p, w, "\r\x1b[2KINFO setup cancelled\r\n",
+		[]string{"┃ framework?", "┃   Next.js", "┃ > TanStack", "INFO setup cancelled"})
+}
+
+func TestStartCallsBuildEnvEachTime(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "n"}, "sh", []string{"-c", "echo n=$N"}, "", nil)
+	calls := 0
+	p.BuildEnv = func() ([]string, []string, error) {
+		calls++
+		return []string{"N=" + strconv.Itoa(calls), "PATH=" + os.Getenv("PATH")}, nil, nil
+	}
+	if err := pm.Start(p); err != nil {
+		t.Fatal(err)
+	}
+	pm.WaitAllExited([]*Process{p})
+	if err := pm.Restart(p); err != nil {
+		t.Fatal(err)
+	}
+	pm.WaitAllExited([]*Process{p})
+	if !strings.Contains(strings.Join(p.Buffer.Lines(), "\n"), "n=2") {
+		t.Fatalf("buffer = %q, want n=2", p.Buffer.Lines())
+	}
+}
+
+// blockingBuildEnv holds a Start inside its env-build window until released.
+func blockingBuildEnv() (build func() ([]string, []string, error), entered, release chan struct{}) {
+	entered = make(chan struct{})
+	release = make(chan struct{})
+	build = func() ([]string, []string, error) {
+		close(entered)
+		<-release
+		return nil, nil, nil
+	}
+	return build, entered, release
+}
+
+func TestProcessManager_StopDuringRestartEnvBuildStopsSpawnedChild(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "restart-stop", ScriptName: "sleep"}, "sleep", []string{"10"}, "", nil)
+	t.Cleanup(pm.StopAll)
+
+	// a previous run leaves an exited cmd behind, as in a real restart
+	first := pm.Add(TuiScriptEntry{Label: "first", ScriptName: "true"}, "true", nil, "", nil)
+	if err := pm.Start(first); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	<-first.done
+	p.cmd = first.cmd
+	p.State = StateExited
+
+	build, entered, release := blockingBuildEnv()
+	p.BuildEnv = build
+
+	startReturned := make(chan error, 1)
+	go func() { startReturned <- pm.Start(p) }()
+	<-entered
+
+	stopReturned := make(chan struct{})
+	go func() {
+		pm.Stop(p)
+		close(stopReturned)
+	}()
+	select {
+	case <-stopReturned:
+		t.Fatal("Stop returned before the Start spawned its child")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	if err := <-startReturned; err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-stopReturned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop hung after Start spawned")
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.State != StateExited {
+		t.Errorf("State = %v, want StateExited", p.State)
+	}
+	if p.cmd == nil || p.cmd == first.cmd {
+		t.Fatal("Start did not spawn a new child")
+	}
+	if syscall.Kill(p.cmd.Process.Pid, 0) == nil {
+		t.Error("the spawned child is still alive after Stop")
+	}
+}
+
+func TestProcessManager_SkipDuringEnvBuildClosesDoneOnce(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "skip-race", ScriptName: "true"}, "true", nil, "", nil)
+
+	build, entered, release := blockingBuildEnv()
+	p.BuildEnv = build
+
+	startReturned := make(chan error, 1)
+	go func() { startReturned <- pm.Start(p) }()
+	<-entered
+
+	skipReturned := make(chan struct{})
+	go func() {
+		pm.Skip(p)
+		close(skipReturned)
+	}()
+	close(release)
+
+	<-skipReturned
+	if err := <-startReturned; err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-p.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("done never closed")
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.State != StateExited {
+		t.Errorf("State = %v, want StateExited", p.State)
+	}
+}
+
+func TestProcessManager_OverlappingRestartsLeaveNoOrphan(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "pids")
+	script := fmt.Sprintf("echo $$ >> %s; exec sleep 30", pidFile)
+
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "double-restart", ScriptName: "sleep"}, "sh", []string{"-c", script}, "", nil)
+
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	p.BuildEnv = func() ([]string, []string, error) {
+		entered <- struct{}{}
+		<-release
+		return nil, nil, nil
+	}
+
+	readPids := func() []int {
+		data, _ := os.ReadFile(pidFile)
+		var pids []int
+		for _, field := range strings.Fields(string(data)) {
+			if pid, err := strconv.Atoi(field); err == nil {
+				pids = append(pids, pid)
+			}
+		}
+		return pids
+	}
+	t.Cleanup(func() {
+		for _, pid := range readPids() {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	})
+
+	var restarts sync.WaitGroup
+	restart := func() {
+		restarts.Add(1)
+		go func() {
+			defer restarts.Done()
+			_ = pm.Restart(p)
+		}()
+	}
+	restart()
+	<-entered
+	restart()
+	time.Sleep(100 * time.Millisecond) // let the second restart reach the overlap
+	close(release)
+	restarts.Wait()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for len(readPids()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	stopped := make(chan struct{})
+	go func() {
+		pm.StopAll()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(8 * time.Second):
+		t.Fatal("StopAll hung")
+	}
+
+	for _, pid := range readPids() {
+		if syscall.Kill(pid, 0) == nil {
+			t.Errorf("child %d survived StopAll", pid)
+		}
+	}
+}
+
+func TestProcessManager_StartOnRunningProcessStopsPreviousChild(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "double-start", ScriptName: "sleep"}, "sleep", []string{"30"}, "", nil)
+	t.Cleanup(pm.StopAll)
+
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	p.mu.Lock()
+	firstPid := p.cmd.Process.Pid
+	p.mu.Unlock()
+	t.Cleanup(func() { _ = syscall.Kill(firstPid, syscall.SIGKILL) })
+
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("second Start: %v", err)
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		pm.StopAll()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(8 * time.Second):
+		t.Fatal("StopAll hung")
+	}
+	if syscall.Kill(firstPid, 0) == nil {
+		t.Errorf("first child %d survived", firstPid)
+	}
+}
+
+func TestProcessManager_StartAfterStopAllSpawnsNothing(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "after-quit", ScriptName: "sleep"}, "sleep", []string{"30"}, "", nil)
+	t.Cleanup(pm.StopAll)
+
+	pm.StopAll()
+
+	if err := pm.Restart(p); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if err := pm.Start(p); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pm.RestartAll()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd != nil {
+		t.Error("a child was spawned after StopAll")
+	}
+}
+
+func TestProcessManager_StopAllDuringRestartAllLeavesNoChild(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "pids")
+	script := fmt.Sprintf("echo $$ >> %s; exec sleep 30", pidFile)
+
+	pm := NewProcessManager()
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var procs []*Process
+	for _, label := range []string{"a", "b"} {
+		p := pm.Add(TuiScriptEntry{Label: label, ScriptName: "sleep"}, "sh", []string{"-c", script}, "", nil)
+		p.BuildEnv = func() ([]string, []string, error) {
+			entered <- struct{}{}
+			<-release
+			return nil, nil, nil
+		}
+		procs = append(procs, p)
+	}
+	t.Cleanup(func() {
+		data, _ := os.ReadFile(pidFile)
+		for _, field := range strings.Fields(string(data)) {
+			if pid, err := strconv.Atoi(field); err == nil {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	})
+
+	restarted := make(chan struct{})
+	go func() {
+		pm.RestartAll()
+		close(restarted)
+	}()
+	<-entered
+
+	stopReturned := make(chan struct{})
+	go func() {
+		pm.StopAll()
+		close(stopReturned)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		pm.mu.Lock()
+		quitting := pm.stopped
+		pm.mu.Unlock()
+		if quitting {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(release)
+
+	for _, done := range []chan struct{}{restarted, stopReturned} {
+		select {
+		case <-done:
+		case <-time.After(8 * time.Second):
+			t.Fatal("RestartAll or StopAll hung")
+		}
+	}
+
+	data, _ := os.ReadFile(pidFile)
+	for _, field := range strings.Fields(string(data)) {
+		pid, err := strconv.Atoi(field)
+		if err == nil && syscall.Kill(pid, 0) == nil {
+			t.Errorf("child %d survived StopAll", pid)
+		}
+	}
+	procs[1].mu.Lock()
+	defer procs[1].mu.Unlock()
+	if procs[1].cmd != nil {
+		t.Error("RestartAll spawned b after StopAll")
+	}
+}
+
+func TestCaptureOutputPromptAfterScreenClearPaintsWhileWaiting(t *testing.T) {
+	for name, clear := range map[string]string{
+		"clear then home":       "\x1b[2J\x1b[H",
+		"home then erase-below": "\x1b[H\x1b[2J",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, p, _, w, stop := startPipeCapture(t, "ask")
+			defer stop()
+
+			writeAndWaitFor(t, p, w, "old\r\n", []string{"old"})
+			writeAndWaitFor(t, p, w, clear+"Name: ", []string{"Name: "})
+			writeAndWaitFor(t, p, w, "ab", []string{"Name: ab"})
+			writeAndWaitFor(t, p, w, "\r\n", []string{"Name: ab"})
+		})
 	}
 }

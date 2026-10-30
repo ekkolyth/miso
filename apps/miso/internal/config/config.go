@@ -152,7 +152,7 @@ func (c Config) TuiEnabled() bool {
 	return c.TuiMode == "tabbed" || c.TuiMode == "merged"
 }
 
-func (c Config) SimpleMode() bool {
+func (c Config) StandaloneMode() bool {
 	return c.PackageManager != nil && !*c.PackageManager
 }
 

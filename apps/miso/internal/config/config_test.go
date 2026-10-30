@@ -407,22 +407,22 @@ func TestLoadPackageManagerAbsent(t *testing.T) {
 	}
 }
 
-func TestSimpleMode(t *testing.T) {
+func TestStandaloneMode(t *testing.T) {
 	f := false
 	cfg := Config{PackageManager: &f}
-	if !cfg.SimpleMode() {
-		t.Error("SimpleMode() = false, want true")
+	if !cfg.StandaloneMode() {
+		t.Error("StandaloneMode() = false, want true")
 	}
 
 	tr := true
 	cfg2 := Config{PackageManager: &tr}
-	if cfg2.SimpleMode() {
-		t.Error("SimpleMode() = true, want false (explicit true)")
+	if cfg2.StandaloneMode() {
+		t.Error("StandaloneMode() = true, want false (explicit true)")
 	}
 
 	cfg3 := Config{}
-	if cfg3.SimpleMode() {
-		t.Error("SimpleMode() = true, want false (nil/absent)")
+	if cfg3.StandaloneMode() {
+		t.Error("StandaloneMode() = true, want false (nil/absent)")
 	}
 }
 

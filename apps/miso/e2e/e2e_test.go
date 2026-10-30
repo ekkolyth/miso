@@ -205,7 +205,7 @@ func assertDependsOnOrder(t *testing.T, root string) {
 	assertBefore(t, order, "build-done", "dev")
 }
 
-func TestE2E_DependsOnSimpleMode(t *testing.T) {
+func TestE2E_DependsOnStandaloneMode(t *testing.T) {
 	root := writeDependsOnFixture(t, false, "")
 	out, code := runTimeout(t, root, 30*time.Second, "dev")
 	if code != 0 {
@@ -254,7 +254,7 @@ func TestE2E_CaretDependsOnFailureDoesNotHang(t *testing.T) {
 	}
 }
 
-func TestE2E_SimpleModeDependsOnOnlyTask(t *testing.T) {
+func TestE2E_StandaloneModeDependsOnOnlyTask(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, filepath.Join(root, "miso.json"),
 		`{"packageManager":false,"repo":{"tasks":{"setup":{"dependsOn":["a","b"]}}}}`)
@@ -704,5 +704,172 @@ func TestE2E_DelegatedPassthroughKeepsTurboArgs(t *testing.T) {
 	out, code := runEnv(t, root, environ, "build", "--filter=web", "--", "--watch")
 	if code != 0 || !strings.Contains(out, "--filter=web -- --watch") {
 		t.Errorf("build --filter=web -- --watch exit = %d, out %q; want turbo to get --filter=web -- --watch", code, out)
+	}
+}
+
+func writeStandaloneMembersFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{"packageManager":false}`)
+	for _, name := range []string{"web", "api"} {
+		writeFixtureFile(t, filepath.Join(root, name, "miso.json"), `{"packageManager":false}`)
+		writeFixtureFile(t, filepath.Join(root, name, "scripts", "dev.sh"),
+			"#!/bin/sh\ntouch \""+root+"/"+name+"-ran\"\n")
+	}
+	return root
+}
+
+func assertMarkers(t *testing.T, root string, want map[string]bool) {
+	t.Helper()
+	for name, exists := range want {
+		_, err := os.Stat(filepath.Join(root, name))
+		if exists && err != nil {
+			t.Errorf("%s missing: %v", name, err)
+		}
+		if !exists && err == nil {
+			t.Errorf("%s exists, want absent", name)
+		}
+	}
+}
+
+func TestE2E_StandaloneRootRunsMembers(t *testing.T) {
+	root := writeStandaloneMembersFixture(t)
+	out, code := runTimeout(t, root, 30*time.Second, "dev")
+	if code != 0 {
+		t.Fatalf("miso dev exit = %d, want 0 (out: %s)", code, out)
+	}
+	assertMarkers(t, root, map[string]bool{"web-ran": true, "api-ran": true})
+}
+
+func TestE2E_StandaloneRootScopedRun(t *testing.T) {
+	root := writeStandaloneMembersFixture(t)
+	out, code := runTimeout(t, root, 30*time.Second, "dev", "@api")
+	if code != 0 {
+		t.Fatalf("miso dev @api exit = %d, want 0 (out: %s)", code, out)
+	}
+	assertMarkers(t, root, map[string]bool{"api-ran": true, "web-ran": false})
+}
+
+func TestE2E_StandaloneRootFromMemberDir(t *testing.T) {
+	root := writeStandaloneMembersFixture(t)
+	out, code := runTimeout(t, filepath.Join(root, "api"), 30*time.Second, "dev")
+	if code != 0 {
+		t.Fatalf("miso dev exit = %d, want 0 (out: %s)", code, out)
+	}
+	assertMarkers(t, root, map[string]bool{"api-ran": true, "web-ran": false})
+}
+
+func TestE2E_StandaloneRootFromMemberDirFallsBackToRoot(t *testing.T) {
+	root := writeStandaloneMembersFixture(t)
+	writeFixtureFile(t, filepath.Join(root, "scripts", "lint.sh"),
+		"#!/bin/sh\ntouch \""+root+"/root-lint-ran\"\n")
+	out, code := runTimeout(t, filepath.Join(root, "api"), 30*time.Second, "lint")
+	if code != 0 {
+		t.Fatalf("miso lint exit = %d, want 0 (out: %s)", code, out)
+	}
+	assertMarkers(t, root, map[string]bool{"root-lint-ran": true})
+}
+
+// root and member differ in package manager; the fake pnpm and npm on PATH
+// report which one miso ran. rootLockfile "" leaves the root with none
+func writeMemberManagerFixture(t *testing.T, rootLockfile string) (root, web string, environ []string) {
+	t.Helper()
+	root = t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true,"workspaces":["apps/*"]}`)
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{}`)
+	if rootLockfile != "" {
+		writeFixtureFile(t, filepath.Join(root, rootLockfile), `{"name":"fx","lockfileVersion":3,"packages":{}}`)
+	}
+	web = filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(web, "package.json"), `{"name":"web","private":true,"packageManager":"pnpm@9.0.0","scripts":{"hello":"echo hi"}}`)
+	bin := filepath.Join(root, "bin")
+	for _, name := range []string{"pnpm", "npm"} {
+		path := filepath.Join(bin, name)
+		writeFixtureFile(t, path, "#!/bin/sh\necho \""+name+" ran: $*\"\n")
+		if err := os.Chmod(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	environ = environWithout([]string{"PATH"}, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return root, web, environ
+}
+
+func TestE2E_MemberDirRunUsesMemberPackageManager(t *testing.T) {
+	_, web, environ := writeMemberManagerFixture(t, "package-lock.json")
+	out, code := runEnv(t, web, environ, "run", "hello")
+	if code != 0 || !strings.HasPrefix(out, "pnpm ran:") {
+		t.Errorf("run hello from apps/web exit = %d, out %q; want the member's pnpm", code, out)
+	}
+}
+
+func TestE2E_MemberDirRunWithoutRootManager(t *testing.T) {
+	_, web, environ := writeMemberManagerFixture(t, "")
+	out, code := runEnv(t, web, environ, "run", "hello")
+	if code != 0 || !strings.Contains(out, "pnpm ran:") {
+		t.Errorf("run hello from apps/web exit = %d, out %q; want the member's pnpm though the root has none", code, out)
+	}
+}
+
+func TestE2E_MemberDirScriptUsesMemberPackageManager(t *testing.T) {
+	_, web, environ := writeMemberManagerFixture(t, "package-lock.json")
+	out, code := runEnv(t, web, environ, "hello")
+	if code != 0 || !strings.Contains(out, "pnpm ran:") {
+		t.Errorf("hello from apps/web exit = %d, out %q; want the member's pnpm", code, out)
+	}
+}
+
+// a bun-root workspace with a pnpm member that has its own miso.json; each
+// fake manager records the directory and arguments it ran with
+func writeInstallFixture(t *testing.T) (root, web, ranFile string, environ []string) {
+	t.Helper()
+	// resolved so it matches the $PWD the fake managers record; macOS temp dirs sit under a symlinked /var
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixtureFile(t, filepath.Join(root, "package.json"), `{"name":"fx","private":true,"workspaces":["apps/*"]}`)
+	writeFixtureFile(t, filepath.Join(root, "miso.json"), `{}`)
+	writeFixtureFile(t, filepath.Join(root, "bun.lock"), "")
+	web = filepath.Join(root, "apps", "web")
+	writeFixtureFile(t, filepath.Join(web, "package.json"), `{"name":"web","private":true,"packageManager":"pnpm@9.0.0"}`)
+	writeFixtureFile(t, filepath.Join(web, "miso.json"), `{}`)
+	ranFile = filepath.Join(root, "ran.txt")
+	bin := filepath.Join(root, "bin")
+	for _, name := range []string{"pnpm", "bun"} {
+		path := filepath.Join(bin, name)
+		writeFixtureFile(t, path, "#!/bin/sh\necho \""+name+" $PWD $*\" > \""+ranFile+"\"\n")
+		if err := os.Chmod(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	environ = environWithout([]string{"PATH"}, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return root, web, ranFile, environ
+}
+
+func TestE2E_InstallRunsInMemberDirWithMemberManager(t *testing.T) {
+	_, web, ranFile, environ := writeInstallFixture(t)
+	if out, code := runEnv(t, web, environ, "install"); code != 0 {
+		t.Fatalf("install from apps/web exit = %d, out %q", code, out)
+	}
+	ran, err := os.ReadFile(ranFile)
+	if err != nil {
+		t.Fatalf("no package manager ran: %v", err)
+	}
+	if !strings.HasPrefix(string(ran), "pnpm "+web+" ") {
+		t.Errorf("install ran %q; want pnpm in %s", ran, web)
+	}
+}
+
+func TestE2E_InstallFromRootRunsAtRoot(t *testing.T) {
+	root, _, ranFile, environ := writeInstallFixture(t)
+	if out, code := runEnv(t, root, environ, "install"); code != 0 {
+		t.Fatalf("install from root exit = %d, out %q", code, out)
+	}
+	ran, err := os.ReadFile(ranFile)
+	if err != nil {
+		t.Fatalf("no package manager ran: %v", err)
+	}
+	if !strings.HasPrefix(string(ran), "bun "+root+" ") {
+		t.Errorf("install ran %q; want bun in %s", ran, root)
 	}
 }

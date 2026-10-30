@@ -346,3 +346,89 @@ func TestTabbedAutoExitsWhenLaterLevelSkipped(t *testing.T) {
 		t.Error("b ran after its dependency failed")
 	}
 }
+
+func isQuit(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
+}
+
+func markAllExited(pm *ProcessManager) {
+	for _, p := range pm.Processes {
+		p.mu.Lock()
+		p.State = StateExited
+		p.mu.Unlock()
+	}
+}
+
+// once the user has restarted anything, a queued allExitedMsg must not quit,
+// so they can keep fixing and restarting a failing process.
+func TestTabbedStaysOpenAfterRestart(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 0\n")
+	t.Cleanup(pm.StopAll)
+
+	m := NewTabbedModel(pm, "dev", false)
+	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "r", Code: 'r'}))
+	m = next.(TabbedModel)
+	pm.StopAll()
+	markAllExited(pm)
+
+	_, cmd := m.Update(ProcessStateMsg{Label: "a", State: StateExited, Code: -1})
+	if cmd != nil {
+		t.Error("auto-exit tick scheduled after a restart")
+	}
+	_, cmd = m.Update(allExitedMsg{})
+	if isQuit(cmd) {
+		t.Error("allExitedMsg quit after a restart")
+	}
+}
+
+func TestTabbedStaysOpenAfterRestartAll(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager()
+	addPlainScript(t, pm, dir, "a", "exit 0\n")
+	t.Cleanup(pm.StopAll)
+
+	m := NewTabbedModel(pm, "dev", false)
+	next, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "R", Code: 'R'}))
+	m = next.(TabbedModel)
+	pm.StopAll()
+	markAllExited(pm)
+
+	_, cmd := m.Update(allExitedMsg{})
+	if isQuit(cmd) {
+		t.Error("allExitedMsg quit after restart all")
+	}
+}
+
+// with no restart, the auto-exit still quits a one-shot run.
+func TestTabbedAutoExitQuitsWithoutRestart(t *testing.T) {
+	pm := NewProcessManager()
+	pm.Add(TuiScriptEntry{Label: "a"}, "", nil, "", nil)
+	markAllExited(pm)
+
+	m := NewTabbedModel(pm, "dev", false)
+	_, cmd := m.Update(allExitedMsg{})
+	if !isQuit(cmd) {
+		t.Error("allExitedMsg did not quit with every process exited and no restart")
+	}
+}
+
+// a tick queued before a restart landed must not kill the restarted process.
+func TestTabbedAllExitedIgnoredWhileProcessRunning(t *testing.T) {
+	pm := NewProcessManager()
+	p := pm.Add(TuiScriptEntry{Label: "a"}, "", nil, "", nil)
+	p.mu.Lock()
+	p.State = StateRunning
+	p.mu.Unlock()
+
+	m := NewTabbedModel(pm, "dev", false)
+	_, cmd := m.Update(allExitedMsg{})
+	if isQuit(cmd) {
+		t.Error("allExitedMsg quit while a process is running")
+	}
+}

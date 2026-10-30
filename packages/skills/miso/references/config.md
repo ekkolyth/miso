@@ -18,7 +18,7 @@ IDE autocomplete URL. Always use:
 **Default:** `true`
 
 `true` — miso wraps your package manager (npm, bun, pnpm, yarn). Detects lockfile automatically.
-`false` — simple mode. No package manager. `miso <script>` resolves only from the `scripts/` folder; `repo.tasks` `concurrent` and `dependsOn` still run. See `miso-scripting` for script conventions and `miso-env` for env injection.
+`false` — standalone mode. No package manager. `miso <script>` resolves only from the `scripts/` folder; `repo.tasks` `concurrent` and `dependsOn` still run. See `miso-scripting` for script conventions and `miso-env` for env injection.
 
 ---
 
@@ -71,12 +71,13 @@ See `miso-tui` for the full root-first resolution algorithm.
 
 ### Workspace discovery
 
-Workspace members are auto-detected from the package manager's own config — always on, independent of `repo`:
+Workspace members are auto-detected — always on, independent of `repo` — as the union of:
 
 - **pnpm** → `pnpm-workspace.yaml` (`packages:`)
 - **bun / npm / yarn** → `workspaces` in `package.json`
+- **any directory with its own `miso.json`** at `*/` or `*/*/` (skipping `node_modules`, `.git`, dot-directories)
 
-There is no miso-specific workspace list. A member may carry its own `<member>/miso.json`, whose `scripts`, `shell`, `flags`, and `tui` fields override the root value for that member. A member's `tasks` (its own `concurrent`) is honored too — when a script fans out to that member, its `concurrent` companions resolve within it, alongside its own copy of the script. This doesn't delegate orchestration to the member — miso still drives the run from the root. A member's own `repo` is ignored (members are leaves), and `env` is handled by scope rather than the generic merge (see `miso-env`).
+A workspace `!` exclusion always wins. There is no miso-specific workspace list. A standalone root (`"packageManager": false`) still finds members; it turns off only its own package manager and `package.json` scripts. Each member runs `package.json` scripts with its own package manager (`packageManager` field, then lockfile, then the root's); a member with `"packageManager": false` runs folder scripts only. A member may carry its own `<member>/miso.json`, whose `scripts`, `shell`, `flags`, and `tui` fields override the root value for that member. A member's `tasks` (its own `concurrent`) is honored too — when a script fans out to that member, its `concurrent` companions resolve within it, alongside its own copy of the script. This doesn't delegate orchestration to the member — miso still drives the run from the root. A member's own `repo` is ignored (members are leaves), and `env` is handled by scope rather than the generic merge (see `miso-env`).
 
 ---
 
@@ -172,7 +173,7 @@ Each **root** `env` entry requires a `scope` — the target it applies to, or th
 
 ## Annotated Examples
 
-### Minimal config (simple mode project)
+### Minimal config (standalone mode project)
 
 ```json
 {

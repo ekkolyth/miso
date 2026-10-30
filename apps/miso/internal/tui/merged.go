@@ -30,9 +30,11 @@ type MergedModel struct {
 	script           string
 	delegated        bool
 	allExitedPending bool
-	sel              SelectionState
-	copyFlash        bool // true during the 150ms invert flash
-	copyConfirm      bool // true during the 1.5s green "✓ copied!" state
+	// restarted is set on the first r or R; after that the TUI stays open until the user quits.
+	restarted   bool
+	sel         SelectionState
+	copyFlash   bool // true during the 150ms invert flash
+	copyConfirm bool // true during the 1.5s green "✓ copied!" state
 
 	// live-region bookkeeping for in-place redraws, kept on the full (unfiltered)
 	// list so a filter toggle never disturbs it
@@ -93,11 +95,13 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Restart):
 			if !m.delegated && m.cursor < len(m.pm.Processes) {
 				m.allExitedPending = false
+				m.restarted = true
 				m.sel = SelectionState{}
 				go func() { _ = m.pm.Restart(m.pm.Processes[m.cursor]) }()
 			}
 		case key.Matches(msg, m.keys.RestartAll):
 			m.allExitedPending = false
+			m.restarted = true
 			m.sel = SelectionState{}
 			go m.pm.RestartAll()
 		case key.Matches(msg, m.keys.CopyKey):
@@ -195,7 +199,7 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ProcessStateMsg:
 		m.ensureVisible()
-		if !m.allExitedPending && m.pm.AllExited() {
+		if !m.restarted && !m.allExitedPending && m.pm.AllExited() {
 			m.allExitedPending = true
 			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
 				return allExitedMsg{}
@@ -204,6 +208,10 @@ func (m MergedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case allExitedMsg:
+		// a restart may have landed after this tick was queued.
+		if m.restarted || !m.pm.AllExited() {
+			return m, nil
+		}
 		return m, tea.Quit
 
 	case copyFlashDoneMsg:
@@ -371,8 +379,9 @@ func (m MergedModel) renderFilterBar() string {
 
 // applyLineOp folds one child op into the interleaved log. An append extends the
 // app's tail block; a rewrite collapses in place while the block is still at the
-// tail, or appends a fresh block once another app has interleaved; a clear
-// freezes the block so later output starts fresh.
+// tail, or appends a fresh block once another app has interleaved; a truncate
+// drops erased rows only from a block still at the tail; a clear freezes the
+// block so later output starts fresh.
 func (m *MergedModel) applyLineOp(label string, op LineOp) {
 	switch o := op.(type) {
 	case OpAppend:
@@ -381,6 +390,13 @@ func (m *MergedModel) applyLineOp(label string, op LineOp) {
 		m.tailRebuilding = false
 	case OpRewrite:
 		m.rewriteLine(label, o.OffsetFromEnd, o.Text)
+	case OpTruncate:
+		if m.ownsTail(label) {
+			n := min(o.Count, m.tailBlockLen)
+			m.logLines = m.logLines[:len(m.logLines)-n]
+			m.tailBlockLen -= n
+			m.tailLastOffset = -1
+		}
 	case OpClear:
 		if m.ownsTail(label) {
 			m.tailBlockLen = 0

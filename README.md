@@ -109,7 +109,7 @@ miso init
 }
 ```
 
-## Simple Mode
+## Standalone Mode
 
 Don't use JavaScript? Miso also works as a standalone script runner. Set `"packageManager": false` in your `miso.json` and use miso for script execution, TUI, env validation, and task orchestration in any project.
 
