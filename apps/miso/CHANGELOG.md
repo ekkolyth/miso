@@ -1,5 +1,11 @@
 # @ekkolyth/miso
 
+## 0.8.1
+
+### Patch Changes
+
+- 56fb1ea: document the 0.8.0 member, package manager, and init changes in the migration guide
+
 ## 0.8.0
 
 ### Minor Changes
