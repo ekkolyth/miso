@@ -24,7 +24,7 @@ The binary and the skill aren't version-locked, so an upgraded binary can sit ne
 
 # 0.7.x → 0.8.0
 
-`--env` moves in front of the command, the same way `--ci` works. Most projects need an edit: any `miso.json` `flags` entry carrying `--env`, and any script or CI step that writes `miso <cmd> --env`. Workspace runs now get their arguments, and CI runs no longer fail on env files a clean checkout doesn't have.
+`--env` moves in front of the command, the same way `--ci` works. Most projects need an edit: any `miso.json` `flags` entry carrying `--env`, and any script or CI step that writes `miso <cmd> --env`. Workspace runs now get their arguments, and CI runs no longer fail on env files a clean checkout doesn't have. Members now resolve their own package manager, a member with a broken package-manager setup fails the run, `miso install` run inside a member installs in that member, and folders with their own `miso.json` count as members.
 
 ## Breaking changes
 
@@ -70,10 +70,74 @@ Arguments on a fan-out or `@scope` run used to be dropped — `miso test @web --
 
 Audit root `package.json` scripts and CI steps that pass arguments to a fan-out name. Those arguments used to be ignored and now take effect in every member.
 
+### A member uses its own package manager
+
+miso resolves a member's package manager from, in order, the `packageManager` field in the member's `package.json`, the member's lockfile, then the root's manager. A member with its own field or lockfile used to run with the root's manager and now runs with its own.
+
+```jsonc
+// apps/web/package.json
+{ "packageManager": "pnpm@9.0.0" }
+// before (0.7.x): web ran with the root's manager
+// after (0.8.0): web runs with pnpm
+```
+
+A member with neither a field nor a lockfile still uses the root's manager. Audit members that have their own `packageManager` field or lockfile, and remove it from any member that should keep using the root's manager.
+
+### A member with a broken package-manager setup fails the run
+
+These cases used to fall back to the root's manager without a word. They now fail the run, and the error names the member:
+
+- the member has more than one lockfile and no `packageManager` field (a declared field wins over lockfiles)
+- the member's `packageManager` names a manager miso doesn't support
+- the member's `package.json` doesn't parse
+
+```
+member web: unsupported package manager "foo" in package.json (supported: bun, npm, pnpm, yarn)
+member web: parse package.json: …
+member web: multiple lockfiles detected; resolve conflict: …
+```
+
+Fix the member's setup: delete the extra lockfile or add a `packageManager` field, correct an unsupported `packageManager` value, or repair the `package.json`.
+
+### `miso install` runs in the member's folder
+
+`miso install` and the other package-manager commands (`add` and `remove`) run from inside a member now run in that folder, with the member's manager and flags, the same as running the manager there yourself. `install` used to always run at the root.
+
+```bash
+# before (0.7.x) — installed at the workspace root
+cd apps/web && miso install
+
+# after (0.8.0) — installs in apps/web, with the manager that member resolves to
+cd apps/web && miso install
+```
+
+Inside a JS workspace member with no field or lockfile, the member resolves to the root's manager, and that manager handles the workspace as usual. To install the whole workspace, run `miso install` from the root.
+
+### More folders count as members
+
+A folder with its own `miso.json` at `*/` or `*/*/` is now a member, alongside the folders your workspace globs match, unless it sits inside an existing member. Nested folders are not discovered as separate members. The scan skips `node_modules`, `.git` and other dot-folders. A workspace `!` exclusion always wins: an excluded folder is never a member, even with its own `miso.json`.
+
+A standalone root (`"packageManager": false`) now discovers and runs its members too, and its `@scope` filters work.
+
+```jsonc
+// miso.json at the root
+{ "packageManager": false }
+```
+
+```
+# 0.8.0 — apps/web/miso.json and tools/db/miso.json are members of this root
+miso dev @web
+```
+
+Audit stray `miso.json` files two levels deep that weren't meant as members, and standalone roots that relied on their members never running. To keep a folder out, add a `!` exclusion for it to your workspace globs.
+
 ## Behavior changes (no edit required)
 
 - **CI mode.** When `CI` is set (or with a leading `--ci`), a declared env file that doesn't exist is skipped instead of failing the run, and `miso env` / `miso --env <cmd>` check declared variables against the shell environment too. A CI job that relied on the missing-file error to catch an unprovisioned env now passes — declare `variables` so validation catches what's actually missing. See `miso-env`.
 - **`--env` validates on every run it precedes.** `@scope` runs, commands forwarded to the package manager, and runs from inside a member directory used to skip validation silently. A run that was passing can now fail on variables that were never being checked.
+- **"simple mode" is now "standalone mode".** Only the name changes. The `miso.json` field `"packageManager": false` is the same.
+- **Restart re-reads `.env` files.** `r` and `R` fully restart the process and read its `.env` files again on every start. If env fails to load on a restart, the error shows in that process's pane and miso keeps running. After any restart the TUI stays open until you quit. Before any restart, the TUI still quits on its own once everything has exited.
+- **`miso init` scans for apps.** It finds JS/TS, Go, Rust, C#, F#, Python, Java/Kotlin and Laravel apps, lists workspace apps as always run, and gives Non-Workspace apps checkboxes. It writes `miso.json` files. It edits a `package.json` only to set `packageManager` for an app that has none, and it asks first.
 
 ## Repository audit checklist
 
@@ -81,6 +145,8 @@ Audit root `package.json` scripts and CI steps that pass arguments to a fan-out 
 2. Remove `--env` from `flags` in every `miso.json`, root and member.
 3. Check fan-out and `@scope` invocations that pass arguments.
 4. Run `CI=true miso --env <cmd>` once, the way CI will.
+5. Check members with their own `packageManager` field or lockfile, and fix any member with several lockfiles and no `packageManager` field, an unsupported `packageManager`, or an unparseable `package.json`.
+6. Look for `miso.json` files two levels deep that aren't meant as members, and standalone roots that relied on their members never running.
 
 # 0.6.x → 0.7.0
 
