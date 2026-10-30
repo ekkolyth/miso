@@ -87,7 +87,7 @@ A member with neither a field nor a lockfile still uses the root's manager. Audi
 
 These cases used to fall back to the root's manager without a word. They now fail the run, and the error names the member:
 
-- the member has more than one lockfile
+- the member has more than one lockfile and no `packageManager` field (a declared field wins over lockfiles)
 - the member's `packageManager` names a manager miso doesn't support
 - the member's `package.json` doesn't parse
 
@@ -97,7 +97,7 @@ member web: parse package.json: …
 member web: multiple lockfiles detected; resolve conflict: …
 ```
 
-Fix the member's setup: delete the extra lockfile, correct the `packageManager` field, or repair the `package.json`.
+Fix the member's setup: delete the extra lockfile or add a `packageManager` field, correct an unsupported `packageManager` value, or repair the `package.json`.
 
 ### `miso install` runs in the member's folder
 
@@ -115,7 +115,7 @@ Inside a JS workspace member with no field or lockfile, the member resolves to t
 
 ### More folders count as members
 
-A folder with its own `miso.json` at `*/` or `*/*/` is now a member, alongside the folders your workspace globs match. The scan skips `node_modules`, `.git` and other dot-folders. A workspace `!` exclusion always wins: an excluded folder is never a member, even with its own `miso.json`.
+A folder with its own `miso.json` at `*/` or `*/*/` is now a member, alongside the folders your workspace globs match, unless it sits inside an existing member. Nested folders are not discovered as separate members. The scan skips `node_modules`, `.git` and other dot-folders. A workspace `!` exclusion always wins: an excluded folder is never a member, even with its own `miso.json`.
 
 A standalone root (`"packageManager": false`) now discovers and runs its members too, and its `@scope` filters work.
 
@@ -145,7 +145,7 @@ Audit stray `miso.json` files two levels deep that weren't meant as members, and
 2. Remove `--env` from `flags` in every `miso.json`, root and member.
 3. Check fan-out and `@scope` invocations that pass arguments.
 4. Run `CI=true miso --env <cmd>` once, the way CI will.
-5. Check members with their own `packageManager` field or lockfile, and fix any member with several lockfiles, an unsupported `packageManager`, or an unparseable `package.json`.
+5. Check members with their own `packageManager` field or lockfile, and fix any member with several lockfiles and no `packageManager` field, an unsupported `packageManager`, or an unparseable `package.json`.
 6. Look for `miso.json` files two levels deep that aren't meant as members, and standalone roots that relied on their members never running.
 
 # 0.6.x → 0.7.0
