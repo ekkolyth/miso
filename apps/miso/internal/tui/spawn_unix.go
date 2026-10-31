@@ -46,6 +46,7 @@ func spawnProcess(cmd *exec.Cmd, rows, cols int) (*spawnResult, error) {
 	return &spawnResult{
 		readers: []io.Reader{ptmx},
 		stdin:   ptmx,
+		cols:    cols,
 		resize: func(rows, cols int) {
 			if rows > 0 && cols > 0 {
 				_ = pty.Setsize(ptmx, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
