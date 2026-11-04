@@ -17,7 +17,7 @@ func spawnProcess(cmd *exec.Cmd, rows, cols int) (*spawnResult, error) {
 		if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil && w > 0 && h > 0 {
 			cols, rows = w, h
 		} else {
-			rows, cols = 24, 80
+			rows, cols = 24, defaultCols
 		}
 	}
 	ws := &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}

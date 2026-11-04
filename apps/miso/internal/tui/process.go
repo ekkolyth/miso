@@ -731,6 +731,9 @@ func trimIncompleteRune(s string) string {
 	return s
 }
 
+// a terminal's width when the pty's is unknown
+const defaultCols = 80
+
 // erase-to-end-of-line or erase-whole-line
 var eraseLineRe = regexp.MustCompile(`\x1b\[[02]?K`)
 
@@ -765,6 +768,8 @@ func resolveLine(s, prior string, cols int) string {
 		cursor    int
 		lastFrame string
 		state     byte
+		// style set before a jump onto prior, held for the next text written
+		pendingStyle []lineCell
 	)
 	parser := ansi.NewParser()
 	snapshot := func(from int) {
@@ -799,6 +804,10 @@ func resolveLine(s, prior string, cols int) string {
 		s = s[n:]
 		if width > 0 {
 			prior = ""
+			for _, c := range pendingStyle {
+				insert(c)
+			}
+			pendingStyle = nil
 			for cursor < len(cells) && cells[cursor].width == 0 {
 				cursor++
 			}
@@ -835,11 +844,14 @@ func resolveLine(s, prior string, cols int) string {
 					insert(lineCell{seq: seq})
 				}
 			case 'G':
-				column := max(param, 1)
-				if cols > 0 {
-					column = min(column, cols)
+				if cols <= 0 {
+					cols = defaultCols
 				}
-				if column > 1 && len(cells) == 0 && prior != "" {
+				column := min(max(param, 1), cols)
+				// prior survives only while nothing visible is written, so cells
+				// holds just style changes, which apply to the next text written
+				if column > 1 && prior != "" {
+					pendingStyle = append(pendingStyle, cells...)
 					cells = decodeCells(prior)
 				}
 				prior = ""
@@ -852,6 +864,7 @@ func resolveLine(s, prior string, cols int) string {
 		}
 	}
 
+	cells = append(cells, pendingStyle...)
 	for _, c := range cells {
 		if c.width > 0 {
 			return joinCells(cells)

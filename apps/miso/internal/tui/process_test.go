@@ -1455,6 +1455,7 @@ func TestResolveLineKeepsPriorRowOnlyForRightwardJump(t *testing.T) {
 		{"jump clamps to the last column", "\x1b[120G\x1b[1D!", len(prior), "  api.csproj      Restore (0.5!)"},
 		{"erase then column one replaces the row", "\x1b[2K\x1b[1G✓ done", len(prior), "✓ done"},
 		{"text first replaces the row", "next\x1b[1G", len(prior), "next"},
+		{"color before the jump keeps the row", "\x1b[32m\x1b[120G\x1b[6D(0.6s)", len(prior) + 1, "  api.csproj      Restore \x1b[32m(0.6s)"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1462,5 +1463,13 @@ func TestResolveLineKeepsPriorRowOnlyForRightwardJump(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestResolveLineClampsColumnWithoutPtyWidth(t *testing.T) {
+	// a pipe-backed child has no pty width; a huge column must not pad without bound
+	got := resolveLine("\x1b[1000000GX", "", 0)
+	if want := strings.Repeat(" ", 79) + "X"; got != want {
+		t.Errorf("got %d columns, want %d", len(got), len(want))
 	}
 }
