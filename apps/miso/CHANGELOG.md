@@ -1,5 +1,12 @@
 # @ekkolyth/miso
 
+## 0.8.2
+
+### Patch Changes
+
+- 0863b31: fix `miso skills --add` and `--rm` failing for Claude Code and Gemini CLI by passing the agent ids the skills CLI accepts (`claude-code`, `gemini-cli`)
+- 0863b31: redraw `dotnet run` and other MSBuild build progress in place in the `miso dev` panes instead of stacking a blank and a `(0.5s)` row on every tick
+
 ## 0.8.1
 
 ### Patch Changes
