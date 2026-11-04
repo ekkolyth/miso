@@ -77,6 +77,21 @@ func (rb *RingBuffer) SetFromEnd(offsetFromEnd int, line string) {
 	rb.buf[idx] = line
 }
 
+// "" when offsetFromEnd falls outside the retained window
+func (rb *RingBuffer) LineFromEnd(offsetFromEnd int) string {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	if offsetFromEnd < 0 || offsetFromEnd >= rb.count {
+		return ""
+	}
+	idx := (rb.head - 1 - offsetFromEnd) % rb.cap
+	if idx < 0 {
+		idx += rb.cap
+	}
+	return rb.buf[idx]
+}
+
 // drops the newest n lines, clamped to what's retained
 func (rb *RingBuffer) TruncateEnd(n int) {
 	rb.mu.Lock()

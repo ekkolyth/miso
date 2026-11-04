@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -77,6 +78,7 @@ type spawnResult struct {
 	readers          []io.Reader
 	stdin            io.Writer
 	resize           func(rows, cols int)
+	cols             int // pty width at spawn; 0 for pipes
 	releaseAfterWait func()
 	closer           func()
 }
@@ -96,8 +98,11 @@ type Process struct {
 	cmd    *exec.Cmd
 	stdin  io.Writer // writable child stdin (pty master on unix, pipe on Windows)
 	resize func(rows, cols int)
-	done   chan struct{}
-	mu     sync.Mutex
+	// pty width, read by the capture goroutine to clamp column moves the way a
+	// terminal does
+	cols atomic.Int32
+	done chan struct{}
+	mu   sync.Mutex
 	// one Start, Stop, Skip or Restart at a time, so a Stop waits for a Start
 	// still building env instead of missing the child it is about to spawn
 	lifecycle sync.Mutex
@@ -252,6 +257,9 @@ func (pm *ProcessManager) start(p *Process) error {
 	p.mu.Lock()
 	p.stdin = res.stdin
 	p.resize = res.resize
+	if res.cols > 0 {
+		p.cols.Store(int32(res.cols))
+	}
 	p.State = StateRunning
 	p.StartedAt = time.Now()
 	p.mu.Unlock()
@@ -365,8 +373,11 @@ func (p *Process) WriteStdin(b []byte) error {
 	return err
 }
 
-// no-op until the process is spawned
+// the pty itself is resized only once the process is spawned
 func (p *Process) Resize(rows, cols int) {
+	if cols > 0 {
+		p.cols.Store(int32(cols))
+	}
 	p.mu.Lock()
 	fn := p.resize
 	p.mu.Unlock()
@@ -457,7 +468,7 @@ func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGr
 	// but still consumed, so a child that writes a huge unbroken line (electron/
 	// vite minified bundles) can't stall the pty and freeze the TUI.
 	const maxLine = 1024 * 1024
-	live := liveWriter{buf: p.Buffer}
+	live := liveWriter{buf: p.Buffer, cols: func() int { return int(p.cols.Load()) }}
 	p.mu.Lock()
 	noPTY := p.NoPTY
 	p.mu.Unlock()
@@ -495,6 +506,38 @@ type liveWriter struct {
 	// bytes of the open line already applied — everything up to its last cursor
 	// move, which a prompt redrawing in place may never follow with a newline
 	applied int
+	// the open line's last move was ESC[<n>F, whose caller counts the newline
+	// after it as a step down (MSBuild climbs rows+1, then a newline)
+	stepOnLineFeed bool
+	// pty width; nil or 0 leaves column moves unclamped
+	cols func() int
+}
+
+func (lw *liveWriter) width() int {
+	if lw.cols == nil {
+		return 0
+	}
+	return lw.cols()
+}
+
+// what s leaves on the row offsetFromEnd above the newest; -1 is a new row
+func (lw *liveWriter) resolve(s string, offsetFromEnd int) string {
+	prior := ""
+	if offsetFromEnd >= 0 {
+		prior = lw.buf.LineFromEnd(offsetFromEnd)
+	}
+	return stripNonColorANSI(resolveLine(s, prior, lw.width()))
+}
+
+// the row the next text lands on; -1 when it appends
+func (lw *liveWriter) targetRow() int {
+	switch {
+	case lw.pending:
+		return lw.pendingOffset
+	case lw.up > 0:
+		return lw.up - 1
+	}
+	return -1
 }
 
 // feed resolves one newline-terminated segment against the buffer — resetting
@@ -508,7 +551,9 @@ func (lw *liveWriter) feed(raw string) []LineOp {
 	raw = strings.TrimSuffix(raw, "\r")
 	ops, rest, moved := lw.applyMoves(raw)
 	lw.applied = 0
-	raw = stripNonColorANSI(resolveLine(rest))
+	stepDown := lw.stepOnLineFeed
+	lw.stepOnLineFeed = false
+	raw = lw.resolve(rest, lw.targetRow())
 
 	if bareLineFeed && rest == "" && lw.up > 0 && !lw.pending {
 		lw.up--
@@ -523,6 +568,9 @@ func (lw *liveWriter) feed(raw string) []LineOp {
 		return append(ops, OpRewrite{OffsetFromEnd: lw.pendingOffset, Text: raw})
 	}
 	if moved && raw == "" {
+		if stepDown && lw.up > 0 {
+			lw.up--
+		}
 		return ops // cursor-only reposition, no reprint to commit yet
 	}
 	if lw.up == 0 {
@@ -549,7 +597,7 @@ func (lw *liveWriter) feedPartial(raw string) []LineOp {
 	if moved && lw.up > 0 {
 		return ops
 	}
-	text := stripNonColorANSI(resolveLine(rest))
+	text := lw.resolve(rest, lw.targetRow())
 
 	if lw.pending {
 		if text == lw.lastPainted {
@@ -586,7 +634,7 @@ func (lw *liveWriter) applyMoves(raw string) (ops []LineOp, rest string, moved b
 	for _, loc := range cursorMoveRe.FindAllStringSubmatchIndex(raw[base:], -1) {
 		start, end := base+loc[0], base+loc[1]
 		chunk := raw[lw.applied:start]
-		ops = append(ops, lw.writeInPlace(stripNonColorANSI(resolveLine(chunk)), eraseLineRe.MatchString(chunk))...)
+		ops = append(ops, lw.writeInPlace(lw.resolve(chunk, lw.targetRow()), eraseLineRe.MatchString(chunk))...)
 		count := ""
 		if loc[2] >= 0 {
 			count = raw[base+loc[2] : base+loc[3]]
@@ -624,9 +672,13 @@ func (lw *liveWriter) move(seq, count string, prior []LineOp) []LineOp {
 	if v, err := strconv.Atoi(count); err == nil && v > 0 {
 		n = v
 	}
+	lw.stepOnLineFeed = false
 	switch seq[len(seq)-1] {
 	case 'A':
 		lw.up = min(lw.up+n, lw.buf.Len())
+	case 'F':
+		lw.up = min(lw.up+n, lw.buf.Len())
+		lw.stepOnLineFeed = true
 	case 'B':
 		lw.up = max(lw.up-n, 0)
 	case 'J':
@@ -679,16 +731,20 @@ func trimIncompleteRune(s string) string {
 	return s
 }
 
+// a terminal's width when the pty's is unknown
+const defaultCols = 80
+
 // erase-to-end-of-line or erase-whole-line
 var eraseLineRe = regexp.MustCompile(`\x1b\[[02]?K`)
 
 // cursorMoveRe matches the sequences that move the write cursor between rows:
 // cursor-up and cursor-down (ESC[<n>A, ESC[<n>B; no count or 0 means one),
+// cursor-previous-line (ESC[<n>F, up to column 0),
 // erase-below (ESC[J, ESC[0J), and the full-screen clears a redrawing child
 // emits before repainting — erase-display (ESC[2J), erase-scrollback (ESC[3J),
 // and cursor-home (ESC[H and its 0/1 row;col forms). It deliberately excludes
 // arbitrary cursor addressing (ESC[<row>;<col>H) and erase-above (ESC[1J).
-var cursorMoveRe = regexp.MustCompile(`\x1b\[([0-9]*)[AB]|\x1b\[[023]?J|\x1b\[[01]?(?:;[01]?)?H`)
+var cursorMoveRe = regexp.MustCompile(`\x1b\[([0-9]*)[ABF]|\x1b\[[023]?J|\x1b\[[01]?(?:;[01]?)?H`)
 
 type lineCell struct {
 	seq   string
@@ -696,10 +752,14 @@ type lineCell struct {
 }
 
 // resolveLine replays the in-line cursor edits a child made (\r, \b, ESC[<n>D,
-// ESC[K, ESC[2K, ESC[G) against a column model and returns what a terminal
+// ESC[K, ESC[2K, ESC[<n>G) against a column model and returns what a terminal
 // would show. A line the child erased before it ended keeps its last non-empty
 // frame, so a progress line leaves its final state in the scrollback.
-func resolveLine(s string) string {
+//
+// A line that jumps right before writing or erasing anything lands on prior,
+// the row already there — MSBuild rewrites only a row's duration this way.
+// cols clamps ESC[<n>G like the terminal does; 0 leaves it unclamped.
+func resolveLine(s, prior string, cols int) string {
 	if !strings.ContainsAny(s, "\r\b\x1b") {
 		return s
 	}
@@ -708,6 +768,8 @@ func resolveLine(s string) string {
 		cursor    int
 		lastFrame string
 		state     byte
+		// style set before a jump onto prior, held for the next text written
+		pendingStyle []lineCell
 	)
 	parser := ansi.NewParser()
 	snapshot := func(from int) {
@@ -741,6 +803,11 @@ func resolveLine(s string) string {
 		state = next
 		s = s[n:]
 		if width > 0 {
+			prior = ""
+			for _, c := range pendingStyle {
+				insert(c)
+			}
+			pendingStyle = nil
 			for cursor < len(cells) && cells[cursor].width == 0 {
 				cursor++
 			}
@@ -764,6 +831,7 @@ func resolveLine(s string) string {
 			case 'D':
 				cursor = backColumns(cells, cursor, max(param, 1))
 			case 'K':
+				prior = ""
 				switch param {
 				case 0:
 					snapshot(cursor)
@@ -776,11 +844,18 @@ func resolveLine(s string) string {
 					insert(lineCell{seq: seq})
 				}
 			case 'G':
-				if param <= 1 {
-					cursor = 0
-				} else {
-					insert(lineCell{seq: seq})
+				if cols <= 0 {
+					cols = defaultCols
 				}
+				column := min(max(param, 1), cols)
+				// prior survives only while nothing visible is written, so cells
+				// holds just style changes, which apply to the next text written
+				if column > 1 && prior != "" {
+					pendingStyle = append(pendingStyle, cells...)
+					cells = decodeCells(prior)
+				}
+				prior = ""
+				cells, cursor = seekColumn(cells, column-1)
 			default:
 				insert(lineCell{seq: seq})
 			}
@@ -789,6 +864,7 @@ func resolveLine(s string) string {
 		}
 	}
 
+	cells = append(cells, pendingStyle...)
 	for _, c := range cells {
 		if c.width > 0 {
 			return joinCells(cells)
@@ -798,6 +874,39 @@ func resolveLine(s string) string {
 		return lastFrame
 	}
 	return joinCells(cells)
+}
+
+func decodeCells(s string) []lineCell {
+	var (
+		cells []lineCell
+		state byte
+	)
+	parser := ansi.NewParser()
+	for len(s) > 0 {
+		seq, width, n, next := ansi.DecodeSequence(s, state, parser)
+		state = next
+		s = s[n:]
+		cells = append(cells, lineCell{seq, width})
+	}
+	return cells
+}
+
+// cell index at column, padding the line with spaces when it ends short
+func seekColumn(cells []lineCell, column int) ([]lineCell, int) {
+	at := 0
+	for i, c := range cells {
+		if c.width == 0 {
+			continue
+		}
+		if at >= column {
+			return cells, i
+		}
+		at += c.width
+	}
+	for ; at < column; at++ {
+		cells = append(cells, lineCell{seq: " ", width: 1})
+	}
+	return cells, len(cells)
 }
 
 func isPlainCsi(p *ansi.Parser) bool {

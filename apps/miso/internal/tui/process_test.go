@@ -1416,3 +1416,60 @@ func TestCaptureOutputPromptAfterScreenClearPaintsWhileWaiting(t *testing.T) {
 		})
 	}
 }
+
+func TestCaptureOutputMSBuildTerminalLoggerRedrawsInPlace(t *testing.T) {
+	// dotnet's TerminalLogger: each frame climbs with ESC[<rows+1>F plus a
+	// newline, right-aligns at ESC[120G (clamped to the pty width), and updates
+	// an unchanged row by rewriting only its duration; frames built as
+	// TerminalNodesFrame.Render emits them
+	_, p, _, w, stop := startPipeCapture(t, "api")
+	defer stop()
+	p.Resize(24, 100)
+
+	prefix := "  /Users/x/api/Api/api.csproj "
+	row := func(duration string) string {
+		return prefix + strings.Repeat(" ", 85-len(prefix)) + "Restore " + duration
+	}
+
+	writeAndWaitFor(t, p, w, "Building...\r\n", []string{"Building..."})
+	writeAndWaitFor(t, p, w, "\x1b[?25l\x1b[1F\r\n"+prefix+"\x1b[120G\x1b[14DRestore (0.5s)\r\n",
+		[]string{"Building...", row("(0.5s)")})
+	writeAndWaitFor(t, p, w, "\x1b[2F\r\n\x1b[120G\x1b[6D(0.6s)\r\n",
+		[]string{"Building...", row("(0.6s)")})
+	writeAndWaitFor(t, p, w, "\x1b[2F\r\n\x1b[120G\x1b[6D(0.7s)\r\n",
+		[]string{"Building...", row("(0.7s)")})
+	// build done: the frame is erased and the app's output takes its row
+	writeAndWaitFor(t, p, w, "\x1b[2F\r\n\x1b[Jinfo: Now listening on: http://localhost:5090\r\n",
+		[]string{"Building...", "info: Now listening on: http://localhost:5090"})
+}
+
+func TestResolveLineKeepsPriorRowOnlyForRightwardJump(t *testing.T) {
+	prior := "  api.csproj      Restore (0.5s)"
+	tests := []struct {
+		name    string
+		segment string
+		cols    int
+		want    string
+	}{
+		{"jump right overwrites the tail", "\x1b[120G\x1b[6D(0.6s)", len(prior) + 1, "  api.csproj      Restore (0.6s)"},
+		{"jump clamps to the last column", "\x1b[120G\x1b[1D!", len(prior), "  api.csproj      Restore (0.5!)"},
+		{"erase then column one replaces the row", "\x1b[2K\x1b[1G✓ done", len(prior), "✓ done"},
+		{"text first replaces the row", "next\x1b[1G", len(prior), "next"},
+		{"color before the jump keeps the row", "\x1b[32m\x1b[120G\x1b[6D(0.6s)", len(prior) + 1, "  api.csproj      Restore \x1b[32m(0.6s)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveLine(tc.segment, prior, tc.cols); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveLineClampsColumnWithoutPtyWidth(t *testing.T) {
+	// a pipe-backed child has no pty width; a huge column must not pad without bound
+	got := resolveLine("\x1b[1000000GX", "", 0)
+	if want := strings.Repeat(" ", 79) + "X"; got != want {
+		t.Errorf("got %d columns, want %d", len(got), len(want))
+	}
+}
