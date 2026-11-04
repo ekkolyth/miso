@@ -3,12 +3,14 @@ package commands_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"charm.land/huh/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ekkolyth/miso/internal/cli/commands"
@@ -425,5 +427,24 @@ func TestWritePackageManagersThenRootConfigLast(t *testing.T) {
 	}
 	if got := written[len(written)-1]; got != "miso.json" {
 		t.Errorf("last written = %q, want root miso.json", got)
+	}
+}
+
+func TestAppsFieldShowsEveryOption(t *testing.T) {
+	for _, count := range []int{1, 2, 3} {
+		var options []huh.Option[int]
+		for index := range count {
+			options = append(options, huh.NewOption(fmt.Sprintf("app-%d", index), index).Selected(true))
+		}
+		var picked []int
+		field := commands.AppsFieldForTest(options, &picked, ui.Default())
+		field.Focus()
+		field.Update(nil)
+		view := ansi.Strip(field.View())
+		for index := range count {
+			if label := fmt.Sprintf("app-%d", index); !strings.Contains(view, label) {
+				t.Errorf("%d options: %q missing from view:\n%s", count, label, view)
+			}
+		}
 	}
 }

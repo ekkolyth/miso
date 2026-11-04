@@ -258,11 +258,7 @@ func askApps(apps []workspace.DetectedApp, styles ui.Styles) ([]workspace.Detect
 	}
 	var picked []int
 	if len(otherOptions) > 0 {
-		fields = append(fields, huh.NewMultiSelect[int]().
-			Title("Non-Workspace — pick the ones to run with miso:").
-			Description(styles.Muted.Render("space to toggle • ctrl+a to toggle all • Enter to confirm • ctrl+c to bail")).
-			Options(otherOptions...).
-			Value(&picked))
+		fields = append(fields, appsField(otherOptions, &picked, styles))
 	} else {
 		fields = append(fields, huh.NewNote().
 			Description(styles.Muted.Render("Press Enter to set up these apps • ctrl+c to bail")))
@@ -273,6 +269,17 @@ func askApps(apps []workspace.DetectedApp, styles ui.Styles) ([]workspace.Detect
 		return nil, err
 	}
 	return selectedApps(apps, picked), nil
+}
+
+func appsField(options []huh.Option[int], picked *[]int, styles ui.Styles) *huh.MultiSelect[int] {
+	title := "Non-Workspace — pick the ones to run with miso:"
+	description := styles.Muted.Render("space to toggle • ctrl+a to toggle all • Enter to confirm • ctrl+c to bail")
+	return huh.NewMultiSelect[int]().
+		Title(title).
+		Description(description).
+		Options(options...).
+		Value(picked).
+		Height(ui.MultiSelectHeight(title, description, len(options)))
 }
 
 // every workspace app plus the picked Non-Workspace ones (indexes into apps),

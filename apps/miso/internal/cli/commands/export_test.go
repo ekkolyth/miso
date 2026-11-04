@@ -10,4 +10,5 @@ var (
 	FallbackOptionsForTest         = fallbackOptions
 	SelectedAppsForTest            = selectedApps
 	WritePackageManagersForTest    = writePackageManagers
+	AppsFieldForTest               = appsField
 )
