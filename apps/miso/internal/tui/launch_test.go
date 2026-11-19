@@ -1208,6 +1208,46 @@ func restartEnvFixture(t *testing.T) (string, config.Config) {
 	return root, cfg
 }
 
+func TestBuildRunSetsMisoEnv(t *testing.T) {
+	root, cfg := restartEnvFixture(t)
+	pm, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environ, _, err := pm.findProc("dev").BuildEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(environ, "MISO=1") {
+		t.Fatalf("env = %q, want MISO=1", environ)
+	}
+}
+
+func TestBuildRunSetsMisoEnvWithoutEnvFiles(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scripts", "dev.sh"), []byte("echo hi\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Scripts: "./scripts"}
+	pm, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environ, _, err := pm.findProc("dev").BuildEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(environ, "MISO=1") {
+		t.Fatalf("env = %q, want MISO=1", environ)
+	}
+	if !slices.ContainsFunc(environ, func(kv string) bool { return strings.HasPrefix(kv, "PATH=") }) {
+		t.Fatalf("env = %q, want a PATH= entry", environ)
+	}
+}
+
 func TestRestartRereadsEnvFile(t *testing.T) {
 	root, cfg := restartEnvFixture(t)
 	pm, _, _, _, _, err := buildRun(cfg, "dev", root, nil, nil, nil, false, false)

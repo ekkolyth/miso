@@ -228,6 +228,11 @@ func buildRun(cfg config.Config, scriptName string, root string, mgr manager.Man
 			if buildErr != nil {
 				return nil, nil, buildErr
 			}
+			// tells miso log to emit the wire line for this process to render
+			if environ == nil {
+				environ = os.Environ()
+			}
+			environ = append(environ, "MISO=1")
 			var preamble []string
 			if envValidated {
 				if line := env.ValidatedLine(root, cfg, target); line != "" {
