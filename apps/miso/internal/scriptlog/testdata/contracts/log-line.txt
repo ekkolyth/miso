@@ -1,0 +1,1 @@
+::miso::{"level":"error","text":"Building the Debian VM image requires Lima 2.x, but limactl was not found.","fields":[["install","brew install lima"],["then","miso dev"]]}
