@@ -3,6 +3,7 @@ package scriptlog
 import (
 	"strconv"
 	"strings"
+	"unicode"
 
 	"charm.land/lipgloss/v2"
 
@@ -23,7 +24,10 @@ func Render(m Message) string {
 	out.WriteString(" " + m.Text)
 	for _, field := range m.Fields {
 		value := field.Value
-		if strings.ContainsAny(value, " \"") {
+		// a newline or control byte would otherwise break the line or the terminal
+		if strings.ContainsFunc(value, func(r rune) bool {
+			return r == '"' || unicode.IsSpace(r) || unicode.IsControl(r)
+		}) {
 			value = strconv.Quote(value)
 		}
 		out.WriteString(" " + styles.Muted.Render(field.Key+"=") + value)

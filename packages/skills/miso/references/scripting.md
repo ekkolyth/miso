@@ -141,7 +141,7 @@ exit 2
 ```
 
 - Levels are `debug`, `info`, `warn`, and `error`. Fields are `key=value`; a value may contain `=`.
-- Under miso the line renders as `[dev] ERROR <text> key=value ...`, with values that contain a space or `"` quoted. Run directly, the same line prints without the `[dev] ` prefix.
+- Under miso the line renders as `[dev] ERROR <text> key=value ...`, with values that contain whitespace (including newlines), a control character, or `"` quoted, so a multi-line value stays on one line. Run directly, the same line prints without the `[dev] ` prefix.
 - A valid `miso log` call always exits 0, even for `error`; the script's own `exit` decides whether it fails. A call with bad arguments exits 1 and, under `sh -e`, ends the script.
 - A missing or unknown level, empty text, an argument after the text that is not `key=value`, or an empty key (`=v`) exits 1.
 

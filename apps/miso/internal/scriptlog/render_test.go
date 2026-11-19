@@ -67,6 +67,9 @@ func TestRenderValueQuoting(t *testing.T) {
 		{"a b", `INFO t k="a b"`},
 		{`say "hi"`, `INFO t k="say \"hi\""`},
 		{"a=b", `INFO t k=a=b`},
+		{"a.go\nb.go", `INFO t k="a.go\nb.go"`},
+		{"a\tb", `INFO t k="a\tb"`},
+		{"a\x07b", `INFO t k="a\ab"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.value, func(t *testing.T) {
