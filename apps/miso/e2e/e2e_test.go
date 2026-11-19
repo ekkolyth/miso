@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 var misoBin string
@@ -871,5 +873,53 @@ func TestE2E_InstallFromRootRunsAtRoot(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(ran), "bun "+root+" ") {
 		t.Errorf("install ran %q; want bun in %s", ran, root)
+	}
+}
+
+func logEnviron() []string {
+	return environWithout([]string{"PATH", "MISO"}, "PATH="+filepath.Dir(misoBin)+":"+os.Getenv("PATH"))
+}
+
+func TestE2E_LogRendersUnderMiso(t *testing.T) {
+	out, code := runEnv(t, "testdata/log", logEnviron(), "say")
+	if code != 0 {
+		t.Fatalf("say exit = %d, want 0 (out: %s)", code, out)
+	}
+	plain := ansi.Strip(out)
+	for _, want := range []string{`[say] ERROR limactl was not found install="brew install lima"`, "[say] after"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("output %q missing %q", plain, want)
+		}
+	}
+	if strings.Contains(plain, "::miso::") {
+		t.Errorf("output %q leaks the wire prefix", plain)
+	}
+}
+
+func TestE2E_LogRendersOnItsOwn(t *testing.T) {
+	var stdout, stderr strings.Builder
+	cmd := exec.Command("sh", "scripts/say.sh")
+	cmd.Dir = "testdata/log"
+	cmd.Env = logEnviron()
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("say.sh: %v (stderr: %s)", err, stderr.String())
+	}
+	if got, want := ansi.Strip(stderr.String()), "ERROR limactl was not found install=\"brew install lima\"\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+	if got := stdout.String(); got != "after\n" {
+		t.Errorf("stdout = %q, want %q", got, "after\n")
+	}
+}
+
+func TestE2E_LogBadArgsFails(t *testing.T) {
+	out, code := runEnv(t, ".", logEnviron(), "log", "error", "disk", "full")
+	if code != 1 {
+		t.Errorf("exit = %d, want 1 (out: %s)", code, out)
+	}
+	if !strings.Contains(out, `field "full" is not key=value`) {
+		t.Errorf("output %q missing the bad-field error", out)
 	}
 }
