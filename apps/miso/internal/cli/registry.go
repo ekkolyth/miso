@@ -21,6 +21,7 @@ var Builtins = []Command{
 	{Name: "dev", Summary: "run the dev script", NeedsProject: true},
 	{Name: "scripts", Summary: "list scripts", NeedsProject: true},
 	{Name: "env", Summary: "validate environment variables", NeedsProject: true},
+	{Name: "log", Summary: "print a styled log line from a script", Usage: "<level> <text> [key=value...]", Meta: true},
 	{Name: "init", Summary: "scaffold a miso.json in this project", Meta: true},
 	{Name: "upgrade", Summary: "update miso to the latest version", Usage: "[--local]", Meta: true},
 	{Name: "skills", Summary: "manage miso agent skills", Meta: true},

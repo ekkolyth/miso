@@ -9,7 +9,7 @@ func TestRenderHelp_ListsEveryBuiltin(t *testing.T) {
 	out := RenderHelp()
 	for _, name := range []string{
 		"install", "add", "remove", "run", "dev", "scripts", "env",
-		"init", "upgrade", "skills", "completion", "version", "help",
+		"init", "upgrade", "skills", "completion", "version", "help", "log",
 	} {
 		if !strings.Contains(out, name) {
 			t.Errorf("help output missing command %q", name)

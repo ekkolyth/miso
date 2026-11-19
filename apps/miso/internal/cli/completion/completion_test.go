@@ -15,7 +15,7 @@ func TestGetCandidates_IncludesEveryBuiltin(t *testing.T) {
 	}
 	for _, want := range []string{
 		"install", "i", "add", "remove", "rm", "run", "dev", "scripts", "env",
-		"init", "upgrade", "skills", "completion", "version", "v", "help",
+		"init", "upgrade", "skills", "completion", "version", "v", "help", "log",
 	} {
 		if !set[want] {
 			t.Errorf("completion missing built-in %q", want)

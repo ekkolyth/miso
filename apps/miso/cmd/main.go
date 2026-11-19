@@ -125,6 +125,11 @@ func main() {
 					cli.Fail(logger, err, false)
 				}
 				return
+			case "log":
+				if err := commands.RunLog(args[1:], os.Stdout, os.Stderr); err != nil {
+					cli.Fail(logger, err, false)
+				}
+				return
 			case "upgrade":
 				if err := commands.Upgrade(args[1:]); err != nil {
 					cli.Fail(logger, err, false)
