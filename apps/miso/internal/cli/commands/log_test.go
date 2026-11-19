@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-var contractArgs = []string{
+var exampleArgs = []string{
 	"error",
 	"Building the Debian VM image requires Lima 2.x, but limactl was not found.",
 	"install=brew install lima",
@@ -16,7 +16,7 @@ var contractArgs = []string{
 
 func TestRunLogWritesRenderedLine(t *testing.T) {
 	var stdout bytes.Buffer
-	if err := RunLog(contractArgs, &stdout); err != nil {
+	if err := RunLog(exampleArgs, &stdout); err != nil {
 		t.Fatalf("RunLog() error = %v", err)
 	}
 	want := `ERROR Building the Debian VM image requires Lima 2.x, but limactl was not found. install="brew install lima" then="miso dev"` + "\n"

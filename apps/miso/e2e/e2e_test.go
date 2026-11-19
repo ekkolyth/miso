@@ -891,6 +891,9 @@ func TestE2E_LogRendersUnderMiso(t *testing.T) {
 			t.Errorf("output %q missing %q", plain, want)
 		}
 	}
+	if strings.Index(plain, "[say] ERROR") >= strings.Index(plain, "[say] after") {
+		t.Errorf("output %q: ERROR line should come before after line", plain)
+	}
 }
 
 func TestE2E_LogRendersOnItsOwn(t *testing.T) {

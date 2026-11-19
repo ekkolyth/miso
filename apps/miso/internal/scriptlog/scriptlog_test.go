@@ -2,7 +2,7 @@ package scriptlog
 
 import "testing"
 
-var contractMessage = Message{
+var exampleMessage = Message{
 	Level: LevelError,
 	Text:  "Building the Debian VM image requires Lima 2.x, but limactl was not found.",
 	Fields: []Field{

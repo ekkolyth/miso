@@ -1,14 +1,18 @@
 package scriptlog
 
 import (
+	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/ekkolyth/miso/internal/ui"
 )
 
-func TestRenderContract(t *testing.T) {
+func TestRenderExample(t *testing.T) {
 	want := `ERROR Building the Debian VM image requires Lima 2.x, but limactl was not found. install="brew install lima" then="miso dev"`
-	if got := ansi.Strip(Render(contractMessage)); got != want {
+	if got := ansi.Strip(Render(exampleMessage)); got != want {
 		t.Errorf("Render() = %q, want %q", got, want)
 	}
 }
@@ -28,6 +32,27 @@ func TestRenderLevels(t *testing.T) {
 			got := ansi.Strip(Render(Message{Level: tt.level, Text: "hi"}))
 			if got != tt.want {
 				t.Errorf("Render() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderBadgeStyles(t *testing.T) {
+	styles := ui.Default()
+	tests := []struct {
+		level Level
+		style lipgloss.Style
+	}{
+		{LevelDebug, styles.Muted},
+		{LevelInfo, styles.Accent},
+		{LevelWarn, lipgloss.NewStyle().Bold(true).Foreground(ui.WarningColor)},
+		{LevelError, styles.Error},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.level), func(t *testing.T) {
+			prefix := tt.style.Render(strings.ToUpper(string(tt.level)))
+			if got := Render(Message{Level: tt.level, Text: "hi"}); !strings.HasPrefix(got, prefix) {
+				t.Errorf("Render() = %q, want prefix %q", got, prefix)
 			}
 		})
 	}
@@ -54,7 +79,7 @@ func TestRenderValueQuoting(t *testing.T) {
 }
 
 func TestRenderStyled(t *testing.T) {
-	rendered := Render(contractMessage)
+	rendered := Render(exampleMessage)
 	if rendered == ansi.Strip(rendered) {
 		t.Error("Render() output has no styling")
 	}
