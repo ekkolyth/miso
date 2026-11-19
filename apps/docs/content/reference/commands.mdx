@@ -197,7 +197,7 @@ Inside a script, when a message should stand out from ordinary output — a miss
 
 ### How it works
 
-Takes a level (`debug`, `info`, `warn`, or `error`), the message text, and any number of `key=value` fields. When the script runs under miso, miso renders the message in the script's output. When the script runs on its own, `miso log` prints the styled message to stderr itself. It always exits 0 for a valid call; the script's own exit code decides whether it failed. Runs before any project is loaded.
+Takes a level (`debug`, `info`, `warn`, or `error`), the message text, and any number of `key=value` fields. It prints one styled line to stdout, so under miso it shows up in the script's output like any other line. It always exits 0 for a valid call; the script's own exit code decides whether it failed. Runs before any project is loaded.
 
 ### Examples
 

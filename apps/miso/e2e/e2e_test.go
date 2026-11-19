@@ -877,7 +877,7 @@ func TestE2E_InstallFromRootRunsAtRoot(t *testing.T) {
 }
 
 func logEnviron() []string {
-	return environWithout([]string{"PATH", "MISO"}, "PATH="+filepath.Dir(misoBin)+":"+os.Getenv("PATH"))
+	return environWithout([]string{"PATH"}, "PATH="+filepath.Dir(misoBin)+":"+os.Getenv("PATH"))
 }
 
 func TestE2E_LogRendersUnderMiso(t *testing.T) {
@@ -891,9 +891,6 @@ func TestE2E_LogRendersUnderMiso(t *testing.T) {
 			t.Errorf("output %q missing %q", plain, want)
 		}
 	}
-	if strings.Contains(plain, "::miso::") {
-		t.Errorf("output %q leaks the wire prefix", plain)
-	}
 }
 
 func TestE2E_LogRendersOnItsOwn(t *testing.T) {
@@ -906,11 +903,11 @@ func TestE2E_LogRendersOnItsOwn(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("say.sh: %v (stderr: %s)", err, stderr.String())
 	}
-	if got, want := ansi.Strip(stderr.String()), "ERROR limactl was not found install=\"brew install lima\"\n"; got != want {
-		t.Errorf("stderr = %q, want %q", got, want)
+	if got, want := ansi.Strip(stdout.String()), "ERROR limactl was not found install=\"brew install lima\"\nafter\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
 	}
-	if got := stdout.String(); got != "after\n" {
-		t.Errorf("stdout = %q, want %q", got, "after\n")
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", stderr.String())
 	}
 }
 

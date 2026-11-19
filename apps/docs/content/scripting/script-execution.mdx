@@ -108,6 +108,6 @@ Under `miso dev`, the line shows up with the script's label:
 [dev] ERROR Building the Debian VM image requires Lima 2.x, but limactl was not found. install="brew install lima" then="miso dev"
 ```
 
-The levels are `debug`, `info`, `warn`, and `error`, and fields are written as `key=value`. If you run the script directly, outside miso, the same styled line prints to stderr.
+The levels are `debug`, `info`, `warn`, and `error`, and fields are written as `key=value`. If you run the script directly, outside miso, the same styled line prints without the label.
 
-`miso log` always exits 0, so the script's own `exit` decides whether it fails.
+A valid `miso log` call always exits 0, so the script's own `exit` decides whether it fails. A call with bad arguments exits 1, which also ends a shell script.

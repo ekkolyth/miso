@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/charmbracelet/x/ansi"
 )
 
 func TestRunPlainStreamsPrefixedOutput(t *testing.T) {
@@ -232,64 +230,5 @@ func TestStartProcessesSkipsOnlyDependentsOfFailedTask(t *testing.T) {
 		if state != StateSkipped {
 			t.Errorf("%s state = %v, want skipped", label, state)
 		}
-	}
-}
-
-const wantScriptLogText = `ERROR Building the Debian VM image requires Lima 2.x, but limactl was not found. install="brew install lima" then="miso dev"`
-
-func runScriptLogSample(t *testing.T, noPTY bool) (string, string) {
-	t.Helper()
-	sample, err := filepath.Abs(filepath.Join("..", "scriptlog", "testdata", "contracts", "log-line.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	pm := NewProcessManager()
-	addPlainScript(t, pm, dir, "say", "cat '"+sample+"'\necho after\n")
-	pm.findProc("say").NoPTY = noPTY
-
-	var buf bytes.Buffer
-	if _, err := RunPlain(pm, &buf, nil, nil, nil); err != nil {
-		t.Fatalf("RunPlain: %v", err)
-	}
-	return ansi.Strip(buf.String()), ansi.Strip(strings.Join(pm.findProc("say").Buffer.Lines(), "\n"))
-}
-
-func TestRunPlainRendersScriptLogLine(t *testing.T) {
-	out, buffered := runScriptLogSample(t, false)
-	for _, want := range []string{"[say] " + wantScriptLogText, "[say] after"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q in:\n%s", want, out)
-		}
-	}
-	if strings.Contains(out, "::miso::") {
-		t.Errorf("output still has the wire prefix:\n%s", out)
-	}
-	if !strings.Contains(buffered, wantScriptLogText) || strings.Contains(buffered, "::miso::") {
-		t.Errorf("buffer not rendered:\n%s", buffered)
-	}
-}
-
-func TestRunPlainRendersScriptLogLineNoPTY(t *testing.T) {
-	out, buffered := runScriptLogSample(t, true)
-	if !strings.Contains(out, "[say] "+wantScriptLogText) || strings.Contains(out, "::miso::") {
-		t.Errorf("output not rendered:\n%s", out)
-	}
-	if !strings.Contains(buffered, wantScriptLogText) || strings.Contains(buffered, "::miso::") {
-		t.Errorf("buffer not rendered:\n%s", buffered)
-	}
-}
-
-func TestRunPlainPassesMalformedLogLineRaw(t *testing.T) {
-	dir := t.TempDir()
-	pm := NewProcessManager()
-	addPlainScript(t, pm, dir, "say", "echo '::miso::{bad'\n")
-
-	var buf bytes.Buffer
-	if _, err := RunPlain(pm, &buf, nil, nil, nil); err != nil {
-		t.Fatalf("RunPlain: %v", err)
-	}
-	if out := ansi.Strip(buf.String()); !strings.Contains(out, "[say] ::miso::{bad") {
-		t.Errorf("malformed line not passed raw:\n%s", out)
 	}
 }

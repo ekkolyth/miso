@@ -126,7 +126,7 @@ func main() {
 				}
 				return
 			case "log":
-				if err := commands.RunLog(args[1:], os.Stdout, os.Stderr); err != nil {
+				if err := commands.RunLog(args[1:], os.Stdout); err != nil {
 					cli.Fail(logger, err, false)
 				}
 				return

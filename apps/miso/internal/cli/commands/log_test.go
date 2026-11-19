@@ -2,8 +2,6 @@ package commands
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
@@ -16,48 +14,24 @@ var contractArgs = []string{
 	"then=miso dev",
 }
 
-func TestRunLogEmitsWireLineUnderMiso(t *testing.T) {
-	t.Setenv("MISO", "1")
-	sample, err := os.ReadFile(filepath.Join("..", "..", "scriptlog", "testdata", "contracts", "log-line.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stdout, stderr bytes.Buffer
-	if err := RunLog(contractArgs, &stdout, &stderr); err != nil {
-		t.Fatalf("RunLog() error = %v", err)
-	}
-	if want := string(bytes.TrimRight(sample, "\n")) + "\n"; stdout.String() != want {
-		t.Errorf("stdout = %q, want %q", stdout.String(), want)
-	}
-	if stderr.Len() != 0 {
-		t.Errorf("stderr = %q, want empty", stderr.String())
-	}
-}
-
-func TestRunLogRendersWithoutMiso(t *testing.T) {
-	t.Setenv("MISO", "")
-	var stdout, stderr bytes.Buffer
-	if err := RunLog(contractArgs, &stdout, &stderr); err != nil {
+func TestRunLogWritesRenderedLine(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := RunLog(contractArgs, &stdout); err != nil {
 		t.Fatalf("RunLog() error = %v", err)
 	}
 	want := `ERROR Building the Debian VM image requires Lima 2.x, but limactl was not found. install="brew install lima" then="miso dev"` + "\n"
-	if got := ansi.Strip(stderr.String()); got != want {
-		t.Errorf("stderr = %q, want %q", got, want)
-	}
-	if stdout.Len() != 0 {
-		t.Errorf("stdout = %q, want empty", stdout.String())
+	if got := ansi.Strip(stdout.String()); got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
 	}
 }
 
 func TestRunLogSplitsOnFirstEquals(t *testing.T) {
-	t.Setenv("MISO", "1")
-	var stdout, stderr bytes.Buffer
-	if err := RunLog([]string{"info", "t", "url=a=b"}, &stdout, &stderr); err != nil {
+	var stdout bytes.Buffer
+	if err := RunLog([]string{"info", "t", "url=a=b"}, &stdout); err != nil {
 		t.Fatalf("RunLog() error = %v", err)
 	}
-	want := `::miso::{"level":"info","text":"t","fields":[["url","a=b"]]}` + "\n"
-	if stdout.String() != want {
-		t.Errorf("stdout = %q, want %q", stdout.String(), want)
+	if got, want := ansi.Strip(stdout.String()), "INFO t url=a=b\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
 	}
 }
 
@@ -76,14 +50,13 @@ func TestRunLogErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("MISO", "1")
-			var stdout, stderr bytes.Buffer
-			err := RunLog(tt.args, &stdout, &stderr)
+			var stdout bytes.Buffer
+			err := RunLog(tt.args, &stdout)
 			if err == nil || err.Error() != tt.want {
 				t.Fatalf("RunLog() error = %v, want %q", err, tt.want)
 			}
-			if stdout.Len() != 0 || stderr.Len() != 0 {
-				t.Errorf("writers not empty: stdout=%q stderr=%q", stdout.String(), stderr.String())
+			if stdout.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", stdout.String())
 			}
 		})
 	}

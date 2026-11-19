@@ -18,7 +18,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/ekkolyth/miso/internal/cli/env"
 	"github.com/ekkolyth/miso/internal/proc"
-	"github.com/ekkolyth/miso/internal/scriptlog"
 	"github.com/ekkolyth/miso/internal/ui"
 )
 
@@ -484,14 +483,6 @@ func (pm *ProcessManager) captureOutput(p *Process, r io.Reader, wg *sync.WaitGr
 		}
 	}
 	readLines(r, maxLine, func(raw string) {
-		if msg, ok := scriptlog.Parse(raw); ok {
-			// keep the pty's \r so feed still sees a cooked line ending
-			cr := ""
-			if strings.HasSuffix(raw, "\r") {
-				cr = "\r"
-			}
-			raw = scriptlog.Render(msg) + cr
-		}
 		for _, op := range live.feed(raw) {
 			pm.sendLine(p, op)
 		}
