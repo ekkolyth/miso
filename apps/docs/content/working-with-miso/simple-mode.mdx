@@ -33,7 +33,7 @@ Select **"Run in standalone mode"** and miso will create a `miso.json` with pack
 
 ### How It Works
 
-In standalone mode, the package-management commands and `package.json` fallback are gone. Miso's utility commands still work — `help`, `init`, `version`, `upgrade`, `completion`, `skills`, `env`, and `scripts` — and every other argument resolves as a script name from the `scripts/` folder. A standalone root still finds members (directories with their own `miso.json`), and each member runs `package.json` scripts with its own package manager. A member with `"packageManager": false` runs folder scripts only:
+In standalone mode, the package-management commands and `package.json` fallback are gone. Miso's utility commands still work — `help`, `init`, `version`, `upgrade`, `completion`, `skills`, `env`, `scripts`, and `log` — and every other argument resolves as a script name from the `scripts/` folder. A standalone root still finds members (directories with their own `miso.json`), and each member runs `package.json` scripts with its own package manager. A member with `"packageManager": false` runs folder scripts only:
 
 ```bash
 miso build              # runs scripts/build.sh

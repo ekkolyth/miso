@@ -87,3 +87,27 @@ if [ -z "$1" ]; then
   exit 1
 fi
 ```
+
+## Logging from scripts
+
+To print a styled message from a script, call `miso log` with a level, the text, and any `key=value` fields:
+
+```bash
+# scripts/dev.sh
+if ! command -v limactl >/dev/null; then
+  miso log error "Building the Debian VM image requires Lima 2.x, but limactl was not found." \
+    install="brew install lima" then="miso dev"
+  exit 2
+fi
+miso log info "Booting VM"
+```
+
+Under `miso dev`, the line shows up with the script's label:
+
+```
+[dev] ERROR Building the Debian VM image requires Lima 2.x, but limactl was not found. install="brew install lima" then="miso dev"
+```
+
+The levels are `debug`, `info`, `warn`, and `error`, and fields are written as `key=value`. If you run the script directly, outside miso, the same styled line prints to stderr.
+
+`miso log` always exits 0, so the script's own `exit` decides whether it fails.
