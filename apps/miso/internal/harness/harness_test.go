@@ -24,6 +24,23 @@ func TestDetect(t *testing.T) {
 	}
 }
 
+// distro packages ship Zed as zeditor, with no zed binary
+func TestDetectZeditor(t *testing.T) {
+	original := lookPath
+	t.Cleanup(func() { lookPath = original })
+	lookPath = func(bin string) (string, error) {
+		if bin == "zeditor" {
+			return "/usr/bin/zeditor", nil
+		}
+		return "", errNotFound
+	}
+
+	got := Detect()
+	if len(got) != 1 || got[0].Agent != "zed" {
+		t.Errorf("expected only zed, got %+v", got)
+	}
+}
+
 // the skills CLI rejects any -a id outside its own list and exits 1
 func TestDetectAgentIDs(t *testing.T) {
 	original := lookPath
