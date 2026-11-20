@@ -40,7 +40,7 @@ func TestBuiltinNames(t *testing.T) {
 	for _, n := range names {
 		set[n] = true
 	}
-	for _, want := range []string{"install", "i", "add", "remove", "rm", "run", "dev", "scripts", "env", "init", "upgrade", "skills", "completion", "version", "v", "help"} {
+	for _, want := range []string{"install", "i", "add", "remove", "rm", "run", "dev", "scripts", "env", "init", "upgrade", "skills", "completion", "version", "v", "help", "log"} {
 		if !set[want] {
 			t.Errorf("BuiltinNames missing %q", want)
 		}

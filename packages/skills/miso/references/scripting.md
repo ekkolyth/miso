@@ -131,6 +131,22 @@ If two workspaces match in the same tier, miso errors and lists their paths so y
 
 ---
 
+## Logging from scripts
+
+Use `miso log <level> <text> [key=value...]` to print a styled message from a script, in any language:
+
+```bash
+miso log error "Lima 2.x is required, but limactl was not found." install="brew install lima"
+exit 2
+```
+
+- Levels are `debug`, `info`, `warn`, and `error`. Fields are `key=value`; a value may contain `=`.
+- Under miso the line renders as `[dev] ERROR <text> key=value ...`, with values that contain whitespace (including newlines), a control character, or `"` quoted, so a multi-line value stays on one line. Run directly, the same line prints without the `[dev] ` prefix.
+- A valid `miso log` call always exits 0, even for `error`; the script's own `exit` decides whether it fails. A call with bad arguments exits 1 and, under `sh -e`, ends the script.
+- A missing or unknown level, empty text, an argument after the text that is not `key=value`, or an empty key (`=v`) exits 1.
+
+---
+
 ## Common Mistakes
 
 - **Missing file extension** — `scripts/build` won't be discovered; must be `scripts/build.sh` (or another supported extension)

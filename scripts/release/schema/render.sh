@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Stamp the release version into the miso config schema and emit two copies:
+# Stamp the release version into the miso config schema and emit three copies:
 #   - apps/miso/miso.schema.json                    (source; $id = latest URL)
+#   - apps/docs/public/miso.schema.json             (latest, served at misojs.dev)
 #   - apps/docs/public/v<VERSION>/miso.schema.json  (pinned; $id = versioned URL)
 # The docs site serves public/ at misojs.dev, so the pinned copy is committed and
 # persists — letting a miso.json lock "$schema" to a specific version instead of
@@ -22,6 +23,7 @@ node -e '
   schema.version = version;               // assigning an existing key keeps its position
   schema.$id = base + "/miso.schema.json";
   fs.writeFileSync(src, JSON.stringify(schema, null, "\t") + "\n");
+  fs.writeFileSync(path.join(root, "apps/docs/public/miso.schema.json"), JSON.stringify(schema, null, "\t") + "\n");
 
   const pinned = { ...schema, $id: `${base}/v${version}/miso.schema.json` };
   const dir = path.join(root, "apps/docs/public", "v" + version);
@@ -29,4 +31,4 @@ node -e '
   fs.writeFileSync(path.join(dir, "miso.schema.json"), JSON.stringify(pinned, null, "\t") + "\n");
 ' "$ROOT" "$VERSION"
 
-echo "✓ stamped schema v$VERSION (latest source + pinned public/v$VERSION)"
+echo "✓ stamped schema v$VERSION (latest source + public copy + pinned public/v$VERSION)"

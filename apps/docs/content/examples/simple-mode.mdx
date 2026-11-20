@@ -13,4 +13,4 @@ A package-manager-free `miso.json` for non-JavaScript projects. Uses miso as a p
 - No `flags` — there's no package manager to pass flags to
 - No `repo` mode — the root's `package.json` workspaces and members with their own `miso.json` are both found and run with their own package manager. `repo.tasks` still works: `concurrent` and `dependsOn` run root-scope scripts
 - `package.json` scripts are ignored even if a `package.json` exists
-- All commands except Miso's own utilities (`env`, `scripts`, `init`, `version`, `upgrade`, `completion`, `skills`, `help`) resolve as folder scripts
+- All commands except Miso's own utilities (`env`, `scripts`, `log`, `init`, `version`, `upgrade`, `completion`, `skills`, `help`) resolve as folder scripts

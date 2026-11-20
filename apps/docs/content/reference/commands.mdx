@@ -185,6 +185,27 @@ miso env
 - Members are the directories matched by `package.json` workspaces or `pnpm-workspace.yaml`, plus directories with their own `miso.json` at `*/` or `*/*/`. A workspace `!` exclusion wins, so an excluded directory isn't traversed.
 - In CI mode (`CI` set, or `miso --ci env`), a missing `.env` file isn't an error. Variables are checked against the shell environment instead. See [CI mode](/env-validation#ci-mode).
 
+## `miso log`
+
+**Summary:** print a styled log line from a script · **Usage:** `miso log <level> <text>`
+
+Prints a log message from a script, styled the way miso styles its own output.
+
+### When to use
+
+Inside a script, when a message should stand out from ordinary output — a missing dependency, a warning, the step that's starting.
+
+### How it works
+
+Takes a level (`debug`, `info`, `warn`, or `error`), the message text, and any number of `key=value` fields. It prints one styled line to stdout, so under miso it shows up in the script's output like any other line. It always exits 0 for a valid call; the script's own exit code decides whether it failed. Runs before any project is loaded.
+
+### Examples
+
+```bash
+miso log info "Booting VM"
+miso log error "limactl was not found" install="brew install lima"
+```
+
 ## `miso init`
 
 **Summary:** scaffold a miso.json in this project · **Usage:** `miso init`

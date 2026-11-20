@@ -11,7 +11,7 @@ reference for the area you're working in — load only the one you need.
 | Working on | Read |
 |---|---|
 | Creating or modifying `miso.json` | `references/config.md` |
-| Creating, organizing, or debugging scripts in a `scripts/` folder | `references/scripting.md` |
+| Creating, organizing, logging from, or debugging scripts in a `scripts/` folder | `references/scripting.md` |
 | Configuring the multi-process TUI, task ordering, or concurrent tasks | `references/tui.md` |
 | Configuring env validation or debugging env injection | `references/env.md` |
 | Upgrading an existing project from an older miso (0.5.x/0.6.x → 0.7.0) | `references/migration.md` |

@@ -36,7 +36,3 @@ chmod +x \
 
 cd ../..
 cp apps/miso/miso.mjs apps/miso/misox.mjs apps/miso/package.json README.md dist/
-
-# sync schema to docs public folder so misojs.dev always serves the latest
-cp apps/miso/miso.schema.json apps/docs/public/miso.schema.json
-echo "✓ schema synced to apps/docs/public/miso.schema.json"
