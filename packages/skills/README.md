@@ -8,6 +8,12 @@ Install for the harnesses miso detects:
 miso skills --add
 ```
 
+Install into your home directory for every project:
+
+```bash
+miso skills --add --global
+```
+
 Or install directly with the skills CLI:
 
 ```bash

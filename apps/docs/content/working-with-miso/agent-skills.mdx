@@ -7,7 +7,7 @@ title: Agent Skills
 Skills are plain Markdown files that get injected into your AI agent's context (Claude Code, Cursor, OpenCode, etc). When the agent detects a relevant task, the matching skill loads automatically.
 
 <Callout type="info">
-Skills are installed as local files — they don't require an internet connection after installation and are safe to commit to version control.
+Skills are installed as local files — they don't require an internet connection after installation. A project install is safe to commit to version control.
 </Callout>
 
 ### The `miso` Skill
@@ -35,6 +35,14 @@ Skip the prompt and install for every detected agent with `--yes`:
 miso skills --add --yes
 ```
 
+### Install globally
+
+By default the skill installs into the current project. Install it into your home directory instead, so every project on your machine gets it, with `--global` (or `-g`):
+
+```bash
+miso skills --add --global
+```
+
 <Callout type="info">
 Miso runs the installer through your project's package manager (`bunx`, `pnpm dlx`, `yarn dlx`, or `npx`). npm's installer crashes on projects with an `overrides` field — an npm bug — so on an npm project with `overrides`, miso runs the installer through `bunx`, `pnpm dlx`, or `yarn dlx` instead (whichever is installed). If none is available, miso stops with a clear message — install bun, pnpm, or yarn, or remove `overrides`.
 </Callout>
@@ -46,3 +54,9 @@ miso skills --rm
 ```
 
 Same agent picker as install — choose which agents to remove the `miso` skill from.
+
+`--rm` removes the project install. Remove a global install with `--global`:
+
+```bash
+miso skills --rm --global
+```
