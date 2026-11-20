@@ -19,8 +19,8 @@ const (
 var errNpmOverrides = errors.New(`npm's package installer (arborist) crashes on projects with an "overrides" field (npm bug). install bun, pnpm, or yarn — or remove "overrides" — to use miso skills`)
 
 // buildSkillsArgs assembles the skills-tool argv for an add/remove targeting the
-// given harness agent ids.
-func buildSkillsArgs(op, name string, harnesses []string) []string {
+// given harness agent ids, in the home directory when global is set.
+func buildSkillsArgs(op, name string, harnesses []string, global bool) []string {
 	var args []string
 	switch op {
 	case "add":
@@ -30,6 +30,9 @@ func buildSkillsArgs(op, name string, harnesses []string) []string {
 	}
 	for _, harness := range harnesses {
 		args = append(args, "-a", harness)
+	}
+	if global {
+		args = append(args, "-g")
 	}
 	return append(args, "-y")
 }
@@ -90,8 +93,8 @@ func resolveSkillsRunner(managerName, workDir string, hasBinary func(string) boo
 	return nil, errNpmOverrides
 }
 
-// ParseSkillsFlags scans args for --add, --rm, and --yes/-y. Does not modify args.
-func ParseSkillsFlags(args []string) (add, rm, yes bool) {
+// ParseSkillsFlags scans args for --add, --rm, --yes/-y, and --global/-g. Does not modify args.
+func ParseSkillsFlags(args []string) (add, rm, yes, global bool) {
 	for _, arg := range args {
 		switch arg {
 		case "--add":
@@ -100,25 +103,27 @@ func ParseSkillsFlags(args []string) (add, rm, yes bool) {
 			rm = true
 		case "--yes", "-y":
 			yes = true
+		case "--global", "-g":
+			global = true
 		}
 	}
 	return
 }
 
 // via the detected manager's dlx runner
-func RunSkillsAdd(managerName, workDir string, harnesses []string) error {
-	return runSkills("add", managerName, workDir, harnesses)
+func RunSkillsAdd(managerName, workDir string, harnesses []string, global bool) error {
+	return runSkills("add", managerName, workDir, harnesses, global)
 }
 
-func RunSkillsRemove(managerName, workDir string, harnesses []string) error {
-	return runSkills("remove", managerName, workDir, harnesses)
+func RunSkillsRemove(managerName, workDir string, harnesses []string, global bool) error {
+	return runSkills("remove", managerName, workDir, harnesses, global)
 }
 
-func runSkills(op, managerName, workDir string, harnesses []string) error {
+func runSkills(op, managerName, workDir string, harnesses []string, global bool) error {
 	driver, err := resolveSkillsRunner(managerName, workDir, binaryOnPath)
 	if err != nil {
 		return err
 	}
-	spec := driver.BuildDlx("skills", buildSkillsArgs(op, skillName, harnesses))
+	spec := driver.BuildDlx("skills", buildSkillsArgs(op, skillName, harnesses, global))
 	return manager.Exec(spec, workDir)
 }

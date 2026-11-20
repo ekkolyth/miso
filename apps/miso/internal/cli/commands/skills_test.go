@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseSkillsFlags_AddOnly(t *testing.T) {
-	add, rm, _ := commands.ParseSkillsFlags([]string{"--add"})
+	add, rm, _, _ := commands.ParseSkillsFlags([]string{"--add"})
 	if !add {
 		t.Error("expected add=true")
 	}
@@ -18,7 +18,7 @@ func TestParseSkillsFlags_AddOnly(t *testing.T) {
 }
 
 func TestParseSkillsFlags_RmOnly(t *testing.T) {
-	add, rm, _ := commands.ParseSkillsFlags([]string{"--rm"})
+	add, rm, _, _ := commands.ParseSkillsFlags([]string{"--rm"})
 	if add {
 		t.Error("expected add=false")
 	}
@@ -28,7 +28,7 @@ func TestParseSkillsFlags_RmOnly(t *testing.T) {
 }
 
 func TestParseSkillsFlags_Both(t *testing.T) {
-	add, rm, _ := commands.ParseSkillsFlags([]string{"--add", "--rm"})
+	add, rm, _, _ := commands.ParseSkillsFlags([]string{"--add", "--rm"})
 	if !add {
 		t.Error("expected add=true")
 	}
@@ -38,7 +38,7 @@ func TestParseSkillsFlags_Both(t *testing.T) {
 }
 
 func TestParseSkillsFlags_Neither(t *testing.T) {
-	add, rm, _ := commands.ParseSkillsFlags([]string{"add", "lodash"})
+	add, rm, _, _ := commands.ParseSkillsFlags([]string{"add", "lodash"})
 	if add {
 		t.Error("expected add=false")
 	}
@@ -48,7 +48,7 @@ func TestParseSkillsFlags_Neither(t *testing.T) {
 }
 
 func TestParseSkillsFlags_Empty(t *testing.T) {
-	add, rm, _ := commands.ParseSkillsFlags([]string{})
+	add, rm, _, _ := commands.ParseSkillsFlags([]string{})
 	if add {
 		t.Error("expected add=false")
 	}
@@ -58,7 +58,7 @@ func TestParseSkillsFlags_Empty(t *testing.T) {
 }
 
 func TestParseSkillsFlags_ExtraArgs(t *testing.T) {
-	add, rm, _ := commands.ParseSkillsFlags([]string{"--add", "--verbose"})
+	add, rm, _, _ := commands.ParseSkillsFlags([]string{"--add", "--verbose"})
 	if !add {
 		t.Error("expected add=true")
 	}
@@ -68,34 +68,68 @@ func TestParseSkillsFlags_ExtraArgs(t *testing.T) {
 }
 
 func TestParseSkillsFlags_YesLong(t *testing.T) {
-	add, _, yes := commands.ParseSkillsFlags([]string{"--add", "--yes"})
+	add, _, yes, _ := commands.ParseSkillsFlags([]string{"--add", "--yes"})
 	if !add || !yes {
 		t.Errorf("expected add=true yes=true, got add=%v yes=%v", add, yes)
 	}
 }
 
 func TestParseSkillsFlags_YesShort(t *testing.T) {
-	_, rm, yes := commands.ParseSkillsFlags([]string{"--rm", "-y"})
+	_, rm, yes, _ := commands.ParseSkillsFlags([]string{"--rm", "-y"})
 	if !rm || !yes {
 		t.Errorf("expected rm=true yes=true, got rm=%v yes=%v", rm, yes)
 	}
 }
 
 func TestParseSkillsFlags_NoYes(t *testing.T) {
-	_, _, yes := commands.ParseSkillsFlags([]string{"--add"})
+	_, _, yes, _ := commands.ParseSkillsFlags([]string{"--add"})
 	if yes {
 		t.Error("expected yes=false")
 	}
 }
 
+func TestParseSkillsFlags_GlobalLong(t *testing.T) {
+	add, _, _, global := commands.ParseSkillsFlags([]string{"--add", "--global"})
+	if !add || !global {
+		t.Errorf("expected add=true global=true, got add=%v global=%v", add, global)
+	}
+}
+
+func TestParseSkillsFlags_GlobalShort(t *testing.T) {
+	_, rm, _, global := commands.ParseSkillsFlags([]string{"--rm", "-g"})
+	if !rm || !global {
+		t.Errorf("expected rm=true global=true, got rm=%v global=%v", rm, global)
+	}
+}
+
+func TestParseSkillsFlags_NoGlobal(t *testing.T) {
+	_, _, _, global := commands.ParseSkillsFlags([]string{"--add"})
+	if global {
+		t.Error("expected global=false")
+	}
+}
+
 func TestBuildSkillsArgs(t *testing.T) {
-	add := commands.BuildSkillsArgsForTest("add", "miso", []string{"claude-code", "codex"})
+	add := commands.BuildSkillsArgsForTest("add", "miso", []string{"claude-code", "codex"}, false)
 	wantAdd := []string{"add", "https://github.com/ekkolyth/miso/tree/main/packages/skills", "-a", "claude-code", "-a", "codex", "-y"}
 	if !reflect.DeepEqual(add, wantAdd) {
 		t.Errorf("add args = %v, want %v", add, wantAdd)
 	}
-	rm := commands.BuildSkillsArgsForTest("remove", "miso", []string{"claude-code"})
+	rm := commands.BuildSkillsArgsForTest("remove", "miso", []string{"claude-code"}, false)
 	wantRm := []string{"remove", "miso", "-a", "claude-code", "-y"}
+	if !reflect.DeepEqual(rm, wantRm) {
+		t.Errorf("remove args = %v, want %v", rm, wantRm)
+	}
+}
+
+func TestBuildSkillsArgsGlobal(t *testing.T) {
+	add := commands.BuildSkillsArgsForTest("add", "miso", []string{"zed"}, true)
+	wantAdd := []string{"add", "https://github.com/ekkolyth/miso/tree/main/packages/skills", "-a", "zed", "-g", "-y"}
+	if !reflect.DeepEqual(add, wantAdd) {
+		t.Errorf("add args = %v, want %v", add, wantAdd)
+	}
+	rm := commands.BuildSkillsArgsForTest("remove", "miso", []string{"zed"}, true)
+	wantRm := []string{"remove", "miso", "-a", "zed", "-g", "-y"}
 	if !reflect.DeepEqual(rm, wantRm) {
 		t.Errorf("remove args = %v, want %v", rm, wantRm)
 	}

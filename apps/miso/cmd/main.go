@@ -136,7 +136,7 @@ func main() {
 				}
 				return
 			case "skills":
-				add, rm, yes := commands.ParseSkillsFlags(args[1:])
+				add, rm, yes, global := commands.ParseSkillsFlags(args[1:])
 				if add && rm {
 					cli.Fail(logger, fmt.Errorf("--add and --rm are mutually exclusive"), false)
 					return
@@ -173,12 +173,12 @@ func main() {
 						return
 					}
 					if add {
-						if err := commands.RunSkillsAdd(managerName, originalWorkDir, chosen); err != nil {
+						if err := commands.RunSkillsAdd(managerName, originalWorkDir, chosen, global); err != nil {
 							cli.Fail(logger, err, false)
 						}
 						return
 					}
-					if err := commands.RunSkillsRemove(managerName, originalWorkDir, chosen); err != nil {
+					if err := commands.RunSkillsRemove(managerName, originalWorkDir, chosen, global); err != nil {
 						cli.Fail(logger, err, false)
 					}
 					return

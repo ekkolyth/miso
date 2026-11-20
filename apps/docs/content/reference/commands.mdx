@@ -263,7 +263,7 @@ To install or remove the miso skill set for an agent harness (Claude Code, OpenC
 
 ### How it works
 
-Detects installed harnesses on your PATH and, with `--add` or `--rm`, installs or removes the skills for the chosen harness(es). `--yes` selects every detected harness non-interactively.
+Detects installed harnesses on your PATH and, with `--add` or `--rm`, installs or removes the skills for the chosen harness(es) in the current project. `--global` installs or removes them in your home directory instead, so every project gets them. `--yes` selects every detected harness non-interactively.
 
 ### Examples
 
@@ -271,6 +271,8 @@ Detects installed harnesses on your PATH and, with `--add` or `--rm`, installs o
 miso skills --add
 miso skills --rm
 miso skills --add --yes
+miso skills --add --global
+miso skills --rm -g
 ```
 
 ### Flags
@@ -278,11 +280,13 @@ miso skills --add --yes
 - `--add` — install the miso skills.
 - `--rm` — remove the miso skills.
 - `--yes` — apply to every detected harness without prompting.
+- `--global` / `-g` — install or remove in your home directory instead of the current project.
 
 ### Gotchas
 
 - `--add` and `--rm` are mutually exclusive.
 - With neither flag, `skills` falls through to normal routing.
+- `--rm` without `--global` removes only the project install, and `--rm --global` removes only the home-directory install.
 
 ## `miso completion`
 

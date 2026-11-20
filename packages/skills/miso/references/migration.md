@@ -20,6 +20,8 @@ The `miso` agent skill isn't bundled in the binary — `miso skills --add` pulls
 miso skills --add
 ```
 
+If you installed the skill globally, re-run with `--global` (`miso skills --add -g`) so the home-directory copy is the one that updates.
+
 The binary and the skill aren't version-locked, so an upgraded binary can sit next to a stale skill until you re-add. Make `miso upgrade` → `miso skills --add` a habit — run the pair whenever a new miso ships to stay current.
 
 # 0.7.x → 0.8.0
