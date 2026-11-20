@@ -17,6 +17,7 @@ var table = []Harness{
 	{Agent: "codex", Label: "Codex", Bins: []string{"codex"}},
 	{Agent: "gemini-cli", Label: "Gemini CLI", Bins: []string{"gemini"}},
 	{Agent: "cursor", Label: "Cursor", Bins: []string{"cursor", "cursor-agent"}},
+	{Agent: "zed", Label: "Zed", Bins: []string{"zed", "zeditor"}},
 }
 
 var errNotFound = errors.New("harness: not found")

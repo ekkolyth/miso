@@ -30,7 +30,7 @@ func TestDetectAgentIDs(t *testing.T) {
 	t.Cleanup(func() { lookPath = original })
 	lookPath = func(bin string) (string, error) { return "/usr/bin/" + bin, nil }
 
-	want := []string{"claude-code", "opencode", "codex", "gemini-cli", "cursor"}
+	want := []string{"claude-code", "opencode", "codex", "gemini-cli", "cursor", "zed"}
 	got := Detect()
 	if len(got) != len(want) {
 		t.Fatalf("expected %d harnesses, got %d: %+v", len(want), len(got), got)

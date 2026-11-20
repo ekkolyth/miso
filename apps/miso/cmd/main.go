@@ -148,7 +148,7 @@ func main() {
 					}
 					installed := harness.Detect()
 					if len(installed) == 0 {
-						cli.Fail(logger, fmt.Errorf("no supported harness found on PATH; install one of: Claude Code, OpenCode, Codex, Gemini CLI, Cursor"), false)
+						cli.Fail(logger, fmt.Errorf("no supported harness found on PATH; install one of: Claude Code, OpenCode, Codex, Gemini CLI, Cursor, Zed"), false)
 						return
 					}
 					var chosen []string
