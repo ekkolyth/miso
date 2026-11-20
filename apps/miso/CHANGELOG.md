@@ -1,5 +1,11 @@
 # @ekkolyth/miso
 
+## 0.9.0
+
+### Minor Changes
+
+- 30152b0: add `miso log` for styled log lines from scripts
+
 ## 0.8.2
 
 ### Patch Changes
