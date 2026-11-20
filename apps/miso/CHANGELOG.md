@@ -1,5 +1,12 @@
 # @ekkolyth/miso
 
+## 0.9.1
+
+### Patch Changes
+
+- 68ac5b1: add Zed to the `miso skills --add` and `--rm` harness picker
+  add `--global` / `-g` to `miso skills --add` and `--rm` to install or remove the skill in your home directory
+
 ## 0.9.0
 
 ### Minor Changes
